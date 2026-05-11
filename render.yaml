@@ -13,10 +13,10 @@ services:
     startCommand: npm start
     disk:
       name: trading-cache
-      mountPath: /data
+      mountPath: /var/data
       sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "20"
       - key: PERSISTENT_DISK_ROOT
-        value: /data
+        value: /var/data
