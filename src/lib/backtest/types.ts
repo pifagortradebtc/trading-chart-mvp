@@ -8,7 +8,7 @@ export type TradeDirection = "long" | "short";
 export type DirectionMode = "long" | "short" | "auto";
 export type ExecutionOrder = "conservative" | "optimistic";
 export type EntryTiming = "next_open" | "signal_close";
-/** Изолированная — маржа только из «депозита стратегии»; кросс — общий кошелёк для ликвидации и лимита маржи. */
+/** Изолированная — маржа только из торгового депозита; кросс — полный баланс кошелька для оценки ликвидации и лимита маржи. */
 export type MarginMode = "isolated" | "cross";
 export type MarketRegime = "range" | "trend";
 
@@ -42,11 +42,16 @@ export interface ChaikKeltSettings {
 }
 
 export interface DcaBotSettings {
+  /** Торговый депозит (USDT): капитал, участвующий в расчёте сетки; первый ордер — % от этого значения. */
   startDepositUsdt: number;
-  /** Полный баланс кошелька (USDT). Для кросс-маржи: ликвидация и доступная маржа опираются на соотношение к депозиту стратегии. При изолированной марже не используется. */
+  /**
+   * Полный баланс кошелька (USDT): торговый депозит + поддерживающая маржа / залог на счёте.
+   * Для кросс-маржи в бэктесте ликвидация и лимит маржи первого ордера масштабируются отношением к торговому депозиту.
+   * При изолированной марже не используется.
+   */
   walletBalanceUsdt: number;
   marginMode: MarginMode;
-  /** Доля депозита на первый ордер сетки, % (например 1 = 1%). */
+  /** Доля торгового депозита на первый ордер сетки, % (например 7 = 7%). */
   firstOrderDepositPct: number;
   leverage: number;
   ordersCount: number;
@@ -103,6 +108,8 @@ export interface TradeRecord {
   id: number;
   symbol: string;
   side: TradeDirection;
+  /** Маржа на момент сделки (для графика / совместимость). У старых снимков может отсутствовать. */
+  marginMode?: MarginMode;
   regime: MarketRegime;
   entrySignalTime: number;
   entryTime: number;

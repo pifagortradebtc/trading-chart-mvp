@@ -32,10 +32,10 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
 
 export const DEFAULT_DCA: DcaBotSettings = {
   startDepositUsdt: 10_000,
-  /** Кросс: полный счёт (например 4× учётного депозита при торговле с плечом). */
+  /** Полный баланс кошелька (торговый депозит + поддерживающая маржа / залог). */
   walletBalanceUsdt: 40_000,
   marginMode: "cross",
-  /** 7% от депозита — первый ордер сетки. */
+  /** 7% от торгового депозита — первый ордер сетки. */
   firstOrderDepositPct: 7,
   leverage: 4,
   ordersCount: 7,

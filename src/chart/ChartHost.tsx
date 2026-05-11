@@ -34,6 +34,8 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const sessionTrades = useBacktestOverlayStore((s) => s.sessionTrades);
 
   const dcaPriceLinesRef = useRef<IPriceLine[]>([]);
+  /** Отрезки «средняя цена входа» по сделкам (от времени входа до выхода). */
+  const avgEntrySeriesRef = useRef<ISeriesApi<"Line">[]>([]);
 
   const tradeMarkers = useMemo(
     () =>
@@ -156,6 +158,14 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
         }
       });
       overlaySeries.clear();
+      avgEntrySeriesRef.current.forEach((s) => {
+        try {
+          chart.removeSeries(s);
+        } catch {
+          /* ignore */
+        }
+      });
+      avgEntrySeriesRef.current = [];
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -267,6 +277,56 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     series.setMarkers(tradeMarkers);
   }, [tradeMarkers, candleData]);
 
+  /** Средняя цена входа после всех усреднений — горизонтальный отрезок от входа до выхода по сделке. */
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    avgEntrySeriesRef.current.forEach((s) => {
+      try {
+        chart.removeSeries(s);
+      } catch {
+        /* ignore */
+      }
+    });
+    avgEntrySeriesRef.current = [];
+
+    if (sessionTrades.length === 0) return;
+
+    const palette = [
+      "#38bdf8",
+      "#a78bfa",
+      "#fbbf24",
+      "#34d399",
+      "#f472b6",
+      "#fb923c",
+      "#94a3b8",
+    ];
+
+    for (let i = 0; i < sessionTrades.length; i++) {
+      const t = sessionTrades[i]!;
+      const t0 = Math.floor(t.entryTime / 1000) as Time;
+      let t1 = Math.floor(t.exitTime / 1000) as Time;
+      if ((t1 as number) <= (t0 as number)) {
+        t1 = ((t0 as number) + 1) as Time;
+      }
+
+      const line = chart.addLineSeries({
+        color: palette[i % palette.length]!,
+        lineWidth: 2,
+        lineStyle: LineStyle.Solid,
+        priceScaleId: "right",
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      line.setData([
+        { time: t0, value: t.avgEntryPrice },
+        { time: t1, value: t.avgEntryPrice },
+      ]);
+      avgEntrySeriesRef.current.push(line);
+    }
+  }, [sessionTrades, candleData]);
+
   /** Горизонтальные линии DCA / TP / ликвидации с бэктеста */
   useEffect(() => {
     const series = candleRef.current;
@@ -285,7 +345,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       const pl = series.createPriceLine({
         price: lvl.price,
         color: lvl.color,
-        lineWidth: lvl.kind === "tp" || lvl.kind === "liq" || lvl.kind === "avg" ? 2 : 1,
+        lineWidth: lvl.kind === "tp" || lvl.kind === "liq" ? 2 : 1,
         lineStyle: lvl.kind === "liq" ? LineStyle.Dashed : LineStyle.Solid,
         axisLabelVisible: true,
         title: lvl.label,

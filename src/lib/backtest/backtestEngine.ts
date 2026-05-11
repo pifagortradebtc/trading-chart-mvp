@@ -137,7 +137,13 @@ function processLongBar(
   if (executionOrder === "conservative") {
     applyFillsDown();
     const liqP = liqNow();
-    if (Number.isFinite(liqP) && low <= liqP) return "liquidation";
+    if (
+      dca.marginMode !== "cross" &&
+      Number.isFinite(liqP) &&
+      low <= liqP
+    ) {
+      return "liquidation";
+    }
     const slP = slNow();
     if (slP != null && low <= slP) return "sl";
     if (high >= tpNow()) return "tp";
@@ -146,7 +152,13 @@ function processLongBar(
     if (high >= tpNow()) return "tp";
     applyFillsDown();
     const liqP = liqNow();
-    if (Number.isFinite(liqP) && low <= liqP) return "liquidation";
+    if (
+      dca.marginMode !== "cross" &&
+      Number.isFinite(liqP) &&
+      low <= liqP
+    ) {
+      return "liquidation";
+    }
     const slP = slNow();
     if (slP != null && low <= slP) return "sl";
   }
@@ -200,7 +212,13 @@ function processShortBar(
   if (executionOrder === "conservative") {
     applyFillsUp();
     const liqP = liqNow();
-    if (Number.isFinite(liqP) && high >= liqP) return "liquidation";
+    if (
+      dca.marginMode !== "cross" &&
+      Number.isFinite(liqP) &&
+      high >= liqP
+    ) {
+      return "liquidation";
+    }
     const slP = slNow();
     if (slP != null && high >= slP) return "sl";
     if (low <= tpNow()) return "tp";
@@ -208,7 +226,13 @@ function processShortBar(
     if (low <= tpNow()) return "tp";
     applyFillsUp();
     const liqP = liqNow();
-    if (Number.isFinite(liqP) && high >= liqP) return "liquidation";
+    if (
+      dca.marginMode !== "cross" &&
+      Number.isFinite(liqP) &&
+      high >= liqP
+    ) {
+      return "liquidation";
+    }
     const slP = slNow();
     if (slP != null && high >= slP) return "sl";
   }
@@ -324,6 +348,7 @@ export function runBacktest(
       id: tr.id,
       symbol: tr.symbol,
       side: tr.side,
+      marginMode: settings.dca.marginMode,
       regime: tr.regime,
       entrySignalTime: (candles[tr.signalBar]?.time ?? Math.floor(tMs / 1000)) * 1000,
       entryTime: entryT * 1000,
