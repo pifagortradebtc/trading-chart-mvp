@@ -187,6 +187,8 @@ export function BacktestPage() {
   const [warning, setWarning] = useState<string | undefined>();
   const [dataNote, setDataNote] = useState("");
   const [busy, setBusy] = useState(false);
+  /** Фоновая автозагрузка OHLCV при открытии страницы или восстановлении снимка (не ручная кнопка). */
+  const [autoOhlcvBusy, setAutoOhlcvBusy] = useState(false);
 
   const [result, setResult] = useState<Awaited<ReturnType<typeof runBacktestOffMainThread>> | null>(
     null,
@@ -253,8 +255,8 @@ export function BacktestPage() {
   }, [effectiveSymbol, interval, candles.length, settings.dca.startDepositUsdt, metrics]);
 
   /**
-   * Восстановление OHLCV из IndexedDB при смене пары/ТФ/глубины или первом заходе.
-   * Не перезаписывает результат активной кнопки «Загрузить OHLCV» (см. ohlcvRestoreGeneration).
+   * При смене пары/ТФ/глубины: сначала IndexedDB, иначе автоматическая загрузка (серверный диск / Binance).
+   * Не перезаписывает активную ручную загрузку (см. ohlcvRestoreGeneration).
    */
   useEffect(() => {
     if (source !== "binance") return;
@@ -281,9 +283,46 @@ export function BacktestPage() {
           `Восстановлено из кеша браузера (IndexedDB): ${hit.candles.length} баров · ${new Date(first.time * 1000).toISOString().slice(0, 10)} — ${new Date(last.time * 1000).toISOString().slice(0, 10)}`,
         );
         if (hit.warning) setWarning(hit.warning);
-      } else {
-        setCandles([]);
-        setDataNote("");
+        return;
+      }
+
+      setAutoOhlcvBusy(true);
+      setLoadMsg("Автозагрузка OHLCV (кеш сервера или биржа)…");
+      try {
+        const { candles: data, warning: w } = await loadOhlcvBinance({
+          symbol: effectiveSymbol,
+          interval,
+          startMs,
+          endMs,
+          yearsBack,
+          forceRefresh: false,
+          useCache: true,
+          onProgress: (p) =>
+            setLoadMsg(`${p.phase}: ${p.message} (${p.loadedBars} баров)`),
+        });
+        if (cancelled || genAtStart !== ohlcvRestoreGeneration.current) {
+          return;
+        }
+        if (data.length) {
+          setCandles(data);
+          setWarning(w);
+          setDataNote(
+            `Данные подставлены автоматически: ${new Date(data[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(data[data.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${data.length} баров`,
+          );
+        } else {
+          setCandles([]);
+          setDataNote("");
+        }
+      } catch {
+        if (!cancelled && genAtStart === ohlcvRestoreGeneration.current) {
+          setCandles([]);
+          setDataNote("");
+        }
+      } finally {
+        if (!cancelled && genAtStart === ohlcvRestoreGeneration.current) {
+          setAutoOhlcvBusy(false);
+          setLoadMsg("");
+        }
       }
     })();
     return () => {
@@ -493,6 +532,44 @@ export function BacktestPage() {
         return;
       }
       const snap = j.snapshot;
+
+      const iv = (INTERVALS as readonly string[]).includes(snap.interval)
+        ? (snap.interval as (typeof INTERVALS)[number])
+        : "15m";
+      const yb = snap.yearsBack || 8;
+      const snapSym = snap.symbol.replace("/", "").toUpperCase();
+      const endMs = Date.now();
+      const startMs = endMs - yb * 365.25 * 24 * 3600 * 1000;
+
+      ohlcvRestoreGeneration.current += 1;
+      const genAtRestore = ohlcvRestoreGeneration.current;
+
+      setAutoOhlcvBusy(true);
+      setLoadMsg("Восстановление снимка: загрузка OHLCV…");
+
+      let loaded: Candle[] = [];
+      let loadWarning: string | undefined;
+      try {
+        const res = await loadOhlcvBinance({
+          symbol: snapSym,
+          interval: iv,
+          startMs,
+          endMs,
+          yearsBack: yb,
+          forceRefresh: false,
+          useCache: true,
+          onProgress: (p) =>
+            setLoadMsg(`Снимок: ${p.phase} — ${p.message} (${p.loadedBars})`),
+        });
+        loaded = res.candles;
+        loadWarning = res.warning;
+      } finally {
+        setAutoOhlcvBusy(false);
+        setLoadMsg("");
+      }
+
+      if (genAtRestore !== ohlcvRestoreGeneration.current) return;
+
       setSettings(snap.settings);
       if ((PAIRS as readonly string[]).includes(snap.symbol)) {
         setSymbol(snap.symbol);
@@ -501,45 +578,50 @@ export function BacktestPage() {
         setSymbol("ETHUSDT");
         setCustomPair(snap.symbol);
       }
-      const iv = (INTERVALS as readonly string[]).includes(snap.interval)
-        ? (snap.interval as (typeof INTERVALS)[number])
-        : "15m";
       setInterval(iv);
-      setYearsBack(snap.yearsBack || 8);
+      setYearsBack(yb);
       setMetrics(snap.metrics);
 
-      if (!candles.length) {
+      setCandles(loaded);
+      if (loadWarning) setWarning(loadWarning);
+      setDataNote(
+        loaded.length
+          ? `Данные: ${new Date(loaded[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(loaded[loaded.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${loaded.length} баров · снимок сервера`
+          : "Нет данных",
+      );
+
+      if (!loaded.length) {
+        setResult(null);
         setWarning(
-          "Настройки восстановлены. Нажмите «Загрузить OHLCV» для тех же параметров — при включённом диске данные возьмутся из файлового кеша без повторной загрузки с Binance.",
+          "Настройки из снимка применены, но OHLCV не удалось загрузить. Проверьте сеть или нажмите «Загрузить OHLCV».",
         );
         return;
       }
 
-      if (candles.length !== snap.candleCount) {
+      if (loaded.length !== snap.candleCount) {
+        setResult(null);
         setWarning(
-          `В браузере загружено ${candles.length} баров, в снимке ${snap.candleCount}. Загрузите OHLCV с теми же параметрами (кеш на диске сервера ускорит это).`,
+          `Загружено ${loaded.length} баров, в снимке было ${snap.candleCount}. Кривая и сделки из снимка не восстановлены — запустите бэктест заново при необходимости.`,
         );
         return;
       }
 
-      const t0 = candles[0]!.time * 1000;
-      const t1 = candles[candles.length - 1]!.time * 1000;
+      const t0 = loaded[0]!.time * 1000;
+      const t1 = loaded[loaded.length - 1]!.time * 1000;
       setResult({
-        candles,
+        candles: loaded,
         trades: snap.trades,
         equity: snap.equity,
-        signals: new Array(candles.length).fill(null),
-        signalMeta: new Array(candles.length).fill(null),
+        signals: new Array(loaded.length).fill(null),
+        signalMeta: new Array(loaded.length).fill(null),
         dataRange: {
           fromMs: t0,
           toMs: t1,
           requestedFromMs: t0,
         },
       });
-      setDataNote((prev) =>
-        prev.includes("Восстановлено с сервера")
-          ? prev
-          : `${prev} · Восстановлено с сервера.`,
+      setDataNote(
+        `Данные: ${new Date(loaded[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(loaded[loaded.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${loaded.length} баров · снимок сервера (бэктест восстановлен)`,
       );
     } catch (e) {
       setWarning(e instanceof Error ? e.message : String(e));
@@ -558,7 +640,7 @@ export function BacktestPage() {
     <>
       <button
         type="button"
-        disabled={busy || !candles.length || runProgress != null}
+        disabled={busy || autoOhlcvBusy || !candles.length || runProgress != null}
         onClick={() => void run()}
         className="rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 disabled:opacity-40"
       >
@@ -566,8 +648,9 @@ export function BacktestPage() {
       </button>
       <button
         type="button"
+        disabled={busy || autoOhlcvBusy}
         onClick={() => void restoreFromServer()}
-        className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100 hover:bg-sky-500/20"
+        className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100 hover:bg-sky-500/20 disabled:opacity-40"
       >
         Восстановить снимок
       </button>
@@ -628,6 +711,7 @@ export function BacktestPage() {
                     <span className="text-[var(--rex-muted)]">Другая пара</span>
                     <input
                       placeholder="LINKUSDT"
+                      title="Если указано непустое значение (от 6 символов), оно заменяет пару из списка слева — оставьте пустым для ETH/BTC из выпадающего списка."
                       value={customPair}
                       onChange={(e) => setCustomPair(e.target.value)}
                       className={`${inp} w-44`}
@@ -685,7 +769,7 @@ export function BacktestPage() {
                   </label>
                   <button
                     type="button"
-                    disabled={busy || source !== "binance"}
+                    disabled={busy || autoOhlcvBusy || source !== "binance"}
                     onClick={() => void loadData()}
                     className="rounded-xl bg-emerald-600/90 px-5 py-2 font-medium text-white shadow-lg shadow-emerald-900/30 hover:bg-emerald-500 disabled:opacity-40"
                   >
@@ -785,12 +869,14 @@ export function BacktestPage() {
                   <strong className="font-medium text-[var(--rex-text)]">IndexedDB</strong> (ключ: пара +
                   таймфрейм + глубина лет). Повторное «Загрузить OHLCV» обычно{" "}
                   <strong className="font-medium text-[var(--rex-text)]">докачивает только новые бары</strong>;
-                  полный скачивание — галочка «Полная перезагрузка». На сервере с persistent disk маршрут{" "}
+                  полный скачивание — галочка «Полная перезагрузка».                   На сервере с persistent disk маршрут{" "}
                   <code className="font-mono text-[10px] text-cyan-300/90">/api/ohlcv</code> хранит свои файлы
-                  по тому же принципу и тоже не пересоздаёт кеш при каждом запросе.
+                  по тому же принципу и тоже не пересоздаёт кеш при каждом запросе. При открытии страницы OHLCV для
+                  выбранной пары подставляется сам (IndexedDB или автозагрузка); кнопка «Восстановить снимок»
+                  подтягивает настройки и свечи с сервера без отдельного нажатия «Загрузить OHLCV».
                 </p>
 
-                {busy && !candles.length && (
+                {(busy || autoOhlcvBusy) && !candles.length && (
                   <div className="mt-4 space-y-2">
                     <SkeletonBlock className="h-3 w-full" />
                     <SkeletonBlock className="h-3 w-2/3" />
