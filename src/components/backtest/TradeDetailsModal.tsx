@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import type { Candle } from "@/types/candle";
 import type { TradeRecord } from "@/lib/backtest/types";
+import { intervalToChartTimeframe } from "@/lib/chart/intervalToChartTimeframe";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
+import { useMarketStore } from "@/store/useMarketStore";
 
 function MiniSparkline({ candles }: { candles: Candle[] }) {
   if (candles.length < 2) return null;
@@ -53,7 +55,12 @@ export function TradeDetailsModal({
   if (!trade) return null;
 
   const openOnChart = () => {
-    useBacktestOverlayStore.getState().openTradeOnChart(trade, trade.symbol, interval);
+    const sym = trade.symbol.replace("/", "").toUpperCase();
+    const tf = intervalToChartTimeframe(interval);
+    if (candles.length) {
+      useMarketStore.getState().hydrateFromBacktest(candles, sym, tf);
+    }
+    useBacktestOverlayStore.getState().openTradeOnChart(trade, sym, interval);
     router.push("/chart");
     onClose();
   };

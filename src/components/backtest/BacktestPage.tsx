@@ -18,7 +18,9 @@ import { TradeDetailsModal } from "./TradeDetailsModal";
 import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
 import type { BacktestSnapshotFile } from "@/lib/backtest/snapshotTypes";
+import { intervalToChartTimeframe } from "@/lib/chart/intervalToChartTimeframe";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
+import { useMarketStore } from "@/store/useMarketStore";
 import { useBacktestLastRunStore } from "@/store/useBacktestLastRunStore";
 import { computeAdvancedResearchMetrics } from "@/lib/research/advancedMetrics";
 import { analyzeDataQuality } from "@/lib/research/dataQuality";
@@ -257,14 +259,22 @@ export function BacktestPage() {
 
   const openTradeOnChart = useCallback(
     (t: TradeRecord) => {
+      const tf = intervalToChartTimeframe(interval);
+      if (result?.candles?.length) {
+        useMarketStore.getState().hydrateFromBacktest(result.candles, effectiveSymbol, tf);
+      }
       useBacktestOverlayStore.getState().openTradeOnChart(t, effectiveSymbol, interval);
       router.push("/chart");
     },
-    [effectiveSymbol, interval, router],
+    [effectiveSymbol, interval, router, result],
   );
 
   const openSessionOnChart = useCallback(() => {
     if (!result?.trades.length) return;
+    const tf = intervalToChartTimeframe(interval);
+    if (result.candles?.length) {
+      useMarketStore.getState().hydrateFromBacktest(result.candles, effectiveSymbol, tf);
+    }
     useBacktestOverlayStore.getState().openSessionOnChart(
       result.trades,
       effectiveSymbol,

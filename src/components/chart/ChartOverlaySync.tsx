@@ -3,18 +3,7 @@
 import { useEffect } from "react";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 import { useMarketStore } from "@/store/useMarketStore";
-import type { Timeframe } from "@/types/candle";
-
-const VALID_TF = new Set<string>(["1m", "5m", "15m", "1h", "4h", "1D", "1W"]);
-
-/** Интервал бэктеста (Binance: 1d, 1w) → ключ Timeframe в market store. */
-function intervalToChartTimeframe(interval: string): Timeframe {
-  const i = interval.trim();
-  if (VALID_TF.has(i)) return i as Timeframe;
-  if (i === "1d") return "1D";
-  if (i === "1w") return "1W";
-  return "15m";
-}
+import { intervalToChartTimeframe } from "@/lib/chart/intervalToChartTimeframe";
 
 /**
  * После «Открыть на графике» подгружает те же OHLCV с `/api/ohlcv`, чтобы цены совпадали с уровнями DCA.
