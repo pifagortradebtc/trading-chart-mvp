@@ -51,6 +51,9 @@ const PAIRS = [
 
 const INTERVALS = ["15m", "1h", "4h", "1d"] as const;
 
+/** Информационное сообщение dataProvider/API — не показываем как глобальный алерт на всех вкладках. */
+const OHLCV_PARTIAL_HISTORY_PREFIX = "Биржа отдала данные только с";
+
 /** Соответствуют пресетам Fast в проде; у всех TP = 0.6%. */
 type PresetName = "conservative" | "start" | "aggressive" | "medium" | "custom";
 
@@ -185,6 +188,8 @@ export function BacktestPage() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loadMsg, setLoadMsg] = useState("");
   const [warning, setWarning] = useState<string | undefined>();
+  /** Неполная история Binance — только вкладка «Стратегия», не глобальный баннер. */
+  const [ohlcvCoverageHint, setOhlcvCoverageHint] = useState<string | undefined>();
   const [dataNote, setDataNote] = useState("");
   const [busy, setBusy] = useState(false);
   /** Фоновая автозагрузка OHLCV при открытии страницы или восстановлении снимка (не ручная кнопка). */
@@ -254,6 +259,20 @@ export function BacktestPage() {
     };
   }, [effectiveSymbol, interval, candles.length, settings.dca.startDepositUsdt, metrics]);
 
+  /** Только служебное «неполная история» → локальная подсказка; остальное — глобальный warning. */
+  const applyOhlcvWarning = useCallback((w: string | undefined) => {
+    if (!w) {
+      setOhlcvCoverageHint(undefined);
+      return;
+    }
+    if (w.startsWith(OHLCV_PARTIAL_HISTORY_PREFIX)) {
+      setOhlcvCoverageHint(w);
+      return;
+    }
+    setOhlcvCoverageHint(undefined);
+    setWarning(w);
+  }, []);
+
   /**
    * При смене пары/ТФ/глубины: сначала IndexedDB, иначе автоматическая загрузка (серверный диск / Binance).
    * Не перезаписывает активную ручную загрузку (см. ohlcvRestoreGeneration).
@@ -282,7 +301,7 @@ export function BacktestPage() {
         setDataNote(
           `Восстановлено из кеша браузера (IndexedDB): ${hit.candles.length} баров · ${new Date(first.time * 1000).toISOString().slice(0, 10)} — ${new Date(last.time * 1000).toISOString().slice(0, 10)}`,
         );
-        if (hit.warning) setWarning(hit.warning);
+        applyOhlcvWarning(hit.warning);
         return;
       }
 
@@ -305,18 +324,20 @@ export function BacktestPage() {
         }
         if (data.length) {
           setCandles(data);
-          setWarning(w);
+          applyOhlcvWarning(w);
           setDataNote(
             `Данные подставлены автоматически: ${new Date(data[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(data[data.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${data.length} баров`,
           );
         } else {
           setCandles([]);
           setDataNote("");
+          applyOhlcvWarning(undefined);
         }
       } catch {
         if (!cancelled && genAtStart === ohlcvRestoreGeneration.current) {
           setCandles([]);
           setDataNote("");
+          applyOhlcvWarning(undefined);
         }
       } finally {
         /** Не опираемся на cancelled: при смене глубины cleanup отменяет задачу, иначе finally не сбрасывал busy → кнопки «мертвые». */
@@ -331,7 +352,7 @@ export function BacktestPage() {
       setAutoOhlcvBusy(false);
       setLoadMsg("");
     };
-  }, [source, effectiveSymbol, interval, yearsBack]);
+  }, [source, effectiveSymbol, interval, yearsBack, applyOhlcvWarning]);
 
   const openTradeOnChart = useCallback(
     (t: TradeRecord) => {
@@ -412,6 +433,7 @@ export function BacktestPage() {
     setAutoOhlcvBusy(false);
     setBusy(true);
     setWarning(undefined);
+    setOhlcvCoverageHint(undefined);
     setLoadMsg("");
     try {
       const endMs = Date.now();
@@ -435,7 +457,7 @@ export function BacktestPage() {
           setLoadMsg(`${p.phase}: ${p.message} (${p.loadedBars} баров)`),
       });
       setCandles(data);
-      setWarning(w);
+      applyOhlcvWarning(w);
       setDataNote(
         data.length
           ? `Данные: ${new Date(data[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(data[data.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${data.length} баров`
@@ -459,6 +481,7 @@ export function BacktestPage() {
       setCandles(data);
       setCsvName(file.name);
       setWarning(undefined);
+      setOhlcvCoverageHint(undefined);
       setDataNote(
         data.length
           ? `CSV «${file.name}»: ${data.length} баров · ${new Date(data[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(data[data.length - 1]!.time * 1000).toISOString().slice(0, 10)}`
@@ -528,6 +551,7 @@ export function BacktestPage() {
 
   const restoreFromServer = async () => {
     setWarning(undefined);
+    setOhlcvCoverageHint(undefined);
     try {
       const r = await fetch("/api/backtest/snapshot");
       const j = (await r.json()) as { snapshot: BacktestSnapshotFile | null };
@@ -592,7 +616,7 @@ export function BacktestPage() {
       setMetrics(snap.metrics);
 
       setCandles(loaded);
-      if (loadWarning) setWarning(loadWarning);
+      applyOhlcvWarning(loadWarning);
       setDataNote(
         loaded.length
           ? `Данные: ${new Date(loaded[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(loaded[loaded.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${loaded.length} баров · снимок сервера`
@@ -601,6 +625,7 @@ export function BacktestPage() {
 
       if (!loaded.length) {
         setResult(null);
+        setOhlcvCoverageHint(undefined);
         setWarning(
           "Настройки из снимка применены, но OHLCV не удалось загрузить. Проверьте сеть или нажмите «Загрузить OHLCV».",
         );
@@ -609,6 +634,7 @@ export function BacktestPage() {
 
       if (loaded.length !== snap.candleCount) {
         setResult(null);
+        setOhlcvCoverageHint(undefined);
         setWarning(
           `Загружено ${loaded.length} баров, в снимке было ${snap.candleCount}. Кривая и сделки из снимка не восстановлены — запустите бэктест заново при необходимости.`,
         );
@@ -691,6 +717,18 @@ export function BacktestPage() {
 
         {researchTab === "strategy" && (
           <div className="space-y-6">
+            {ohlcvCoverageHint && (
+              <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <p className="min-w-0 flex-1 leading-snug">{ohlcvCoverageHint}</p>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg border border-amber-400/35 px-3 py-1 text-xs text-amber-200 hover:bg-amber-500/15"
+                  onClick={() => setOhlcvCoverageHint(undefined)}
+                >
+                  Скрыть
+                </button>
+              </div>
+            )}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
               <GlassCard glow="cyan" className="p-6">
                 <div className="flex flex-wrap items-end gap-4">
