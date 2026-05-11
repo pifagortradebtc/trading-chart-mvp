@@ -10,16 +10,16 @@ import {
 } from "@/lib/backtest/dataProvider";
 import { runBacktestOffMainThread } from "@/lib/backtest/runBacktestClient";
 import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
-import type { BacktestSettings } from "@/lib/backtest/types";
+import type { BacktestResult, BacktestSettings, TradeRecord } from "@/lib/backtest/types";
 import { DEFAULT_BACKTEST, migrateDcaSettings } from "@/lib/backtest/backtestDefaults";
 import { BacktestSettingsForm } from "./BacktestSettings";
 import { BacktestResults } from "./BacktestResults";
 import { TradeDetailsModal } from "./TradeDetailsModal";
 import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
-import type { TradeRecord } from "@/lib/backtest/types";
 import type { BacktestSnapshotFile } from "@/lib/backtest/snapshotTypes";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
+import { useBacktestLastRunStore } from "@/store/useBacktestLastRunStore";
 import { computeAdvancedResearchMetrics } from "@/lib/research/advancedMetrics";
 import { analyzeDataQuality } from "@/lib/research/dataQuality";
 import { buildInterpretation } from "@/lib/research/interpretationRules";
@@ -156,6 +156,22 @@ export function BacktestPage() {
     }
     setOhlcvCoverageHint(undefined);
     setWarning(w);
+  }, []);
+
+  /** После возврата с `/chart` восстанавливаем прогон из памяти — иначе `result` теряется при размонтировании страницы. */
+  useEffect(() => {
+    const { lastResult, lastMetrics } = useBacktestLastRunStore.getState();
+    if (!lastResult?.trades?.length) return;
+    setResult(lastResult);
+    if (lastMetrics) setMetrics(lastMetrics);
+    if (lastResult.candles?.length) {
+      setCandles(lastResult.candles);
+      const first = lastResult.candles[0]!;
+      const last = lastResult.candles[lastResult.candles.length - 1]!;
+      setDataNote(
+        `Прогон восстановлен (${lastResult.candles.length} баров): ${new Date(first.time * 1000).toISOString().slice(0, 10)} — ${new Date(last.time * 1000).toISOString().slice(0, 10)}`,
+      );
+    }
   }, []);
 
   /**
@@ -396,6 +412,7 @@ export function BacktestPage() {
       const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
       setResult(res);
       setMetrics(m);
+      useBacktestLastRunStore.getState().setLastRun(res, m);
       setRunProgress(100);
       await new Promise((r) => setTimeout(r, 200));
 
@@ -507,6 +524,7 @@ export function BacktestPage() {
 
       if (!loaded.length) {
         setResult(null);
+        useBacktestLastRunStore.getState().clearLastRun();
         setOhlcvCoverageHint(undefined);
         setWarning(
           "Настройки из снимка применены, но OHLCV не удалось загрузить. Проверьте сеть или нажмите «Загрузить OHLCV».",
@@ -516,6 +534,7 @@ export function BacktestPage() {
 
       if (loaded.length !== snap.candleCount) {
         setResult(null);
+        useBacktestLastRunStore.getState().clearLastRun();
         setOhlcvCoverageHint(undefined);
         setWarning(
           `Загружено ${loaded.length} баров, в снимке было ${snap.candleCount}. Кривая и сделки из снимка не восстановлены — запустите бэктест заново при необходимости.`,
@@ -525,7 +544,7 @@ export function BacktestPage() {
 
       const t0 = loaded[0]!.time * 1000;
       const t1 = loaded[loaded.length - 1]!.time * 1000;
-      setResult({
+      const restored: BacktestResult = {
         candles: loaded,
         trades: snap.trades,
         equity: snap.equity,
@@ -536,7 +555,9 @@ export function BacktestPage() {
           toMs: t1,
           requestedFromMs: t0,
         },
-      });
+      };
+      setResult(restored);
+      useBacktestLastRunStore.getState().setLastRun(restored, snap.metrics);
       setDataNote(
         `Данные: ${new Date(loaded[0]!.time * 1000).toISOString().slice(0, 10)} — ${new Date(loaded[loaded.length - 1]!.time * 1000).toISOString().slice(0, 10)} · ${loaded.length} баров · снимок сервера (бэктест восстановлен)`,
       );
