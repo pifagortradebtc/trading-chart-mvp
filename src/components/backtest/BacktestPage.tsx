@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import type { Candle } from "@/types/candle";
 import { loadOhlcvBinance, parseOhlcvCsv } from "@/lib/backtest/dataProvider";
@@ -15,6 +16,7 @@ import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
 import type { TradeRecord } from "@/lib/backtest/types";
 import type { BacktestSnapshotFile } from "@/lib/backtest/snapshotTypes";
+import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 
 const PAIRS = [
   "ETHUSDT",
@@ -74,6 +76,7 @@ function presetSettings(name: Exclude<PresetName, "custom">): Partial<BacktestSe
 }
 
 export function BacktestPage() {
+  const router = useRouter();
   const [settings, setSettings] = useState<BacktestSettings>(DEFAULT_BACKTEST);
   const [preset, setPreset] = useState<PresetName>("conservative");
   const [symbol, setSymbol] = useState("ETHUSDT");
@@ -99,6 +102,14 @@ export function BacktestPage() {
     const c = customPair.trim().toUpperCase().replace("/", "");
     return c.length >= 6 ? c : symbol;
   }, [customPair, symbol]);
+
+  const openTradeOnChart = useCallback(
+    (t: TradeRecord) => {
+      useBacktestOverlayStore.getState().openTradeOnChart(t, effectiveSymbol, interval);
+      router.push("/chart");
+    },
+    [effectiveSymbol, interval, router],
+  );
 
   const applyPreset = useCallback(
     (name: Exclude<PresetName, "custom">) => {
@@ -293,6 +304,8 @@ export function BacktestPage() {
               <a href="/chart" className="text-sky-400/90 underline-offset-2 hover:underline">
                 Демо-график (mock)
               </a>
+              {" · "}
+              После бэктеста нажмите «На графике» в таблице сделок — уровни DCA появятся на терминале.
             </p>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
@@ -480,7 +493,11 @@ export function BacktestPage() {
             </section>
             <section>
               <h2 className="mb-4 text-lg font-semibold">Сделки</h2>
-              <TradeTable trades={result.trades} onSelect={setSelected} />
+              <TradeTable
+                trades={result.trades}
+                onSelect={setSelected}
+                onOpenChart={openTradeOnChart}
+              />
             </section>
           </>
         )}
@@ -488,6 +505,7 @@ export function BacktestPage() {
         <TradeDetailsModal
           trade={selected}
           candles={result?.candles ?? candles}
+          interval={interval}
           onClose={() => setSelected(null)}
         />
       </main>

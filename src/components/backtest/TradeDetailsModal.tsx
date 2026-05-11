@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { Candle } from "@/types/candle";
 import type { TradeRecord } from "@/lib/backtest/types";
+import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 
 function MiniSparkline({ candles }: { candles: Candle[] }) {
   if (candles.length < 2) return null;
@@ -37,13 +39,24 @@ function MiniSparkline({ candles }: { candles: Candle[] }) {
 export function TradeDetailsModal({
   trade,
   candles,
+  interval,
   onClose,
 }: {
   trade: TradeRecord | null;
   candles: Candle[];
+  /** Таймфрейм бэктеста (Binance), нужен для загрузки тех же свечей на график */
+  interval: string;
   onClose: () => void;
 }) {
+  const router = useRouter();
+
   if (!trade) return null;
+
+  const openOnChart = () => {
+    useBacktestOverlayStore.getState().openTradeOnChart(trade, trade.symbol, interval);
+    router.push("/chart");
+    onClose();
+  };
 
   const t0 = trade.entrySignalTime / 1000 - 3600;
   const t1 = trade.exitTime / 1000 + 3600;
@@ -51,7 +64,7 @@ export function TradeDetailsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#2e3241] bg-[#131722] shadow-2xl">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl border border-[#2e3241] bg-[#131722] shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#2e3241] px-6 py-4">
           <h3 className="text-lg font-semibold text-[#d1d4dc]">
             Сделка #{trade.id} · {trade.symbol} · {trade.side.toUpperCase()}
@@ -64,7 +77,7 @@ export function TradeDetailsModal({
             Закрыть
           </button>
         </div>
-        <div className="space-y-4 px-6 py-4 text-sm">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4 text-sm">
           <MiniSparkline candles={slice.length >= 2 ? slice : candles.slice(-200)} />
           <p className="rounded-lg bg-[#0c0e14] p-3 text-[#9ca3af]">
             <span className="text-[#2962ff]">Первый вход:</span> {trade.comment}
@@ -113,6 +126,18 @@ export function TradeDetailsModal({
               </tbody>
             </table>
           </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 border-t border-[#2e3241] bg-[#131722] px-6 py-4">
+          <button
+            type="button"
+            onClick={openOnChart}
+            className="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-500"
+          >
+            Открыть на графике (уровни DCA, TP, ликвидация)
+          </button>
+          <p className="flex-1 text-xs text-[#787b86]">
+            Подгружаются те же OHLCV, что в бэктесте; на ценовой шкале появятся горизонтальные линии сетки.
+          </p>
         </div>
       </div>
     </div>

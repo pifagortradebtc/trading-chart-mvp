@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import type { Candle, Timeframe } from "@/types/candle";
 import { generateMockCandles } from "@/lib/mockData";
+import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 
 interface MarketState {
   symbol: string;
@@ -15,6 +16,8 @@ interface MarketState {
   setLogScale: (v: boolean) => void;
   /** Reload mock stream — swap for API fetch later. */
   loadData: () => void;
+  /** Свечи с бэктеста / API без mock (для совпадения цен с уровнями DCA). */
+  hydrateFromBacktest: (candles: Candle[], symbol: string, timeframe: Timeframe) => void;
 }
 
 export const useMarketStore = create<MarketState>()(
@@ -25,6 +28,7 @@ export const useMarketStore = create<MarketState>()(
     logScale: false,
 
     setSymbol: (symbol) => {
+      useBacktestOverlayStore.getState().clear();
       set((s) => {
         s.symbol = symbol.trim().toUpperCase() || "BTC-USD";
       });
@@ -32,6 +36,7 @@ export const useMarketStore = create<MarketState>()(
     },
 
     setTimeframe: (timeframe) => {
+      useBacktestOverlayStore.getState().clear();
       set((s) => {
         s.timeframe = timeframe;
       });
@@ -46,6 +51,13 @@ export const useMarketStore = create<MarketState>()(
     loadData: () =>
       set((st) => {
         st.candles = generateMockCandles(st.symbol, st.timeframe, 800);
+      }),
+
+    hydrateFromBacktest: (candles, symbol, timeframe) =>
+      set((st) => {
+        st.candles = candles;
+        st.symbol = symbol.trim().toUpperCase() || st.symbol;
+        st.timeframe = timeframe;
       }),
   })),
 );

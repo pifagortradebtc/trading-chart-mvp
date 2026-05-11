@@ -8,9 +8,10 @@ import {
   LineStyle,
   PriceScaleMode,
 } from "lightweight-charts";
-import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
+import type { IChartApi, IPriceLine, ISeriesApi, Time } from "lightweight-charts";
 import { ChartRuntimeContext } from "@/chart/ChartRuntimeContext";
 import { useMarketStore } from "@/store/useMarketStore";
+import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 import { useIndicatorStore } from "@/store/useIndicatorStore";
 import { sma, ema } from "@/lib/indicators/math";
 
@@ -27,6 +28,9 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const candles = useMarketStore((s) => s.candles);
   const logScale = useMarketStore((s) => s.logScale);
   const instances = useIndicatorStore((s) => s.instances);
+  const overlayLevels = useBacktestOverlayStore((s) => s.levels);
+
+  const dcaPriceLinesRef = useRef<IPriceLine[]>([]);
 
   const [ctx, setCtx] = useState<{
     chart: IChartApi | null;
@@ -216,6 +220,33 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       indicatorSeriesRef.current.set(inst.id, line);
     });
   }, [candles, instances]);
+
+  /** Горизонтальные линии DCA / TP / ликвидации с бэктеста */
+  useEffect(() => {
+    const series = candleRef.current;
+    if (!series) return;
+
+    dcaPriceLinesRef.current.forEach((pl) => {
+      try {
+        series.removePriceLine(pl);
+      } catch {
+        /* ignore */
+      }
+    });
+    dcaPriceLinesRef.current = [];
+
+    overlayLevels.forEach((lvl) => {
+      const pl = series.createPriceLine({
+        price: lvl.price,
+        color: lvl.color,
+        lineWidth: lvl.kind === "tp" || lvl.kind === "liq" || lvl.kind === "avg" ? 2 : 1,
+        lineStyle: lvl.kind === "liq" ? LineStyle.Dashed : LineStyle.Solid,
+        axisLabelVisible: true,
+        title: lvl.label,
+      });
+      dcaPriceLinesRef.current.push(pl);
+    });
+  }, [overlayLevels]);
 
   return (
     <ChartRuntimeContext.Provider value={ctx}>

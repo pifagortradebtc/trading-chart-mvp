@@ -8,9 +8,12 @@ const fmt = (ms: number) =>
 export function TradeTable({
   trades,
   onSelect,
+  onOpenChart,
 }: {
   trades: TradeRecord[];
   onSelect: (t: TradeRecord) => void;
+  /** Открыть терминал графика с горизонтальными уровнями DCA */
+  onOpenChart?: (t: TradeRecord) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[#2e3241]">
@@ -32,6 +35,7 @@ export function TradeTable({
             <th className="px-3 py-2">Комиссии</th>
             <th className="px-3 py-2">Выход</th>
             <th className="px-3 py-2">Длительность</th>
+            {onOpenChart ? <th className="px-3 py-2">График</th> : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-[#2e3241]">
@@ -70,6 +74,20 @@ export function TradeTable({
               <td className="px-3 py-2 font-mono text-xs">
                 {(t.durationMs / 3600000).toFixed(1)} ч
               </td>
+              {onOpenChart ? (
+                <td className="px-3 py-2">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-sky-900/80 px-2 py-1 text-xs font-medium text-sky-100 hover:bg-sky-800"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenChart(t);
+                    }}
+                  >
+                    На графике
+                  </button>
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
