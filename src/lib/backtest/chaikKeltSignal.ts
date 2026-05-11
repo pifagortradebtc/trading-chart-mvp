@@ -133,8 +133,6 @@ function longTrend(
 ): { ok: boolean; reason: string } {
   const lb = cfg.divLookback;
   const { chOsc, adx, diPlus, diMinus, rsiVal, emaPullback, kUpper } = series;
-  const close = candles.map((c) => c.close);
-  const low = candles.map((c) => c.low);
   const ch = chOsc[i];
   const adxv = adx[i];
   if (!chaikinBullish(cfg, chOsc, i))
@@ -146,7 +144,9 @@ function longTrend(
   const ema = emaPullback[i];
   if (!Number.isFinite(ema)) return { ok: false, reason: "EMA нет" };
   const pullMul = 1 + cfg.pullbackPct / 100;
-  if (!(low[i] <= ema * pullMul && close[i] > ema)) return { ok: false, reason: "Нет отката к EMA" };
+  const lo = candles[i]!.low;
+  const cl = candles[i]!.close;
+  if (!(lo <= ema * pullMul && cl > ema)) return { ok: false, reason: "Нет отката к EMA" };
   if (cfg.rsiEnabled) {
     const r = rsiVal[i];
     if (!Number.isFinite(r) || r >= cfg.rsiTrendThresholdLong) return { ok: false, reason: "RSI trend" };
@@ -159,7 +159,7 @@ function longTrend(
   const dp = diPlus[i];
   if (!Number.isFinite(dp3) || !(dp > dp3)) return { ok: false, reason: "DI+ не растёт" };
   const ku = kUpper[i];
-  if (!Number.isFinite(ku) || !(close[i] < ku)) return { ok: false, reason: "Выше Keltner upper" };
+  if (!Number.isFinite(ku) || !(cl < ku)) return { ok: false, reason: "Выше Keltner upper" };
   const dm = diMinus[i];
   if (!Number.isFinite(dp) || !Number.isFinite(dm) || dp <= dm) return { ok: false, reason: "DI+ ≤ DI−" };
   return { ok: true, reason: "LONG TREND: условия выполнены" };
@@ -200,8 +200,6 @@ function shortTrend(
 ): { ok: boolean; reason: string } {
   const lb = cfg.divLookback;
   const { chOsc, adx, diPlus, diMinus, rsiVal, emaPullback, kLower } = series;
-  const close = candles.map((c) => c.close);
-  const high = candles.map((c) => c.high);
   const ch = chOsc[i];
   const adxv = adx[i];
   if (!chaikinBearish(cfg, chOsc, i))
@@ -214,7 +212,9 @@ function shortTrend(
   if (!Number.isFinite(ema)) return { ok: false, reason: "EMA нет" };
   const pullMul = 1 - cfg.pullbackPct / 100;
   /** Откат к EMA снизу: high касается зоны над EMA, close ниже EMA */
-  if (!(high[i] >= ema * pullMul && close[i] < ema)) return { ok: false, reason: "Нет отката к EMA (short)" };
+  const hi = candles[i]!.high;
+  const cl = candles[i]!.close;
+  if (!(hi >= ema * pullMul && cl < ema)) return { ok: false, reason: "Нет отката к EMA (short)" };
   if (cfg.rsiEnabled) {
     const r = rsiVal[i];
     if (!Number.isFinite(r) || r <= cfg.rsiTrendThresholdShort) return { ok: false, reason: "RSI trend (short)" };
@@ -227,7 +227,7 @@ function shortTrend(
   const dm = diMinus[i];
   if (!Number.isFinite(dm3) || !(dm > dm3)) return { ok: false, reason: "DI− не растёт" };
   const kl = kLower[i];
-  if (!Number.isFinite(kl) || !(close[i] > kl)) return { ok: false, reason: "Ниже Keltner lower" };
+  if (!Number.isFinite(kl) || !(cl > kl)) return { ok: false, reason: "Ниже Keltner lower" };
   const dp = diPlus[i];
   if (!Number.isFinite(dm) || !Number.isFinite(dp) || dm <= dp) return { ok: false, reason: "DI− ≤ DI+" };
   return { ok: true, reason: "SHORT TREND: условия выполнены" };
