@@ -316,13 +316,30 @@ export function BacktestSettingsForm({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span>Первый ордер USDT</span>
+              <span>
+                Первый ордер, % от депозита
+                <Tip>Пересчитывается при смене депозита: первый ордер = депозит × % / 100</Tip>
+              </span>
               <input
                 type="number"
+                step={0.01}
+                min={0.01}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.dca.firstOrderUsdt}
-                onChange={(e) => patchDca({ firstOrderUsdt: Number(e.target.value) })}
+                value={settings.dca.firstOrderDepositPct}
+                onChange={(e) =>
+                  patchDca({ firstOrderDepositPct: Number(e.target.value) })
+                }
               />
+              <span className="text-[10px] text-[#6b7280]">
+                ≈{" "}
+                {(
+                  (settings.dca.startDepositUsdt * settings.dca.firstOrderDepositPct) /
+                  100
+                ).toLocaleString("ru-RU", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                USDT при текущем депозите
+              </span>
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">

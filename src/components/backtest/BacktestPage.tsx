@@ -11,7 +11,7 @@ import {
 import { runBacktestOffMainThread } from "@/lib/backtest/runBacktestClient";
 import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
 import type { BacktestSettings } from "@/lib/backtest/types";
-import { DEFAULT_BACKTEST } from "@/lib/backtest/backtestDefaults";
+import { DEFAULT_BACKTEST, migrateDcaSettings } from "@/lib/backtest/backtestDefaults";
 import { BacktestSettingsForm } from "./BacktestSettings";
 import { BacktestResults } from "./BacktestResults";
 import { TradeDetailsModal } from "./TradeDetailsModal";
@@ -356,7 +356,7 @@ export function BacktestPage() {
     setSettings({
       ...DEFAULT_BACKTEST,
       ...s,
-      dca: { ...DEFAULT_BACKTEST.dca, ...s.dca },
+      dca: migrateDcaSettings({ ...DEFAULT_BACKTEST.dca, ...s.dca }),
       indicator: { ...DEFAULT_BACKTEST.indicator, ...s.indicator },
     });
     setPreset("custom");
@@ -570,7 +570,12 @@ export function BacktestPage() {
 
       if (genAtRestore !== ohlcvRestoreGeneration.current) return;
 
-      setSettings(snap.settings);
+      setSettings({
+        ...DEFAULT_BACKTEST,
+        ...snap.settings,
+        dca: migrateDcaSettings({ ...DEFAULT_BACKTEST.dca, ...snap.settings.dca }),
+        indicator: { ...DEFAULT_BACKTEST.indicator, ...snap.settings.indicator },
+      });
       if ((PAIRS as readonly string[]).includes(snap.symbol)) {
         setSymbol(snap.symbol);
         setCustomPair("");

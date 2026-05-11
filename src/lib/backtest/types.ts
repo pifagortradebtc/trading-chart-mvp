@@ -41,7 +41,8 @@ export interface ChaikKeltSettings {
 
 export interface DcaBotSettings {
   startDepositUsdt: number;
-  firstOrderUsdt: number;
+  /** Доля депозита на первый ордер сетки, % (например 1 = 1%). */
+  firstOrderDepositPct: number;
   leverage: number;
   ordersCount: number;
   priceOverlapPct: number;

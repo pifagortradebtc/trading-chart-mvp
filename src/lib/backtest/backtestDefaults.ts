@@ -32,7 +32,8 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
 
 export const DEFAULT_DCA: DcaBotSettings = {
   startDepositUsdt: 10_000,
-  firstOrderUsdt: 100,
+  /** 1% от 10k ≈ 100 USDT — как прежний дефолт в абсолютных долларах. */
+  firstOrderDepositPct: 1,
   leverage: 4,
   ordersCount: 7,
   priceOverlapPct: 25,
@@ -46,6 +47,26 @@ export const DEFAULT_DCA: DcaBotSettings = {
   allowShort: false,
   mode: "long",
 };
+
+/** Совместимость со старыми JSON/снимками с полем `firstOrderUsdt`. */
+export function migrateDcaSettings(
+  raw: Partial<DcaBotSettings> & { firstOrderUsdt?: number },
+): DcaBotSettings {
+  const merged: DcaBotSettings = { ...DEFAULT_DCA, ...raw };
+  const dep = merged.startDepositUsdt;
+  const legacyUsdt = (raw as { firstOrderUsdt?: number }).firstOrderUsdt;
+
+  const pctProvided =
+    typeof raw.firstOrderDepositPct === "number" && Number.isFinite(raw.firstOrderDepositPct);
+
+  if (!pctProvided && typeof legacyUsdt === "number" && legacyUsdt > 0 && dep > 0) {
+    merged.firstOrderDepositPct = (legacyUsdt / dep) * 100;
+  }
+  if (!Number.isFinite(merged.firstOrderDepositPct) || merged.firstOrderDepositPct <= 0) {
+    merged.firstOrderDepositPct = DEFAULT_DCA.firstOrderDepositPct;
+  }
+  return merged;
+}
 
 export const DEFAULT_BACKTEST: BacktestSettings = {
   entryTiming: "next_open",

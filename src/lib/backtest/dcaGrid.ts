@@ -24,14 +24,19 @@ export function buildDcaGrid(
     volumeFactor,
     takeProfitPct,
     leverage,
-    firstOrderUsdt,
+    startDepositUsdt,
+    firstOrderDepositPct,
   } = settings;
+
+  const firstOrderUsdt = (startDepositUsdt * firstOrderDepositPct) / 100;
 
   if (
     ordersCount < 1 ||
     firstEntryPrice <= 0 ||
     !Number.isFinite(firstEntryPrice) ||
-    priceOverlapPct <= 0
+    priceOverlapPct <= 0 ||
+    !Number.isFinite(firstOrderUsdt) ||
+    firstOrderUsdt <= 0
   ) {
     return {
       side,
