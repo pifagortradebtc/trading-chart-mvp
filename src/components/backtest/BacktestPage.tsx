@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import type { Candle } from "@/types/candle";
 import { loadOhlcvBinance, parseOhlcvCsv } from "@/lib/backtest/dataProvider";
-import { runBacktest } from "@/lib/backtest/backtestEngine";
+import { runBacktestOffMainThread } from "@/lib/backtest/runBacktestClient";
 import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
 import type { BacktestSettings } from "@/lib/backtest/types";
 import { DEFAULT_BACKTEST } from "@/lib/backtest/backtestDefaults";
@@ -116,7 +116,9 @@ export function BacktestPage() {
   const [dataNote, setDataNote] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [result, setResult] = useState<ReturnType<typeof runBacktest> | null>(null);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof runBacktestOffMainThread>> | null>(
+    null,
+  );
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [selected, setSelected] = useState<TradeRecord | null>(null);
   const [persistSnapshots, setPersistSnapshots] = useState(true);
@@ -275,18 +277,23 @@ export function BacktestPage() {
       setWarning("Сначала загрузите исторические данные.");
       return;
     }
-    setRunProgress(12);
-    await new Promise((r) => setTimeout(r, 40));
+    const startMs = candles[0]!.time * 1000;
+    setRunProgress(18);
+    const progressTimer = window.setInterval(() => {
+      setRunProgress((v) => {
+        if (v == null || v >= 92) return v;
+        return Math.min(92, v + 2);
+      });
+    }, 220);
     try {
-      const startMs = candles[0]!.time * 1000;
-      setRunProgress(38);
-      const res = runBacktest(candles, effectiveSymbol, settings, startMs);
-      setRunProgress(72);
+      const res = await runBacktestOffMainThread(candles, effectiveSymbol, settings, startMs);
+      window.clearInterval(progressTimer);
+      setRunProgress(96);
       const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
       setResult(res);
       setMetrics(m);
       setRunProgress(100);
-      await new Promise((r) => setTimeout(r, 280));
+      await new Promise((r) => setTimeout(r, 200));
 
       if (!persistSnapshots) return;
       try {
@@ -311,8 +318,12 @@ export function BacktestPage() {
       } catch (e) {
         console.warn("Снимок не сохранён (сеть или диск недоступны)", e);
       }
+    } catch (e) {
+      window.clearInterval(progressTimer);
+      setWarning(e instanceof Error ? e.message : String(e));
     } finally {
-      setTimeout(() => setRunProgress(null), 320);
+      window.clearInterval(progressTimer);
+      setTimeout(() => setRunProgress(null), 350);
     }
   };
 
@@ -391,7 +402,7 @@ export function BacktestPage() {
     <>
       <button
         type="button"
-        disabled={busy || !candles.length}
+        disabled={busy || !candles.length || runProgress != null}
         onClick={() => void run()}
         className="rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 disabled:opacity-40"
       >
