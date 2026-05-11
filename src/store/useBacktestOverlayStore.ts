@@ -2,11 +2,7 @@
 
 import { create } from "zustand";
 import type { TradeRecord } from "@/lib/backtest/types";
-import {
-  buildChartLevelsFromTrade,
-  buildSessionChartLevels,
-  type ChartOverlayLevel,
-} from "@/lib/backtest/chartOverlayLevels";
+import type { ChartOverlayLevel } from "@/lib/backtest/chartOverlayLevels";
 
 export interface ChartFetchParams {
   symbolBinance: string;
@@ -23,14 +19,14 @@ interface BacktestOverlayState {
   metaTitle: string;
   /** Убрать watchlist, объём, RSI, инструменты рисования — только свечи и сделки. */
   cleanChartUi: boolean;
-  /** Одна сделка: уровни DCA + маркеры. */
+  /** Одна сделка: маркеры сигнала/TP и отрезки уровней DCA (без бесконечных горизонталей). */
   openTradeOnChart: (
     trade: TradeRecord,
     symbolBinance: string,
     interval: string,
     padMs?: number,
   ) => void;
-  /** Весь прогон: маркеры, средняя, лимитные уровни сетки DCA по каждой сделке. */
+  /** Весь прогон: маркеры и отрезки сетки DCA по сделкам (уровни из стора не используются). */
   openSessionOnChart: (
     trades: TradeRecord[],
     symbolBinance: string,
@@ -52,12 +48,11 @@ export const useBacktestOverlayStore = create<BacktestOverlayState>((set) => ({
   cleanChartUi: false,
 
   openTradeOnChart: (trade, symbolBinance, interval, padMs = PAD_DEFAULT_MS) => {
-    const levels = buildChartLevelsFromTrade(trade);
     const startMs = Math.max(0, trade.entrySignalTime - padMs);
     const endMs = trade.exitTime + padMs;
     const sym = symbolBinance.replace("/", "").toUpperCase();
     set({
-      levels,
+      levels: [],
       sessionTrades: [trade],
       fetchParams: {
         symbolBinance: sym,
@@ -75,7 +70,7 @@ export const useBacktestOverlayStore = create<BacktestOverlayState>((set) => ({
     const startMs = Math.max(0, fromMs - padMs);
     const endMs = toMs + padMs;
     set({
-      levels: buildSessionChartLevels(trades),
+      levels: [],
       sessionTrades: trades,
       fetchParams: {
         symbolBinance: sym,

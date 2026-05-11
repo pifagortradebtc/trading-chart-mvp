@@ -14,7 +14,8 @@ import { useMarketStore } from "@/store/useMarketStore";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 import { useIndicatorStore } from "@/store/useIndicatorStore";
 import { sma, ema } from "@/lib/indicators/math";
-import { buildTradeMarkers } from "@/lib/backtest/chartTradeMarkers";
+import { buildBacktestChartMarkers } from "@/lib/backtest/chartTradeMarkers";
+import { buildDcaSegmentSpecs } from "@/lib/backtest/chartDcaSegments";
 
 /** Core candlestick + volume + MA overlays. RSI lives in `RsiPane`. Series refs cleaned on unmount. */
 export function ChartHost({ children }: { children?: React.ReactNode }) {
@@ -34,12 +35,14 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const sessionTrades = useBacktestOverlayStore((s) => s.sessionTrades);
 
   const dcaPriceLinesRef = useRef<IPriceLine[]>([]);
-  /** Отрезки «средняя цена входа» по сделкам (от времени входа до выхода). */
-  const avgEntrySeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  /** Отрезки уровней DCA (сигнал → выход по TP), без бесконечных горизонталей. */
+  const dcaGridSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
 
   const tradeMarkers = useMemo(
     () =>
-      cleanChartUi && sessionTrades.length > 0 ? buildTradeMarkers(sessionTrades) : [],
+      cleanChartUi && sessionTrades.length > 0
+        ? buildBacktestChartMarkers(sessionTrades)
+        : [],
     [cleanChartUi, sessionTrades],
   );
 
@@ -158,14 +161,14 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
         }
       });
       overlaySeries.clear();
-      avgEntrySeriesRef.current.forEach((s) => {
+      dcaGridSeriesRef.current.forEach((s) => {
         try {
           chart.removeSeries(s);
         } catch {
           /* ignore */
         }
       });
-      avgEntrySeriesRef.current = [];
+      dcaGridSeriesRef.current = [];
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -277,57 +280,41 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     series.setMarkers(tradeMarkers);
   }, [tradeMarkers, candleData]);
 
-  /** Средняя цена входа после всех усреднений — горизонтальный отрезок от входа до выхода по сделке. */
+  /** Уровни лимитной сетки DCA — только отрезки от сигнала до TP (см. buildDcaSegmentSpecs). */
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
-    avgEntrySeriesRef.current.forEach((s) => {
+    dcaGridSeriesRef.current.forEach((s) => {
       try {
         chart.removeSeries(s);
       } catch {
         /* ignore */
       }
     });
-    avgEntrySeriesRef.current = [];
+    dcaGridSeriesRef.current = [];
 
-    if (sessionTrades.length === 0) return;
+    if (!cleanChartUi || sessionTrades.length === 0) return;
 
-    const palette = [
-      "#38bdf8",
-      "#a78bfa",
-      "#fbbf24",
-      "#34d399",
-      "#f472b6",
-      "#fb923c",
-      "#94a3b8",
-    ];
-
-    for (let i = 0; i < sessionTrades.length; i++) {
-      const t = sessionTrades[i]!;
-      const t0 = Math.floor(t.entryTime / 1000) as Time;
-      let t1 = Math.floor(t.exitTime / 1000) as Time;
-      if ((t1 as number) <= (t0 as number)) {
-        t1 = ((t0 as number) + 1) as Time;
-      }
-
+    const specs = buildDcaSegmentSpecs(sessionTrades);
+    for (const spec of specs) {
       const line = chart.addLineSeries({
-        color: palette[i % palette.length]!,
-        lineWidth: 2,
+        color: spec.color,
+        lineWidth: spec.lineWidth,
         lineStyle: LineStyle.Solid,
         priceScaleId: "right",
         lastValueVisible: false,
         priceLineVisible: false,
       });
       line.setData([
-        { time: t0, value: t.avgEntryPrice },
-        { time: t1, value: t.avgEntryPrice },
+        { time: spec.t0, value: spec.price },
+        { time: spec.t1, value: spec.price },
       ]);
-      avgEntrySeriesRef.current.push(line);
+      dcaGridSeriesRef.current.push(line);
     }
-  }, [sessionTrades, candleData]);
+  }, [sessionTrades, candleData, cleanChartUi]);
 
-  /** Горизонтальные линии DCA / TP / ликвидации с бэктеста */
+  /** Горизонтальные линии уровней из стора (обычно пусто в режиме бэктеста). */
   useEffect(() => {
     const series = candleRef.current;
     if (!series) return;
