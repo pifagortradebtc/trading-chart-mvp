@@ -54,49 +54,71 @@ const PAIRS = [
 
 const INTERVALS = ["15m", "1h", "4h", "1d"] as const;
 
-type PresetName = "conservative" | "balanced" | "aggressive" | "custom";
+/** Соответствуют пресетам Fast в проде; у всех TP = 0.6%. */
+type PresetName = "conservative" | "start" | "aggressive" | "medium" | "custom";
+
+const TP_ALL_PRESETS = 0.6;
 
 function presetSettings(name: Exclude<PresetName, "custom">): Partial<BacktestSettings> {
+  const base = DEFAULT_BACKTEST.dca;
   if (name === "conservative") {
+    /** Fast — Консервативно */
     return {
       dca: {
-        ...DEFAULT_BACKTEST.dca,
+        ...base,
         leverage: 4,
         ordersCount: 7,
         priceOverlapPct: 25,
         priceFactor: 1.6,
         volumeFactor: 1.2,
-        takeProfitPct: 0.6,
-        mode: "long",
-        allowLong: true,
-        allowShort: false,
+        takeProfitPct: TP_ALL_PRESETS,
       },
     };
   }
-  if (name === "balanced") {
+  if (name === "start") {
+    /** Fast — Старт */
     return {
       dca: {
-        ...DEFAULT_BACKTEST.dca,
-        leverage: 6,
-        ordersCount: 8,
-        priceOverlapPct: 30,
-        priceFactor: 1.45,
-        volumeFactor: 1.35,
-        takeProfitPct: 0.55,
+        ...base,
+        leverage: 4,
+        ordersCount: 4,
+        priceOverlapPct: 20,
+        priceFactor: 1.0,
+        volumeFactor: 1.6,
+        takeProfitPct: TP_ALL_PRESETS,
       },
     };
   }
-  return {
-    dca: {
-      ...DEFAULT_BACKTEST.dca,
-      leverage: 10,
-      ordersCount: 10,
-      priceOverlapPct: 40,
-      priceFactor: 1.35,
-      volumeFactor: 1.5,
-      takeProfitPct: 0.45,
-    },
-  };
+  if (name === "aggressive") {
+    /** Fast — Агрессивно */
+    return {
+      dca: {
+        ...base,
+        leverage: 6,
+        ordersCount: 4,
+        priceOverlapPct: 15,
+        priceFactor: 1.8,
+        volumeFactor: 1.75,
+        takeProfitPct: TP_ALL_PRESETS,
+      },
+    };
+  }
+  /** Fast — Средний риск, прибыль */
+  if (name === "medium") {
+    return {
+      dca: {
+        ...base,
+        leverage: 4,
+        ordersCount: 5,
+        priceOverlapPct: 25,
+        priceFactor: 1.0,
+        volumeFactor: 1.2,
+        takeProfitPct: TP_ALL_PRESETS,
+      },
+    };
+  }
+  const _exhaustive: never = name;
+  return _exhaustive;
 }
 
 /** Пояснения для UI: что именно перезаписывается при выборе пресета. */
@@ -110,32 +132,39 @@ const PRESET_UI: Record<
   }
 > = {
   conservative: {
-    titleRu: "Осторожный",
+    titleRu: "Консервативно",
     titleEn: "Conservative",
-    oneLine: "Ниже риск: плечо 4×, уже шаг сетки; входы только в long.",
+    oneLine: "Плечо 4×, 7 ордеров, overlap 25%, цена ×1.6 / объём ×1.2 · TP 0.6%.",
     tooltip:
-      "Подставляет в DCA: плечо 4×, ордеров в сетке 7, перекрытие цены 25%, множитель шага цены 1.6 и объёма 1.2, TP 0.6%, режим только LONG (short выкл.). Параметры индикатора V2 не меняются.",
+      "Fast «Консервативно»: плечо 4×, ордеров 7, перекрытие цены 25%, price_factor 1.6, volume_factor 1.2, take profit 0.6%. Режим long/short не меняется (как в форме). Индикатор V2 не трогаем.",
   },
-  balanced: {
-    titleRu: "Сбалансированный",
-    titleEn: "Balanced",
-    oneLine: "Средняя агрессия сетки; направление long/short — как в блоке DCA ниже.",
+  start: {
+    titleRu: "Старт",
+    titleEn: "Start",
+    oneLine: "Плечо 4×, 4 ордера, overlap 20%, цена ×1.0 / объём ×1.6 · TP 0.6%.",
     tooltip:
-      "Подставляет в DCA: плечо 6×, ордеров 8, overlap 30%, факторы цены 1.45 и объёма 1.35, TP 0.55%. Режим Auto/Long/Short и галочки long/short не трогает — остаются как в форме.",
+      "Fast «Старт»: плечо 4×, ордеров 4, overlap 20%, price_factor 1.0, volume_factor 1.6, TP 0.6%. Узкая сетка, выше нарастание объёма по уровням.",
   },
   aggressive: {
-    titleRu: "Агрессивный",
+    titleRu: "Агрессивно",
     titleEn: "Aggressive",
-    oneLine: "Выше плечо и плотнее сетка — больше нагрузка на маржу и потенциальная доходность.",
+    oneLine: "Плечо 6×, 4 ордера, overlap 15%, цена ×1.8 / объём ×1.75 · TP 0.6%.",
     tooltip:
-      "Подставляет в DCA: плечо 10×, ордеров 10, overlap 40%, факторы 1.35 / 1.5, TP 0.45%. Направление остаётся из текущих настроек DCA.",
+      "Fast «Агрессивно»: плечо 6×, ордеров 4, overlap 15%, price_factor 1.8, volume_factor 1.75, TP 0.6%. Уже шаг по цене, выше нагрузка на маржу.",
+  },
+  medium: {
+    titleRu: "Средний риск",
+    titleEn: "Medium",
+    oneLine: "Плечо 4×, 5 ордеров, overlap 25%, цена ×1.0 / объём ×1.2 · TP 0.6%.",
+    tooltip:
+      "Fast «Средний риск, прибыль»: плечо 4×, ордеров 5, overlap 25%, price_factor 1.0, volume_factor 1.2, TP 0.6%.",
   },
   custom: {
     titleRu: "Свой",
     titleEn: "Custom",
     oneLine: "Все цифры только из формы ниже; пресет не подставляет значения автоматически.",
     tooltip:
-      "Режим «Свой»: поля DCA и индикатора редактируются вручную. Чтобы снова применить готовый набор — нажмите Осторожный / Сбалансированный / Агрессивный.",
+      "Поля DCA и индикатора вручную. Чтобы применить готовый набор — выберите Консервативно / Старт / Агрессивно / Средний риск.",
   },
 };
 
@@ -633,15 +662,14 @@ export function BacktestPage() {
                     </span>
                     <p className="mt-1.5 max-w-3xl text-[11px] leading-relaxed text-[var(--rex-muted)]">
                       Это <strong className="font-medium text-[var(--rex-text)]">готовые наборы параметров сетки</strong>{" "}
-                      (плечо, число уровней DCA, перекрытие диапазона цены, множители шага цены и объёма, тейк-профит.
-                      Частично — режим long/short). Они подставляются в блок{" "}
-                      <strong className="font-medium text-[var(--rex-text)]">«DCA-бот»</strong> ниже. Настройки{" "}
-                      <strong className="font-medium text-[var(--rex-text)]">индикатора V2</strong> пресеты{" "}
+                      (плечо, число уровней DCA, перекрытие диапазона цены, множители шага цены и объёма).{" "}
+                      <strong className="font-medium text-[var(--rex-text)]">Тейк-профит 0.6%</strong> одинаковый во всех четырёх
+                      пресетах (как в ваших Fast-профилях). Режим long/short не меняется — берётся из блока DCA. Индикатор V2 пресеты{" "}
                       <strong className="font-medium text-[var(--rex-text)]">не меняют</strong>.
                     </p>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    {(["conservative", "balanced", "aggressive"] as const).map((p) => {
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                    {(["conservative", "start", "aggressive", "medium"] as const).map((p) => {
                       const meta = PRESET_UI[p];
                       const active = preset === p;
                       return (
