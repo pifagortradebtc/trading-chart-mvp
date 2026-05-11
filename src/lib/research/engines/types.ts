@@ -34,8 +34,11 @@ export interface MonteCarloSummary {
   p5Equity: number;
   p95Equity: number;
   probLoss: number;
-  /** stub до реализации движка */
-  status: "stub";
+  /** Доля симуляций с просадкой equity выше 50% (грубый хвостовой риск). */
+  probDdOver50Pct?: number;
+  status: "ok" | "stub" | "no_trades";
+  /** Короткое пояснение метода */
+  note?: string;
 }
 
 export interface StressScenarioResult {

@@ -23,13 +23,11 @@ import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 import { computeAdvancedResearchMetrics } from "@/lib/research/advancedMetrics";
 import { analyzeDataQuality } from "@/lib/research/dataQuality";
 import { buildInterpretation } from "@/lib/research/interpretationRules";
-import {
-  computeBenchmarksStub,
-  runMonteCarloStub,
-  runOptimizationStub,
-  runStressSuiteStub,
-  runWalkForwardStub,
-} from "@/lib/research/engines";
+import { computeBenchmarksStub } from "@/lib/research/engines";
+import type { OptimizationRow, StressScenarioResult } from "@/lib/research/engines/types";
+import { runMonteCarloTradeOrderShuffle } from "@/lib/research/monteCarloTrades";
+import { runMiniTpOverlapGrid } from "@/lib/research/miniOptimization";
+import { runStressSuiteClient } from "@/lib/research/stressRunner";
 import { ResearchShell } from "@/components/research/ResearchShell";
 import type { ResearchTabId } from "@/components/research/types";
 import { EmptyState, GlassCard, MetricTile, NeonBadge, SkeletonBlock } from "@/components/research/ui";
@@ -37,7 +35,6 @@ import { UnderwaterChart } from "@/components/research/charts/UnderwaterChart";
 import { ExtendedKpiGrid } from "@/components/research/panels/ExtendedKpiGrid";
 import { InterpretationPanel } from "@/components/research/panels/InterpretationPanel";
 import { DataQualityPanel } from "@/components/research/panels/DataQualityPanel";
-import { LabStubPanel } from "@/components/research/panels/LabStubPanel";
 import { ReportingPanel } from "@/components/research/panels/ReportingPanel";
 import { TradeAnalyticsSection } from "@/components/research/panels/TradeAnalyticsSection";
 import { DcaGridSection } from "@/components/research/panels/DcaGridSection";
@@ -199,6 +196,12 @@ export function BacktestPage() {
   /** Сбрасывает незавершённое восстановление OHLCV из IndexedDB, если пользователь нажал «Загрузить». */
   const ohlcvRestoreGeneration = useRef(0);
 
+  const [optRows, setOptRows] = useState<OptimizationRow[] | null>(null);
+  const [optLoading, setOptLoading] = useState(false);
+  const [optProgress, setOptProgress] = useState("");
+  const [stressRows, setStressRows] = useState<StressScenarioResult[] | null>(null);
+  const [stressLoading, setStressLoading] = useState(false);
+
   const effectiveSymbol = useMemo(() => {
     const c = customPair.trim().toUpperCase().replace("/", "");
     return c.length >= 6 ? c : symbol;
@@ -222,19 +225,10 @@ export function BacktestPage() {
 
   const dataQualityReport = useMemo(() => analyzeDataQuality(candles), [candles]);
 
-  const optimizationStub = useMemo(
-    () => runOptimizationStub(candles, settings),
-    [candles, settings],
-  );
-
-  const walkForwardStub = useMemo(() => runWalkForwardStub(candles), [candles]);
-
-  const monteCarloStub = useMemo(
-    () => runMonteCarloStub(result?.trades.map((t) => t.pnlUsdt) ?? []),
-    [result],
-  );
-
-  const stressStub = useMemo(() => runStressSuiteStub(), []);
+  const monteCarloSummary = useMemo(() => {
+    const pnls = result?.trades.map((t) => t.pnlUsdt) ?? [];
+    return runMonteCarloTradeOrderShuffle(pnls, settings.dca.startDepositUsdt, 800);
+  }, [result?.trades, settings.dca.startDepositUsdt]);
 
   const benchmarkStub = useMemo(
     () => computeBenchmarksStub(candles, settings.dca.startDepositUsdt),
@@ -326,6 +320,48 @@ export function BacktestPage() {
     });
     setPreset("custom");
   }, []);
+
+  const runMiniOptimization = useCallback(async () => {
+    if (!candles.length) {
+      setWarning("Сначала загрузите OHLCV.");
+      return;
+    }
+    setOptLoading(true);
+    setOptProgress("…");
+    try {
+      const startMs = candles[0]!.time * 1000;
+      const rows = await runMiniTpOverlapGrid(
+        candles,
+        effectiveSymbol,
+        settings,
+        startMs,
+        (done, total) => setOptProgress(`${done} / ${total}`),
+      );
+      setOptRows(rows);
+    } catch (e) {
+      setWarning(e instanceof Error ? e.message : String(e));
+    } finally {
+      setOptLoading(false);
+      setOptProgress("");
+    }
+  }, [candles, effectiveSymbol, settings]);
+
+  const runStressTests = useCallback(async () => {
+    if (!candles.length) {
+      setWarning("Сначала загрузите OHLCV.");
+      return;
+    }
+    setStressLoading(true);
+    try {
+      const startMs = candles[0]!.time * 1000;
+      const rows = await runStressSuiteClient(candles, effectiveSymbol, settings, startMs);
+      setStressRows(rows);
+    } catch (e) {
+      setWarning(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStressLoading(false);
+    }
+  }, [candles, effectiveSymbol, settings]);
 
   const loadData = async () => {
     ohlcvRestoreGeneration.current += 1;
@@ -885,85 +921,189 @@ export function BacktestPage() {
 
         {researchTab === "optimize" && (
           <div className="space-y-4">
-            <LabStubPanel
-              title="Optimization Lab"
-              description="Перебор сетки TP, overlap, leverage и порогов индикатора с ранжированием по Sharpe / DD / profit factor и защитой от переобучения."
-              architectureNote="optimizationEngine в Web Worker: batch runBacktest по комбинациям, агрегация метрик, флаг overfitting по деградации на hold-out."
-            />
-            {optimizationStub.warning && (
-              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
-                {optimizationStub.warning}
+            <GlassCard className="p-6">
+              <h3 className="text-lg font-semibold text-[var(--rex-text)]">Optimization Lab</h3>
+              <p className="mt-2 text-sm text-[var(--rex-muted)]">
+                Мини-сетка по текущим данным: TP [0.5, 0.55, 0.6] × overlap [20, 25, 30] —{" "}
+                <strong className="text-[var(--rex-text)]">9 прогонов</strong> бэктеста в worker (может занять
+                время на длинной истории). Остальные параметры — из ваших настроек DCA и индикатора.
               </p>
+              <div className="mt-3">
+                <NeonBadge variant="warn">
+                  Без out-of-sample — колонка overfitting = «medium»; не принимайте топ-1 как истину.
+                </NeonBadge>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!candles.length || optLoading}
+                  onClick={() => void runMiniOptimization()}
+                  className="rounded-xl bg-gradient-to-r from-cyan-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+                >
+                  {optLoading ? `Считаю… ${optProgress}` : "Запустить мини-сетку (9×)"}
+                </button>
+                {!candles.length && (
+                  <span className="text-xs text-amber-200/90">Нужны загруженные свечи.</span>
+                )}
+              </div>
+            </GlassCard>
+            {optRows && optRows.length > 0 && (
+              <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-white/[0.03] text-[11px] uppercase text-[var(--rex-muted)]">
+                    <tr>
+                      <th className="px-3 py-2">TP %</th>
+                      <th className="px-3 py-2">Overlap %</th>
+                      <th className="px-3 py-2">Return %</th>
+                      <th className="px-3 py-2">Max DD %</th>
+                      <th className="px-3 py-2">PF</th>
+                      <th className="px-3 py-2">Sharpe~</th>
+                      <th className="px-3 py-2">Liq</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {optRows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 font-mono">{r.params.dca?.takeProfitPct ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono">{r.params.dca?.priceOverlapPct ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono">{r.totalReturnPct.toFixed(2)}</td>
+                        <td className="px-3 py-2 font-mono">{r.maxDrawdownPct.toFixed(2)}</td>
+                        <td className="px-3 py-2 font-mono">{r.profitFactor.toFixed(2)}</td>
+                        <td className="px-3 py-2 font-mono">
+                          {r.sharpeApprox != null ? r.sharpeApprox.toFixed(2) : "—"}
+                        </td>
+                        <td className="px-3 py-2">{r.liquidations}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
 
         {researchTab === "walkforward" && (
-          <div className="space-y-4">
-            <LabStubPanel
-              title="Walk-forward analysis"
-              description="In-sample оптимизация и out-of-sample проверка по rolling окнам; стабильность параметров и деградация доходности."
-              architectureNote="walkForwardEngine: нарезка candles по времени, оптимизация на train, фикс параметров на test, таблица окон + equity."
-            />
-            {walkForwardStub.warning && (
-              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
-                {walkForwardStub.warning}
-              </p>
-            )}
-          </div>
+          <GlassCard className="p-6">
+            <h3 className="text-lg font-semibold text-[var(--rex-text)]">Walk-forward analysis</h3>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--rex-muted)]">
+              Здесь появится разбиение выборки на окна, оптимизация на train и проверка на out-of-sample.
+              Это отдельный модуль с множеством прогонов — пока не подключён; основной бэктест и вкладки Results /
+              Risk работают как обычно.
+            </p>
+          </GlassCard>
         )}
 
         {researchTab === "montecarlo" && (
           <div className="space-y-4">
-            <LabStubPanel
-              title="Monte Carlo"
-              description="Перестановки и bootstrap сделок, случайный slippage/fees, оценка хвостовых рисков и fan-chart эквити."
-              architectureNote="monteCarloEngine: симуляции на векторе PnL + параметры исполнения; вывод перцентилей и вероятностей."
-            />
-            <GlassCard className="p-4 font-mono text-xs text-[var(--rex-muted)]">
-              status: {monteCarloStub.status} · sims: {monteCarloStub.simulations}
+            <GlassCard className="p-6">
+              <h3 className="text-lg font-semibold text-[var(--rex-text)]">Monte Carlo</h3>
+              <p className="mt-2 text-sm text-[var(--rex-muted)]">
+                Перестановки <strong className="text-[var(--rex-text)]">порядка сделок</strong> при том же наборе
+                PnL (~800 симуляций). Оцениваются финальная эквити и хвост просадки по пути — после того как есть
+                результат бэктеста.
+              </p>
             </GlassCard>
+            {!result?.trades?.length ? (
+              <EmptyState
+                title="Нет сделок для симуляции"
+                hint="Сначала загрузите OHLCV и выполните бэктест во вкладке Strategy Setup."
+              />
+            ) : (
+              <GlassCard glow="cyan" className="p-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricTile
+                    label="Симуляций"
+                    value={String(monteCarloSummary.simulations)}
+                  />
+                  <MetricTile
+                    label="Медиана equity"
+                    value={monteCarloSummary.medianEquity.toFixed(2)}
+                  />
+                  <MetricTile label="5-й перцентиль" value={monteCarloSummary.p5Equity.toFixed(2)} />
+                  <MetricTile label="95-й перцентиль" value={monteCarloSummary.p95Equity.toFixed(2)} />
+                  <MetricTile
+                    label="P(final &lt; депозит)"
+                    value={`${(monteCarloSummary.probLoss * 100).toFixed(1)}%`}
+                  />
+                  {monteCarloSummary.probDdOver50Pct != null && (
+                    <MetricTile
+                      label="P(max DD пути &gt; 50%)"
+                      value={`${(monteCarloSummary.probDdOver50Pct * 100).toFixed(1)}%`}
+                    />
+                  )}
+                </div>
+                {monteCarloSummary.note && (
+                  <p className="mt-4 text-xs text-[var(--rex-muted)]">{monteCarloSummary.note}</p>
+                )}
+              </GlassCard>
+            )}
           </div>
         )}
 
         {researchTab === "stress" && (
           <div className="space-y-4">
-            <LabStubPanel
-              title="Stress testing"
-              description="Сценарии комиссий, гэпов, flash crash, длительный chop — сравнение выживаемости и запаса капитала."
-              architectureNote="stressTestEngine: клонирование settings с множителями, повторный прогон backtestEngine."
-            />
-            <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-white/[0.03] text-[11px] uppercase text-[var(--rex-muted)]">
-                  <tr>
-                    <th className="px-3 py-2">Сценарий</th>
-                    <th className="px-3 py-2">Survived</th>
-                    <th className="px-3 py-2">Max DD %</th>
-                    <th className="px-3 py-2">Ликвидация</th>
-                    <th className="px-3 py-2">Risk score</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.06]">
-                  {stressStub.map((s) => (
-                    <tr key={s.id}>
-                      <td className="px-3 py-2">{s.label}</td>
-                      <td className="px-3 py-2">{s.survived ? "yes" : "no"}</td>
-                      <td className="px-3 py-2 font-mono">{s.maxDrawdownPct.toFixed(2)}</td>
-                      <td className="px-3 py-2">{s.liquidated ? "yes" : "no"}</td>
-                      <td className="px-3 py-2 font-mono">{s.riskScore}</td>
+            <GlassCard className="p-6">
+              <h3 className="text-lg font-semibold text-[var(--rex-text)]">Stress testing</h3>
+              <p className="mt-2 text-sm text-[var(--rex-muted)]">
+                Четыре сценария с изменёнными комиссиями и funding — каждый полный прогон бэктеста в worker.
+                Нажмите кнопку после загрузки свечей (долго на больших выборках).
+              </p>
+              <button
+                type="button"
+                disabled={!candles.length || stressLoading}
+                onClick={() => void runStressTests()}
+                className="mt-4 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {stressLoading ? "Считаю стресс-сценарии…" : "Запустить стресс-тесты (4×)"}
+              </button>
+            </GlassCard>
+            {stressRows && stressRows.length > 0 && (
+              <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-white/[0.03] text-[11px] uppercase text-[var(--rex-muted)]">
+                    <tr>
+                      <th className="px-3 py-2">Сценарий</th>
+                      <th className="px-3 py-2">Final equity</th>
+                      <th className="px-3 py-2">Max DD %</th>
+                      <th className="px-3 py-2">Ликвидации</th>
+                      <th className="px-3 py-2">Risk</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.06]">
+                    {stressRows.map((s) => (
+                      <tr key={s.id}>
+                        <td className="px-3 py-2">{s.label}</td>
+                        <td className="px-3 py-2 font-mono">{s.finalEquity.toFixed(2)}</td>
+                        <td className="px-3 py-2 font-mono">{s.maxDrawdownPct.toFixed(2)}</td>
+                        <td className="px-3 py-2">{s.liquidated ? "да" : "нет"}</td>
+                        <td className="px-3 py-2 font-mono">{s.riskScore}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
         {researchTab === "benchmark" && (
           <div className="space-y-6">
             {!candles.length ? (
-              <EmptyState title="Нужны свечи" hint="Загрузите OHLCV для расчёта Buy & Hold." />
+              <div className="space-y-4">
+                <EmptyState
+                  title="Нужны свечи"
+                  hint="Загрузите OHLCV во вкладке Strategy Setup — Buy & Hold строится по тем же барам."
+                />
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setResearchTab("strategy")}
+                    className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-100 hover:bg-cyan-500/20"
+                  >
+                    Перейти к загрузке данных
+                  </button>
+                </div>
+              </div>
             ) : (
               <>
                 <div className="grid gap-4 lg:grid-cols-2">

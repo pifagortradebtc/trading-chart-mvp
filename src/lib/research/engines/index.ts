@@ -55,6 +55,7 @@ export function runMonteCarloStub(tradesPnL: number[]): MonteCarloSummary {
     p95Equity: 0,
     probLoss: 0,
     status: "stub",
+    note: "Используйте runMonteCarloTradeOrderShuffle из monteCarloTrades.ts на клиенте.",
   };
 }
 
