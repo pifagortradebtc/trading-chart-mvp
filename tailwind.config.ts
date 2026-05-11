@@ -1,16 +1,29 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  content: [
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-  ],
+  content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        background: "var(--tv-bg)",
+        foreground: "var(--tv-text)",
+        "tv-bg": "#0c0e14",
+        "tv-panel": "#131722",
+        "tv-toolbar": "#1e222d",
+        "tv-border": "#2e3241",
+        "tv-text": "#d1d4dc",
+        "tv-muted": "#787b86",
+        "tv-accent": "#2962ff",
+      },
+      fontFamily: {
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Trebuchet MS"',
+          "Roboto",
+          "Ubuntu",
+          "sans-serif",
+        ],
       },
     },
   },

@@ -1,0 +1,231 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ColorType,
+  CrosshairMode,
+  createChart,
+  LineStyle,
+  PriceScaleMode,
+} from "lightweight-charts";
+import type { IChartApi, ISeriesApi, Time } from "lightweight-charts";
+import { ChartRuntimeContext } from "@/chart/ChartRuntimeContext";
+import { useMarketStore } from "@/store/useMarketStore";
+import { useIndicatorStore } from "@/store/useIndicatorStore";
+import { sma, ema } from "@/lib/indicators/math";
+
+/** Core candlestick + volume + MA overlays. RSI lives in `RsiPane`. Series refs cleaned on unmount. */
+export function ChartHost({ children }: { children?: React.ReactNode }) {
+  /** Dedicated mount node — LWC must not share DOM with React-managed siblings. */
+  const chartMountRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
+
+  const candles = useMarketStore((s) => s.candles);
+  const logScale = useMarketStore((s) => s.logScale);
+  const instances = useIndicatorStore((s) => s.instances);
+
+  const [ctx, setCtx] = useState<{
+    chart: IChartApi | null;
+    candleSeries: ISeriesApi<"Candlestick"> | null;
+  }>({ chart: null, candleSeries: null });
+
+  const candleData = useMemo(
+    () =>
+      candles.map((c) => ({
+        time: c.time as import("lightweight-charts").Time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      })),
+    [candles],
+  );
+
+  const volData = useMemo(
+    () =>
+      candles.map((c) => ({
+        time: c.time as import("lightweight-charts").Time,
+        value: c.volume,
+        color:
+          c.close >= c.open
+            ? "rgba(38, 166, 154, 0.45)"
+            : "rgba(239, 83, 80, 0.45)",
+      })),
+    [candles],
+  );
+
+  /* Create chart once */
+  useEffect(() => {
+    const el = chartMountRef.current;
+    if (!el) return;
+
+    const chart = createChart(el, {
+      width: el.clientWidth,
+      height: el.clientHeight,
+      layout: {
+        background: { type: ColorType.Solid, color: "#0c0e14" },
+        textColor: "#c8cdd9",
+        fontSize: 12,
+      },
+      grid: {
+        vertLines: { color: "rgba(54, 58, 69, 0.55)" },
+        horzLines: { color: "rgba(54, 58, 69, 0.55)" },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          width: 1,
+          color: "#758696",
+          style: LineStyle.LargeDashed,
+          labelBackgroundColor: "#2a2e39",
+        },
+        horzLine: {
+          width: 1,
+          color: "#758696",
+          style: LineStyle.LargeDashed,
+          labelBackgroundColor: "#2a2e39",
+        },
+      },
+      rightPriceScale: {
+        borderColor: "#2e3241",
+        scaleMargins: { top: 0.06, bottom: 0.18 },
+      },
+      timeScale: {
+        borderColor: "#2e3241",
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const candlesSeries = chart.addCandlestickSeries({
+      upColor: "#26a69a",
+      downColor: "#ef5350",
+      borderVisible: false,
+      wickUpColor: "#26a69a",
+      wickDownColor: "#ef5350",
+    });
+
+    const vol = chart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "",
+      color: "#26a69a",
+    });
+
+    chart.priceScale("").applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+    });
+
+    chartRef.current = chart;
+    candleRef.current = candlesSeries;
+    volRef.current = vol;
+    setCtx({ chart, candleSeries: candlesSeries });
+
+    const ro = new ResizeObserver(() => {
+      if (!outerRef.current || !chartRef.current) return;
+      const r = outerRef.current.getBoundingClientRect();
+      chartRef.current.applyOptions({ width: r.width, height: r.height });
+    });
+    const outerEl = outerRef.current;
+    if (outerEl) ro.observe(outerEl);
+
+    return () => {
+      ro.disconnect();
+      const overlaySeries = indicatorSeriesRef.current;
+      overlaySeries.forEach((s) => {
+        try {
+          chart.removeSeries(s);
+        } catch {
+          /* ignore */
+        }
+      });
+      overlaySeries.clear();
+      chart.remove();
+      chartRef.current = null;
+      candleRef.current = null;
+      volRef.current = null;
+      setCtx({ chart: null, candleSeries: null });
+    };
+  }, []);
+
+  /* OHLCV data */
+  useEffect(() => {
+    if (!candleRef.current || !volRef.current) return;
+    candleRef.current.setData(candleData);
+    volRef.current.setData(volData);
+    chartRef.current?.timeScale().fitContent();
+  }, [candleData, volData]);
+
+  /* Log scale */
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.priceScale("right").applyOptions({
+      mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
+  }, [logScale]);
+
+  /* SMA / EMA overlays + volume visibility */
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleRef.current;
+    const vol = volRef.current;
+    if (!chart || !candleSeries || !vol || candles.length === 0) return;
+
+    indicatorSeriesRef.current.forEach((s) => {
+      try {
+        chart.removeSeries(s);
+      } catch {
+        /* ignore */
+      }
+    });
+    indicatorSeriesRef.current.clear();
+
+    const volInst = instances.find((i) => i.pluginId === "volume");
+    vol.applyOptions({ visible: volInst?.visible !== false });
+
+    instances.forEach((inst) => {
+      if (!inst.visible) return;
+      if (inst.pluginId === "volume") return;
+      if (inst.pluginId === "rsi") return;
+
+      const period = Math.max(2, Math.floor(inst.params.period ?? 14));
+      const raw =
+        inst.pluginId === "sma"
+          ? sma(candles, period)
+          : inst.pluginId === "ema"
+            ? ema(candles, period)
+            : [];
+      if (!raw.length) return;
+
+      const line = chart.addLineSeries({
+        color: inst.pluginId === "sma" ? "#ffb74d" : "#b388ff",
+        lineWidth: 1,
+        priceScaleId: "right",
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      line.setData(
+        raw
+          .filter((x): x is { time: number; value: number } => x.value != null)
+          .map((x) => ({ time: x.time as Time, value: x.value })),
+      );
+      indicatorSeriesRef.current.set(inst.id, line);
+    });
+  }, [candles, instances]);
+
+  return (
+    <ChartRuntimeContext.Provider value={ctx}>
+      <div
+        ref={outerRef}
+        className="relative h-full min-h-[320px] w-full flex-1"
+      >
+        <div ref={chartMountRef} className="absolute inset-0" />
+        {children}
+      </div>
+    </ChartRuntimeContext.Provider>
+  );
+}

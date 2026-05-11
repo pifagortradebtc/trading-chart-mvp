@@ -1,0 +1,18 @@
+# Blueprint для Render: Web Service (Next.js)
+# После пуша в GitHub: Dashboard → New → Blueprint → подключить репозиторий.
+#
+# Или создайте Web Service вручную:
+#   Build:  npm ci && npm run build
+#   Start:  npm start
+
+services:
+  - type: web
+    name: trading-chart-mvp
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
