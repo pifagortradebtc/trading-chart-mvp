@@ -127,8 +127,13 @@ export interface TradeRecord {
   exitReason: "tp" | "sl" | "liquidation" | "end_of_test";
   durationMs: number;
   comment: string;
-  /** Снимки для отладки / модалки */
+  /**
+   * Полная лимитная сетка на входе (все уровни из настроек DCA).
+   * Факт исполнения уровня: orderIndex <= maxDcaIndex.
+   */
   dcaGrid: DcaGridResult;
+  /** Время исполнения каждого заполненного уровня сетки (мс), длина = maxDcaIndex. У старых снимков может не быть. */
+  dcaFillTimesMs?: number[];
   equityAfterClose: number;
 }
 

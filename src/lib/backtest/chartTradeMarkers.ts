@@ -1,16 +1,32 @@
 /**
- * Маркеры бэктеста на графике: сигнал индикатора + выход по TP (без «каши» от всех выходов).
+ * Маркеры бэктеста: сигнал, усреднения DCA (факт исполнения лимиток), выход.
  */
 
 import type { SeriesMarker, Time } from "lightweight-charts";
 import type { TradeRecord } from "./types";
 
+function exitMarkerText(t: TradeRecord): string {
+  const pnlStr = `${t.pnlUsdt >= 0 ? "+" : ""}${t.pnlUsdt.toFixed(1)}`;
+  if (t.exitReason === "tp") return `#${t.id} TP ${pnlStr} USDT`;
+  if (t.exitReason === "liquidation") return `#${t.id} ликв. ${pnlStr} USDT`;
+  if (t.exitReason === "sl") return `#${t.id} SL ${pnlStr} USDT`;
+  return `#${t.id} конец ${pnlStr} USDT`;
+}
+
+function exitMarkerColor(reason: TradeRecord["exitReason"]): string {
+  if (reason === "tp") return "#34d399";
+  return "#f87171";
+}
+
 /**
- * Сигнал индикатора — стрелка вверх/вниз на баре entrySignalTime (в Pine — момент сигнала).
- * Выход — только если сделка закрыта по take profit (зелёный круг с PnL).
+ * Сигнал индикатора — стрелка на баре entrySignalTime.
+ * Оранжевые точки — факт исполнения следующих лимиток усреднения (DCA 2…), если есть `dcaFillTimesMs`.
+ * Выход — TP (зелёный) или иная причина (красный), с PnL.
  */
 export function buildBacktestChartMarkers(trades: TradeRecord[]): SeriesMarker<Time>[] {
   const out: SeriesMarker<Time>[] = [];
+  /** На одной сделке показываем любой выход; на всём прогоне — только TP, чтобы не засорять шкалу. */
+  const showNonTpExit = trades.length === 1;
 
   for (const t of trades) {
     const tSig = Math.floor(t.entrySignalTime / 1000) as Time;
@@ -22,15 +38,29 @@ export function buildBacktestChartMarkers(trades: TradeRecord[]): SeriesMarker<T
       text: `#${t.id}`,
     });
 
-    if (t.exitReason === "tp") {
+    const fills = t.dcaFillTimesMs;
+    if (fills && fills.length > 1) {
+      for (let i = 1; i < fills.length; i++) {
+        const tm = Math.floor(fills[i]! / 1000) as Time;
+        const level = i + 1;
+        out.push({
+          time: tm,
+          position: t.side === "long" ? "belowBar" : "aboveBar",
+          color: "#f59e0b",
+          shape: "circle",
+          text: `DCA ${level}`,
+        });
+      }
+    }
+
+    if (t.exitReason === "tp" || showNonTpExit) {
       const tEx = Math.floor(t.exitTime / 1000) as Time;
-      const pnlStr = `${t.pnlUsdt >= 0 ? "+" : ""}${t.pnlUsdt.toFixed(1)}`;
       out.push({
         time: tEx,
         position: t.side === "long" ? "aboveBar" : "belowBar",
-        color: "#34d399",
+        color: exitMarkerColor(t.exitReason),
         shape: "circle",
-        text: `#${t.id} TP ${pnlStr} USDT`,
+        text: exitMarkerText(t),
       });
     }
   }

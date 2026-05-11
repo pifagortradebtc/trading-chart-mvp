@@ -91,12 +91,15 @@ export function TradeDetailsModal({
             <Metric label="PnL USDT" value={trade.pnlUsdt.toFixed(4)} accent />
           </div>
 
-          <h4 className="font-medium text-[#d1d4dc]">DCA-сетка (исполненные уровни)</h4>
+          <h4 className="font-medium text-[#d1d4dc]">
+            Лимитная сетка на входе (строки без исполнения приглушены)
+          </h4>
           <div className="overflow-x-auto rounded-lg border border-[#2e3241]">
             <table className="min-w-full text-xs">
               <thead className="bg-[#0c0e14] text-[#787b86]">
                 <tr>
                   <th className="px-2 py-2">#</th>
+                  <th className="px-2 py-2">Лимит исполнен</th>
                   <th className="px-2 py-2">Цена</th>
                   <th className="px-2 py-2">USDT</th>
                   <th className="px-2 py-2">Монета</th>
@@ -109,9 +112,15 @@ export function TradeDetailsModal({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2e3241] font-mono">
-                {trade.dcaGrid.rows.map((r) => (
-                  <tr key={r.orderIndex}>
+                {trade.dcaGrid.rows.map((r) => {
+                  const filled = r.orderIndex <= trade.maxDcaIndex;
+                  return (
+                  <tr
+                    key={r.orderIndex}
+                    className={filled ? undefined : "opacity-40"}
+                  >
                     <td className="px-2 py-1">{r.orderIndex}</td>
+                    <td className="px-2 py-1 text-[#9ca3af]">{filled ? "да" : "нет"}</td>
                     <td className="px-2 py-1">{r.price.toFixed(4)}</td>
                     <td className="px-2 py-1">{r.orderUsdt.toFixed(2)}</td>
                     <td className="px-2 py-1">{r.qtyCoin.toFixed(6)}</td>
@@ -122,7 +131,8 @@ export function TradeDetailsModal({
                     <td className="px-2 py-1 text-amber-400/90">{r.drawdownFromFirstPct.toFixed(2)}</td>
                     <td className="px-2 py-1">{r.marginUsedUsdt.toFixed(2)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

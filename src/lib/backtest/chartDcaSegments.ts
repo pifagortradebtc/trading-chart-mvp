@@ -16,19 +16,21 @@ export interface DcaSegmentSpec {
 const ENTRY_COLOR = "#22c55e";
 const DCA_COLORS = ["#f59e0b", "#fb923c", "#fbbf24", "#d97706", "#92400e", "#78350f"];
 
-/** Макс. число сделок с полной отрисовкой сетки (последние по времени выхода), чтобы не завис график. */
-export const MAX_TP_TRADES_FOR_DCA_SEGMENTS = 48;
+/** Макс. число сделок с отрисовкой сетки (последние по порядку в массиве), чтобы не завис график. */
+export const MAX_TRADES_FOR_DCA_SEGMENTS = 48;
+
+/** @deprecated используйте MAX_TRADES_FOR_DCA_SEGMENTS */
+export const MAX_TP_TRADES_FOR_DCA_SEGMENTS = MAX_TRADES_FOR_DCA_SEGMENTS;
 
 /**
- * Сегменты горизонталей: от бар сигнала до выхода по TP. Только сделки с exitReason === 'tp'.
- * Уровни — цены ордеров из снимка сетки (Вход 1, DCA 2…).
+ * Сегменты горизонталей: от бара сигнала до выхода по любой причине.
+ * Уровни — полная лимитная сетка из настроек DCA (`dcaGrid.rows`).
  */
 export function buildDcaSegmentSpecs(trades: TradeRecord[]): DcaSegmentSpec[] {
-  const tpTrades = trades.filter((t) => t.exitReason === "tp");
   const capped =
-    tpTrades.length <= MAX_TP_TRADES_FOR_DCA_SEGMENTS
-      ? tpTrades
-      : tpTrades.slice(-MAX_TP_TRADES_FOR_DCA_SEGMENTS);
+    trades.length <= MAX_TRADES_FOR_DCA_SEGMENTS
+      ? trades
+      : trades.slice(-MAX_TRADES_FOR_DCA_SEGMENTS);
 
   const specs: DcaSegmentSpec[] = [];
 

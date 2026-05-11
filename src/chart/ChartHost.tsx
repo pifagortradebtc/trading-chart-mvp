@@ -15,7 +15,10 @@ import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 import { useIndicatorStore } from "@/store/useIndicatorStore";
 import { sma, ema } from "@/lib/indicators/math";
 import { buildBacktestChartMarkers } from "@/lib/backtest/chartTradeMarkers";
-import { buildDcaSegmentSpecs } from "@/lib/backtest/chartDcaSegments";
+import {
+  buildDcaSegmentSpecs,
+  MAX_TRADES_FOR_DCA_SEGMENTS,
+} from "@/lib/backtest/chartDcaSegments";
 
 /** Core candlestick + volume + MA overlays. RSI lives in `RsiPane`. Series refs cleaned on unmount. */
 export function ChartHost({ children }: { children?: React.ReactNode }) {
@@ -34,16 +37,22 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const cleanChartUi = useBacktestOverlayStore((s) => s.cleanChartUi);
   const sessionTrades = useBacktestOverlayStore((s) => s.sessionTrades);
 
+  /** На длинных прогонах отрисовываем последние N сделок (как и отрезки DCA). */
+  const sessionTradesChart = useMemo(() => {
+    if (sessionTrades.length <= MAX_TRADES_FOR_DCA_SEGMENTS) return sessionTrades;
+    return sessionTrades.slice(-MAX_TRADES_FOR_DCA_SEGMENTS);
+  }, [sessionTrades]);
+
   const dcaPriceLinesRef = useRef<IPriceLine[]>([]);
   /** Отрезки уровней DCA (сигнал → выход по TP), без бесконечных горизонталей. */
   const dcaGridSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
 
   const tradeMarkers = useMemo(
     () =>
-      cleanChartUi && sessionTrades.length > 0
-        ? buildBacktestChartMarkers(sessionTrades)
+      cleanChartUi && sessionTradesChart.length > 0
+        ? buildBacktestChartMarkers(sessionTradesChart)
         : [],
-    [cleanChartUi, sessionTrades],
+    [cleanChartUi, sessionTradesChart],
   );
 
   const [ctx, setCtx] = useState<{
@@ -294,9 +303,9 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     });
     dcaGridSeriesRef.current = [];
 
-    if (!cleanChartUi || sessionTrades.length === 0) return;
+    if (!cleanChartUi || sessionTradesChart.length === 0) return;
 
-    const specs = buildDcaSegmentSpecs(sessionTrades);
+    const specs = buildDcaSegmentSpecs(sessionTradesChart);
     for (const spec of specs) {
       const line = chart.addLineSeries({
         color: spec.color,
@@ -312,7 +321,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       ]);
       dcaGridSeriesRef.current.push(line);
     }
-  }, [sessionTrades, candleData, cleanChartUi]);
+  }, [sessionTradesChart, candleData, cleanChartUi]);
 
   /** Горизонтальные линии уровней из стора (обычно пусто в режиме бэктеста). */
   useEffect(() => {

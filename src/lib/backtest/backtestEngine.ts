@@ -40,6 +40,8 @@ interface WorkingTrade {
   comment: string;
   maxDrawdownPct: number;
   maxDcaReached: number;
+  /** Время исполнения каждого уровня (первая точка — первый вход). */
+  dcaFillTimesMs: number[];
   signalSnapshot: SignalBarState | null;
 }
 
@@ -123,6 +125,7 @@ function processLongBar(
         tr.feesUsdt += (fillUsd * dca.feePctPerSide) / 100;
         tr.filledLevels++;
         tr.maxDcaReached = Math.max(tr.maxDcaReached, tr.filledLevels);
+        tr.dcaFillTimesMs.push(c.time * 1000);
         changed = true;
       } else break;
     }
@@ -198,6 +201,7 @@ function processShortBar(
         tr.feesUsdt += (fillUsd * dca.feePctPerSide) / 100;
         tr.filledLevels++;
         tr.maxDcaReached = Math.max(tr.maxDcaReached, tr.filledLevels);
+        tr.dcaFillTimesMs.push(c.time * 1000);
         changed = true;
       } else break;
     }
@@ -265,9 +269,23 @@ function createOpenTrade(
     entryBar: number;
     simulationFromBar: number;
     firstPrice: number;
+    /** Время исполнения первого ордера сетки (мс). */
+    firstFillTimeMs: number;
   },
 ): WorkingTrade | null {
-  const { grid, settings, dir, meta, id, symbol, signalBar, entryBar, simulationFromBar, firstPrice } =
+  const {
+    grid,
+    settings,
+    dir,
+    meta,
+    id,
+    symbol,
+    signalBar,
+    entryBar,
+    simulationFromBar,
+    firstPrice,
+    firstFillTimeMs,
+  } =
     params;
   if (grid.rows.length === 0) return null;
   const firstRow = grid.rows[0]!;
@@ -299,6 +317,7 @@ function createOpenTrade(
     comment,
     maxDrawdownPct: 0,
     maxDcaReached: 1,
+    dcaFillTimesMs: [firstFillTimeMs],
     signalSnapshot: meta,
   };
 }
@@ -369,8 +388,9 @@ export function runBacktest(
       dcaGrid: {
         side: tr.side,
         firstEntryPrice: tr.firstPrice,
-        rows: tr.grid.rows.slice(0, tr.maxDcaReached),
+        rows: tr.grid.rows,
       },
+      dcaFillTimesMs: tr.dcaFillTimesMs,
       equityAfterClose: equity,
     });
     open = null;
@@ -445,6 +465,7 @@ export function runBacktest(
               entryBar: i,
               simulationFromBar: i,
               firstPrice: ePx,
+              firstFillTimeMs: c.time * 1000,
             });
           }
         }
@@ -490,6 +511,7 @@ export function runBacktest(
                 entryBar: i,
                 simulationFromBar: simFrom,
                 firstPrice: ePx,
+                firstFillTimeMs: c.time * 1000,
               });
             }
           }
