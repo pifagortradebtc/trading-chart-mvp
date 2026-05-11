@@ -99,6 +99,46 @@ function presetSettings(name: Exclude<PresetName, "custom">): Partial<BacktestSe
   };
 }
 
+/** Пояснения для UI: что именно перезаписывается при выборе пресета. */
+const PRESET_UI: Record<
+  PresetName,
+  {
+    titleRu: string;
+    titleEn: string;
+    oneLine: string;
+    tooltip: string;
+  }
+> = {
+  conservative: {
+    titleRu: "Осторожный",
+    titleEn: "Conservative",
+    oneLine: "Ниже риск: плечо 4×, уже шаг сетки; входы только в long.",
+    tooltip:
+      "Подставляет в DCA: плечо 4×, ордеров в сетке 7, перекрытие цены 25%, множитель шага цены 1.6 и объёма 1.2, TP 0.6%, режим только LONG (short выкл.). Параметры индикатора V2 не меняются.",
+  },
+  balanced: {
+    titleRu: "Сбалансированный",
+    titleEn: "Balanced",
+    oneLine: "Средняя агрессия сетки; направление long/short — как в блоке DCA ниже.",
+    tooltip:
+      "Подставляет в DCA: плечо 6×, ордеров 8, overlap 30%, факторы цены 1.45 и объёма 1.35, TP 0.55%. Режим Auto/Long/Short и галочки long/short не трогает — остаются как в форме.",
+  },
+  aggressive: {
+    titleRu: "Агрессивный",
+    titleEn: "Aggressive",
+    oneLine: "Выше плечо и плотнее сетка — больше нагрузка на маржу и потенциальная доходность.",
+    tooltip:
+      "Подставляет в DCA: плечо 10×, ордеров 10, overlap 40%, факторы 1.35 / 1.5, TP 0.45%. Направление остаётся из текущих настроек DCA.",
+  },
+  custom: {
+    titleRu: "Свой",
+    titleEn: "Custom",
+    oneLine: "Все цифры только из формы ниже; пресет не подставляет значения автоматически.",
+    tooltip:
+      "Режим «Свой»: поля DCA и индикатора редактируются вручную. Чтобы снова применить готовый набор — нажмите Осторожный / Сбалансированный / Агрессивный.",
+  },
+};
+
 const inp =
   "rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-sm text-[var(--rex-text)] outline-none ring-cyan-500/0 transition-shadow focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/20";
 
@@ -586,37 +626,71 @@ export function BacktestPage() {
                   </div>
                 )}
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="text-xs uppercase text-[var(--rex-muted)]">Пресеты:</span>
-                  {(["conservative", "balanced", "aggressive"] as const).map((p) => (
+                <div className="mt-5 space-y-3">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--rex-muted)]">
+                      Пресеты DCA
+                    </span>
+                    <p className="mt-1.5 max-w-3xl text-[11px] leading-relaxed text-[var(--rex-muted)]">
+                      Это <strong className="font-medium text-[var(--rex-text)]">готовые наборы параметров сетки</strong>{" "}
+                      (плечо, число уровней DCA, перекрытие диапазона цены, множители шага цены и объёма, тейк-профит.
+                      Частично — режим long/short). Они подставляются в блок{" "}
+                      <strong className="font-medium text-[var(--rex-text)]">«DCA-бот»</strong> ниже. Настройки{" "}
+                      <strong className="font-medium text-[var(--rex-text)]">индикатора V2</strong> пресеты{" "}
+                      <strong className="font-medium text-[var(--rex-text)]">не меняют</strong>.
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {(["conservative", "balanced", "aggressive"] as const).map((p) => {
+                      const meta = PRESET_UI[p];
+                      const active = preset === p;
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          title={meta.tooltip}
+                          onClick={() => applyPreset(p)}
+                          className={`flex flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                            active
+                              ? "border-cyan-500/50 bg-cyan-500/10 shadow-[0_0_20px_-8px_rgba(34,211,238,0.45)]"
+                              : "border-white/[0.08] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]"
+                          }`}
+                        >
+                          <span className="text-[13px] font-semibold text-[var(--rex-text)]">{meta.titleRu}</span>
+                          <span className="text-[10px] uppercase tracking-wide text-[var(--rex-muted)]">
+                            {meta.titleEn}
+                          </span>
+                          <span className="text-[11px] leading-snug text-[var(--rex-muted)]">{meta.oneLine}</span>
+                        </button>
+                      );
+                    })}
                     <button
-                      key={p}
                       type="button"
-                      onClick={() => applyPreset(p)}
-                      className={`rounded-lg px-3 py-1 text-xs font-medium ${
-                        preset === p
-                          ? "bg-cyan-500/25 text-cyan-100 ring-1 ring-cyan-500/40"
-                          : "bg-white/[0.05] text-[var(--rex-muted)] hover:bg-white/[0.08]"
+                      title={PRESET_UI.custom.tooltip}
+                      onClick={() => setPreset("custom")}
+                      className={`flex flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                        preset === "custom"
+                          ? "border-violet-500/45 bg-violet-500/10 shadow-[0_0_20px_-8px_rgba(167,139,250,0.35)]"
+                          : "border-white/[0.08] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]"
                       }`}
                     >
-                      {p === "conservative"
-                        ? "Conservative"
-                        : p === "balanced"
-                          ? "Balanced"
-                          : "Aggressive"}
+                      <span className="text-[13px] font-semibold text-[var(--rex-text)]">
+                        {PRESET_UI.custom.titleRu}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wide text-[var(--rex-muted)]">
+                        {PRESET_UI.custom.titleEn}
+                      </span>
+                      <span className="text-[11px] leading-snug text-[var(--rex-muted)]">
+                        {PRESET_UI.custom.oneLine}
+                      </span>
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setPreset("custom")}
-                    className={`rounded-lg px-3 py-1 text-xs ${
-                      preset === "custom"
-                        ? "bg-cyan-500/25 text-white ring-1 ring-cyan-500/40"
-                        : "bg-white/[0.05] text-[var(--rex-muted)]"
-                    }`}
-                  >
-                    Custom
-                  </button>
+                  </div>
+                  <p className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-[var(--rex-muted)]">
+                    <span className="font-medium text-cyan-200/90">Активно:</span>{" "}
+                    <span className="text-[var(--rex-text)]">{PRESET_UI[preset].titleRu}</span> ({PRESET_UI[preset].titleEn}) —{" "}
+                    {PRESET_UI[preset].oneLine}
+                    <span className="text-[var(--rex-muted)]"> · Наведите на карточку для полной подсказки.</span>
+                  </p>
                 </div>
 
                 <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-[var(--rex-muted)]">
