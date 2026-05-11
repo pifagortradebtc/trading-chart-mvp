@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** По умолчанию открываем страницу бэктеста DCA. Демо-график: `/chart`. */
+/** Стартовая страница — бэктест DCA. */
 export default function Home() {
   redirect("/backtest");
 }

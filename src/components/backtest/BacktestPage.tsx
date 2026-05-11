@@ -581,12 +581,6 @@ export function BacktestPage() {
       >
         Сбросить настройки
       </button>
-      <a
-        href="/chart"
-        className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-[var(--rex-muted)] hover:bg-white/[0.04]"
-      >
-        Демо-график
-      </a>
     </>
   );
 
