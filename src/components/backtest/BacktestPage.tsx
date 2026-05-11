@@ -10,13 +10,33 @@ import type { BacktestSettings } from "@/lib/backtest/types";
 import { DEFAULT_BACKTEST } from "@/lib/backtest/backtestDefaults";
 import { BacktestSettingsForm } from "./BacktestSettings";
 import { BacktestResults } from "./BacktestResults";
-import { TradeTable } from "./TradeTable";
 import { TradeDetailsModal } from "./TradeDetailsModal";
 import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
 import type { TradeRecord } from "@/lib/backtest/types";
 import type { BacktestSnapshotFile } from "@/lib/backtest/snapshotTypes";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
+import { computeAdvancedResearchMetrics } from "@/lib/research/advancedMetrics";
+import { analyzeDataQuality } from "@/lib/research/dataQuality";
+import { buildInterpretation } from "@/lib/research/interpretationRules";
+import {
+  computeBenchmarksStub,
+  runMonteCarloStub,
+  runOptimizationStub,
+  runStressSuiteStub,
+  runWalkForwardStub,
+} from "@/lib/research/engines";
+import { ResearchShell } from "@/components/research/ResearchShell";
+import type { ResearchTabId } from "@/components/research/types";
+import { EmptyState, GlassCard, MetricTile, NeonBadge, SkeletonBlock } from "@/components/research/ui";
+import { UnderwaterChart } from "@/components/research/charts/UnderwaterChart";
+import { ExtendedKpiGrid } from "@/components/research/panels/ExtendedKpiGrid";
+import { InterpretationPanel } from "@/components/research/panels/InterpretationPanel";
+import { DataQualityPanel } from "@/components/research/panels/DataQualityPanel";
+import { LabStubPanel } from "@/components/research/panels/LabStubPanel";
+import { ReportingPanel } from "@/components/research/panels/ReportingPanel";
+import { TradeAnalyticsSection } from "@/components/research/panels/TradeAnalyticsSection";
+import { DcaGridSection } from "@/components/research/panels/DcaGridSection";
 
 const PAIRS = [
   "ETHUSDT",
@@ -75,8 +95,12 @@ function presetSettings(name: Exclude<PresetName, "custom">): Partial<BacktestSe
   };
 }
 
+const inp =
+  "rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-sm text-[var(--rex-text)] outline-none ring-cyan-500/0 transition-shadow focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/20";
+
 export function BacktestPage() {
   const router = useRouter();
+  const [researchTab, setResearchTab] = useState<ResearchTabId>("strategy");
   const [settings, setSettings] = useState<BacktestSettings>(DEFAULT_BACKTEST);
   const [preset, setPreset] = useState<PresetName>("conservative");
   const [symbol, setSymbol] = useState("ETHUSDT");
@@ -95,13 +119,65 @@ export function BacktestPage() {
   const [result, setResult] = useState<ReturnType<typeof runBacktest> | null>(null);
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [selected, setSelected] = useState<TradeRecord | null>(null);
-  /** Сохранять результат бэктеста в файлы на persistent disk (через API). */
   const [persistSnapshots, setPersistSnapshots] = useState(true);
+  const [runProgress, setRunProgress] = useState<number | null>(null);
 
   const effectiveSymbol = useMemo(() => {
     const c = customPair.trim().toUpperCase().replace("/", "");
     return c.length >= 6 ? c : symbol;
   }, [customPair, symbol]);
+
+  const advancedMetrics = useMemo(() => {
+    if (!metrics || !result || !candles.length) return null;
+    return computeAdvancedResearchMetrics(
+      metrics,
+      result.trades,
+      result.equity,
+      candles,
+      settings.dca.startDepositUsdt,
+    );
+  }, [metrics, result, candles, settings.dca.startDepositUsdt]);
+
+  const interpretation = useMemo(() => {
+    if (!metrics) return [];
+    return buildInterpretation(metrics, advancedMetrics);
+  }, [metrics, advancedMetrics]);
+
+  const dataQualityReport = useMemo(() => analyzeDataQuality(candles), [candles]);
+
+  const optimizationStub = useMemo(
+    () => runOptimizationStub(candles, settings),
+    [candles, settings],
+  );
+
+  const walkForwardStub = useMemo(() => runWalkForwardStub(candles), [candles]);
+
+  const monteCarloStub = useMemo(
+    () => runMonteCarloStub(result?.trades.map((t) => t.pnlUsdt) ?? []),
+    [result],
+  );
+
+  const stressStub = useMemo(() => runStressSuiteStub(), []);
+
+  const benchmarkStub = useMemo(
+    () => computeBenchmarksStub(candles, settings.dca.startDepositUsdt),
+    [candles, settings.dca.startDepositUsdt],
+  );
+
+  const heroStats = useMemo(() => {
+    const eq =
+      metrics != null ? settings.dca.startDepositUsdt + metrics.totalPnlUsdt : undefined;
+    return {
+      pair: effectiveSymbol.replace(/USDT$/, "/USDT"),
+      interval,
+      bars: candles.length,
+      deposit: settings.dca.startDepositUsdt,
+      equity: eq,
+      retPct: metrics?.totalReturnPct,
+      maxDdPct: metrics?.maxEquityDrawdownPct,
+      trades: metrics?.trades,
+    };
+  }, [effectiveSymbol, interval, candles.length, settings.dca.startDepositUsdt, metrics]);
 
   const openTradeOnChart = useCallback(
     (t: TradeRecord) => {
@@ -124,6 +200,16 @@ export function BacktestPage() {
     },
     [],
   );
+
+  const mergeImportedSettings = useCallback((s: BacktestSettings) => {
+    setSettings({
+      ...DEFAULT_BACKTEST,
+      ...s,
+      dca: { ...DEFAULT_BACKTEST.dca, ...s.dca },
+      indicator: { ...DEFAULT_BACKTEST.indicator, ...s.indicator },
+    });
+    setPreset("custom");
+  }, []);
 
   const loadData = async () => {
     setBusy(true);
@@ -189,34 +275,44 @@ export function BacktestPage() {
       setWarning("Сначала загрузите исторические данные.");
       return;
     }
-    const startMs = candles[0]!.time * 1000;
-    const res = runBacktest(candles, effectiveSymbol, settings, startMs);
-    setResult(res);
-    const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
-    setMetrics(m);
-
-    if (!persistSnapshots) return;
+    setRunProgress(12);
+    await new Promise((r) => setTimeout(r, 40));
     try {
-      const save = await fetch("/api/backtest/snapshot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          symbol: effectiveSymbol,
-          interval,
-          yearsBack,
-          settings,
-          trades: res.trades,
-          equity: res.equity,
-          metrics: m,
-          candleCount: candles.length,
-        }),
-      });
-      if (!save.ok) {
-        const err = (await save.json().catch(() => ({}))) as { error?: string };
-        console.warn("Снимок не сохранён:", err.error ?? save.status);
+      const startMs = candles[0]!.time * 1000;
+      setRunProgress(38);
+      const res = runBacktest(candles, effectiveSymbol, settings, startMs);
+      setRunProgress(72);
+      const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
+      setResult(res);
+      setMetrics(m);
+      setRunProgress(100);
+      await new Promise((r) => setTimeout(r, 280));
+
+      if (!persistSnapshots) return;
+      try {
+        const save = await fetch("/api/backtest/snapshot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol: effectiveSymbol,
+            interval,
+            yearsBack,
+            settings,
+            trades: res.trades,
+            equity: res.equity,
+            metrics: m,
+            candleCount: candles.length,
+          }),
+        });
+        if (!save.ok) {
+          const err = (await save.json().catch(() => ({}))) as { error?: string };
+          console.warn("Снимок не сохранён:", err.error ?? save.status);
+        }
+      } catch (e) {
+        console.warn("Снимок не сохранён (сеть или диск недоступны)", e);
       }
-    } catch (e) {
-      console.warn("Снимок не сохранён (сеть или диск недоступны)", e);
+    } finally {
+      setTimeout(() => setRunProgress(null), 320);
     }
   };
 
@@ -291,224 +387,510 @@ export function BacktestPage() {
     [result],
   );
 
+  const stickyActions = (
+    <>
+      <button
+        type="button"
+        disabled={busy || !candles.length}
+        onClick={() => void run()}
+        className="rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 disabled:opacity-40"
+      >
+        Запустить бэктест
+      </button>
+      <button
+        type="button"
+        onClick={() => void restoreFromServer()}
+        className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100 hover:bg-sky-500/20"
+      >
+        Восстановить снимок
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setSettings(DEFAULT_BACKTEST);
+          setPreset("conservative");
+        }}
+        className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm hover:bg-white/[0.08]"
+      >
+        Сбросить настройки
+      </button>
+      <a
+        href="/chart"
+        className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-[var(--rex-muted)] hover:bg-white/[0.04]"
+      >
+        Демо-график
+      </a>
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-[#0c0e14] pb-16 text-[#d1d4dc]">
-      <header className="border-b border-[#2e3241] bg-[#131722]/90 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-4 px-4 py-5">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-[#d1d4dc]">
-              DCA Backtest · V2_ЧайкКельт
-            </h1>
-            <p className="text-sm text-[#787b86]">
-              Первый вход только по сигналу индикатора, затем факторная DCA-сетка.{" "}
-              <a href="/chart" className="text-sky-400/90 underline-offset-2 hover:underline">
-                Демо-график (mock)
-              </a>
-              {" · "}
-              После бэктеста нажмите «На графике» в таблице сделок — уровни DCA появятся на терминале.
-            </p>
+    <>
+      <ResearchShell
+        tab={researchTab}
+        onTab={setResearchTab}
+        heroStats={heroStats}
+        runProgress={runProgress}
+        stickyActions={stickyActions}
+      >
+        {warning && (
+          <div className="mb-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            {warning}
           </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={busy || !candles.length}
-              onClick={() => void run()}
-              className="rounded-xl bg-[#2962ff] px-6 py-2.5 font-semibold text-white shadow-lg hover:bg-[#1e55f5] disabled:opacity-40"
-            >
-              Запустить бэктест
-            </button>
-            <button
-              type="button"
-              onClick={() => void restoreFromServer()}
-              className="rounded-xl border border-sky-600/50 bg-sky-950/40 px-4 py-2.5 text-sm text-sky-200 hover:bg-sky-950/70"
-            >
-              Восстановить снимок с сервера
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSettings(DEFAULT_BACKTEST);
-                setPreset("conservative");
-              }}
-              className="rounded-xl border border-[#2e3241] px-4 py-2.5 text-sm hover:bg-[#1e222d]"
-            >
-              Сбросить настройки
-            </button>
-          </div>
-        </div>
-      </header>
+        )}
 
-      <main className="mx-auto flex max-w-[1600px] flex-col gap-8 px-4 py-8">
-        <section className="rounded-2xl border border-[#2e3241] bg-[#131722] p-6 shadow-xl">
-          <div className="flex flex-wrap items-end gap-4">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-[#787b86]">Пара</span>
-              <select
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value)}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 font-mono"
-              >
-                {PAIRS.map((p) => (
-                  <option key={p} value={p}>
-                    {p.replace("USDT", "/USDT")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-[#787b86]">Другая пара (USDT)</span>
-              <input
-                placeholder="Напр. LINKUSDT"
-                value={customPair}
-                onChange={(e) => setCustomPair(e.target.value)}
-                className="w-44 rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 font-mono text-sm"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-[#787b86]">Таймфрейм</span>
-              <select
-                value={interval}
-                onChange={(e) =>
-                  setInterval(e.target.value as (typeof INTERVALS)[number])
-                }
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
-              >
-                {INTERVALS.map((iv) => (
-                  <option key={iv} value={iv}>
-                    {iv}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-[#787b86]">Глубина (лет)</span>
-              <input
-                type="number"
-                min={1}
-                max={12}
-                value={yearsBack}
-                onChange={(e) => setYearsBack(Number(e.target.value))}
-                className="w-24 rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 font-mono"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-[#787b86]">Источник</span>
-              <select
-                value={source}
-                onChange={(e) => setSource(e.target.value as "binance" | "csv")}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
-              >
-                <option value="binance">Binance Spot</option>
-                <option value="csv">CSV файл</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              disabled={busy || source !== "binance"}
-              onClick={loadData}
-              className="rounded-xl bg-emerald-600 px-5 py-2 font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
-            >
-              Загрузить OHLCV
-            </button>
-          </div>
+        {researchTab === "strategy" && (
+          <div className="space-y-6">
+            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
+              <GlassCard glow="cyan" className="p-6">
+                <div className="flex flex-wrap items-end gap-4">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">Пара</span>
+                    <select
+                      value={symbol}
+                      onChange={(e) => setSymbol(e.target.value)}
+                      className={inp}
+                    >
+                      {PAIRS.map((p) => (
+                        <option key={p} value={p}>
+                          {p.replace("USDT", "/USDT")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">Другая пара</span>
+                    <input
+                      placeholder="LINKUSDT"
+                      value={customPair}
+                      onChange={(e) => setCustomPair(e.target.value)}
+                      className={`${inp} w-44`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">Таймфрейм</span>
+                    <select
+                      value={interval}
+                      onChange={(e) =>
+                        setInterval(e.target.value as (typeof INTERVALS)[number])
+                      }
+                      className={inp}
+                    >
+                      {INTERVALS.map((iv) => (
+                        <option key={iv} value={iv}>
+                          {iv}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">Глубина (лет)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={yearsBack}
+                      onChange={(e) => setYearsBack(Number(e.target.value))}
+                      className={`${inp} w-24`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">Источник</span>
+                    <select
+                      value={source}
+                      onChange={(e) => setSource(e.target.value as "binance" | "csv")}
+                      className={inp}
+                    >
+                      <option value="binance">Binance Spot</option>
+                      <option value="csv">CSV файл</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={busy || source !== "binance"}
+                    onClick={() => void loadData()}
+                    className="rounded-xl bg-emerald-600/90 px-5 py-2 font-medium text-white shadow-lg shadow-emerald-900/30 hover:bg-emerald-500 disabled:opacity-40"
+                  >
+                    Загрузить OHLCV
+                  </button>
+                </div>
 
-          {source === "csv" && (
-            <div className="mt-4 flex items-center gap-3">
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(e) => onCsvFile(e.target.files?.[0] ?? null)}
-                className="text-sm text-[#787b86]"
-              />
-              {csvName && <span className="text-xs text-sky-400">{csvName}</span>}
+                {source === "csv" && (
+                  <div className="mt-4 flex items-center gap-3">
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => void onCsvFile(e.target.files?.[0] ?? null)}
+                      className="text-sm text-[var(--rex-muted)]"
+                    />
+                    {csvName && <span className="text-xs text-cyan-400">{csvName}</span>}
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="text-xs uppercase text-[var(--rex-muted)]">Пресеты:</span>
+                  {(["conservative", "balanced", "aggressive"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => applyPreset(p)}
+                      className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                        preset === p
+                          ? "bg-cyan-500/25 text-cyan-100 ring-1 ring-cyan-500/40"
+                          : "bg-white/[0.05] text-[var(--rex-muted)] hover:bg-white/[0.08]"
+                      }`}
+                    >
+                      {p === "conservative"
+                        ? "Conservative"
+                        : p === "balanced"
+                          ? "Balanced"
+                          : "Aggressive"}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setPreset("custom")}
+                    className={`rounded-lg px-3 py-1 text-xs ${
+                      preset === "custom"
+                        ? "bg-cyan-500/25 text-white ring-1 ring-cyan-500/40"
+                        : "bg-white/[0.05] text-[var(--rex-muted)]"
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
+
+                <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-[var(--rex-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={persistSnapshots}
+                    onChange={(e) => setPersistSnapshots(e.target.checked)}
+                    className="rounded border-white/20 bg-transparent"
+                  />
+                  Сохранять снимок на сервер (persistent disk)
+                </label>
+
+                {busy && !candles.length && (
+                  <div className="mt-4 space-y-2">
+                    <SkeletonBlock className="h-3 w-full" />
+                    <SkeletonBlock className="h-3 w-2/3" />
+                  </div>
+                )}
+                {loadMsg && <p className="mt-3 text-xs text-cyan-400">{loadMsg}</p>}
+                {dataNote && <p className="mt-2 text-sm text-[var(--rex-muted)]">{dataNote}</p>}
+              </GlassCard>
+
+              <div className="mt-6 lg:sticky lg:top-24 lg:mt-0">
+                <DataQualityPanel
+                  report={dataQualityReport}
+                  sourceLabel={source === "binance" ? "Binance Spot" : "CSV"}
+                  interval={interval}
+                />
+              </div>
             </div>
-          )}
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="text-xs uppercase text-[#787b86]">Пресеты:</span>
-            {(["conservative", "balanced", "aggressive"] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => applyPreset(p)}
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${
-                  preset === p
-                    ? "bg-[#2962ff] text-white"
-                    : "bg-[#1e222d] text-[#9ca3af] hover:bg-[#2e3241]"
-                }`}
-              >
-                {p === "conservative"
-                  ? "Conservative"
-                  : p === "balanced"
-                    ? "Balanced"
-                    : "Aggressive"}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setPreset("custom")}
-              className={`rounded-lg px-3 py-1 text-xs ${
-                preset === "custom" ? "bg-[#2962ff] text-white" : "bg-[#1e222d] text-[#9ca3af]"
-              }`}
-            >
-              Custom
-            </button>
+            <div className="lg:sticky lg:top-[5.5rem] lg:z-10 lg:-mx-2 lg:rounded-2xl lg:border lg:border-white/[0.06] lg:bg-[var(--rex-bg)]/95 lg:p-4 lg:backdrop-blur-md">
+              <BacktestSettingsForm settings={settings} onChange={setSettings} />
+            </div>
           </div>
+        )}
 
-          <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-[#9ca3af]">
-            <input
-              type="checkbox"
-              checked={persistSnapshots}
-              onChange={(e) => setPersistSnapshots(e.target.checked)}
-              className="rounded border-[#2e3241]"
-            />
-            Сохранять результаты бэктеста на диск сервера (persistent disk на Render)
-          </label>
+        {researchTab === "results" && (
+          <div className="space-y-6">
+            <InterpretationPanel items={interpretation} />
+            <BacktestResults m={metrics} />
+            {metrics && advancedMetrics && (
+              <ExtendedKpiGrid m={metrics} adv={advancedMetrics} />
+            )}
+            {!result && (
+              <EmptyState
+                title="Нет результатов"
+                hint="Загрузите OHLCV во вкладке Strategy Setup и запустите бэктест."
+              />
+            )}
+            {result && (
+              <>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--rex-muted)]">
+                  Equity & цена
+                </h3>
+                <GlassCard className="p-4">
+                  <EquityCurve data={result.equity} liquidations={liqMarkers} height={300} />
+                </GlassCard>
+                <GlassCard className="p-4">
+                  <PriceChart candles={result.candles} trades={result.trades} />
+                </GlassCard>
+              </>
+            )}
+          </div>
+        )}
 
-          {loadMsg && <p className="mt-3 text-xs text-sky-400">{loadMsg}</p>}
-          {dataNote && <p className="mt-2 text-sm text-[#9ca3af]">{dataNote}</p>}
-          {warning && (
-            <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-              {warning}
-            </p>
-          )}
-        </section>
+        {researchTab === "risk" && (
+          <div className="space-y-6">
+            {!result || !metrics ? (
+              <EmptyState title="Сначала выполните бэктест" hint="Нужна кривая эквити и сделки." />
+            ) : (
+              <>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <GlassCard className="p-4">
+                    <div className="mb-2 text-xs font-semibold uppercase text-[var(--rex-muted)]">
+                      Equity curve
+                    </div>
+                    <EquityCurve data={result.equity} liquidations={liqMarkers} height={260} />
+                  </GlassCard>
+                  <GlassCard className="p-4">
+                    <div className="mb-2 text-xs font-semibold uppercase text-[var(--rex-muted)]">
+                      Underwater (drawdown %)
+                    </div>
+                    <UnderwaterChart equity={result.equity} height={260} />
+                  </GlassCard>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricTile
+                    label="Загрузка депозита (средн.)"
+                    value={`${metrics.avgDepositLoadPct.toFixed(1)}%`}
+                  />
+                  <MetricTile
+                    label="Загрузка депозита (max)"
+                    value={`${metrics.maxDepositLoadPct.toFixed(1)}%`}
+                    tooltip="Прокси для маржи в упрощённой модели."
+                  />
+                  <MetricTile
+                    label="Max DD equity"
+                    value={`${metrics.maxEquityDrawdownPct.toFixed(2)}%`}
+                    trend="down"
+                  />
+                  <MetricTile
+                    label="Ulcer (est.)"
+                    value={
+                      advancedMetrics?.ulcerIndex != null
+                        ? advancedMetrics.ulcerIndex.toFixed(2)
+                        : "—"
+                    }
+                  />
+                </div>
+                <GlassCard className="p-5">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-sm font-semibold text-[var(--rex-text)]">
+                      Расширенный риск-анализ
+                    </span>
+                    <NeonBadge variant="warn">Частично stub</NeonBadge>
+                  </div>
+                  <p className="text-xs leading-relaxed text-[var(--rex-muted)]">
+                    Распределение просадок, stress по окнам, ликвидационная близость и полный Monte
+                    Carlo margin path — в модулях riskEngine / liquidationEngine (worker). Здесь —
+                    базовые метрики из текущего бэктеста без изменения движка.
+                  </p>
+                </GlassCard>
+              </>
+            )}
+          </div>
+        )}
 
-        <BacktestSettingsForm settings={settings} onChange={setSettings} />
-
-        <section>
-          <h2 className="mb-4 text-lg font-semibold text-[#d1d4dc]">Результаты</h2>
-          <BacktestResults m={metrics} />
-        </section>
-
-        {result && (
-          <>
-            <section>
-              <h2 className="mb-4 text-lg font-semibold">Equity curve</h2>
-              <EquityCurve data={result.equity} liquidations={liqMarkers} />
-            </section>
-            <section>
-              <h2 className="mb-4 text-lg font-semibold">Цена и входы</h2>
-              <PriceChart candles={result.candles} trades={result.trades} />
-            </section>
-            <section>
-              <h2 className="mb-4 text-lg font-semibold">Сделки</h2>
-              <TradeTable
+        {researchTab === "trades" && (
+          <div>
+            {!result ? (
+              <EmptyState title="Нет сделок" hint="Запустите бэктест после загрузки данных." />
+            ) : (
+              <TradeAnalyticsSection
                 trades={result.trades}
                 onSelect={setSelected}
                 onOpenChart={openTradeOnChart}
               />
-            </section>
-          </>
+            )}
+          </div>
         )}
 
-        <TradeDetailsModal
-          trade={selected}
-          candles={result?.candles ?? candles}
-          interval={interval}
-          onClose={() => setSelected(null)}
-        />
-      </main>
-    </div>
+        {researchTab === "dca" && (
+          <div>
+            {!result || !metrics ? (
+              <EmptyState title="Нет данных сетки" />
+            ) : (
+              <DcaGridSection
+                trades={result.trades}
+                avgDcaPerTrade={metrics.avgDcaOrdersPerTrade}
+                maxDcaInTrade={metrics.maxDcaOrdersInTrade}
+                fullGridHits={metrics.fullGridHits}
+              />
+            )}
+          </div>
+        )}
+
+        {researchTab === "optimize" && (
+          <div className="space-y-4">
+            <LabStubPanel
+              title="Optimization Lab"
+              description="Перебор сетки TP, overlap, leverage и порогов индикатора с ранжированием по Sharpe / DD / profit factor и защитой от переобучения."
+              architectureNote="optimizationEngine в Web Worker: batch runBacktest по комбинациям, агрегация метрик, флаг overfitting по деградации на hold-out."
+            />
+            {optimizationStub.warning && (
+              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
+                {optimizationStub.warning}
+              </p>
+            )}
+          </div>
+        )}
+
+        {researchTab === "walkforward" && (
+          <div className="space-y-4">
+            <LabStubPanel
+              title="Walk-forward analysis"
+              description="In-sample оптимизация и out-of-sample проверка по rolling окнам; стабильность параметров и деградация доходности."
+              architectureNote="walkForwardEngine: нарезка candles по времени, оптимизация на train, фикс параметров на test, таблица окон + equity."
+            />
+            {walkForwardStub.warning && (
+              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
+                {walkForwardStub.warning}
+              </p>
+            )}
+          </div>
+        )}
+
+        {researchTab === "montecarlo" && (
+          <div className="space-y-4">
+            <LabStubPanel
+              title="Monte Carlo"
+              description="Перестановки и bootstrap сделок, случайный slippage/fees, оценка хвостовых рисков и fan-chart эквити."
+              architectureNote="monteCarloEngine: симуляции на векторе PnL + параметры исполнения; вывод перцентилей и вероятностей."
+            />
+            <GlassCard className="p-4 font-mono text-xs text-[var(--rex-muted)]">
+              status: {monteCarloStub.status} · sims: {monteCarloStub.simulations}
+            </GlassCard>
+          </div>
+        )}
+
+        {researchTab === "stress" && (
+          <div className="space-y-4">
+            <LabStubPanel
+              title="Stress testing"
+              description="Сценарии комиссий, гэпов, flash crash, длительный chop — сравнение выживаемости и запаса капитала."
+              architectureNote="stressTestEngine: клонирование settings с множителями, повторный прогон backtestEngine."
+            />
+            <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-white/[0.03] text-[11px] uppercase text-[var(--rex-muted)]">
+                  <tr>
+                    <th className="px-3 py-2">Сценарий</th>
+                    <th className="px-3 py-2">Survived</th>
+                    <th className="px-3 py-2">Max DD %</th>
+                    <th className="px-3 py-2">Ликвидация</th>
+                    <th className="px-3 py-2">Risk score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06]">
+                  {stressStub.map((s) => (
+                    <tr key={s.id}>
+                      <td className="px-3 py-2">{s.label}</td>
+                      <td className="px-3 py-2">{s.survived ? "yes" : "no"}</td>
+                      <td className="px-3 py-2 font-mono">{s.maxDrawdownPct.toFixed(2)}</td>
+                      <td className="px-3 py-2">{s.liquidated ? "yes" : "no"}</td>
+                      <td className="px-3 py-2 font-mono">{s.riskScore}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {researchTab === "benchmark" && (
+          <div className="space-y-6">
+            {!candles.length ? (
+              <EmptyState title="Нужны свечи" hint="Загрузите OHLCV для расчёта Buy & Hold." />
+            ) : (
+              <>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <GlassCard className="p-4">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase text-[var(--rex-muted)]">
+                        Стратегия (equity)
+                      </span>
+                      {metrics && (
+                        <NeonBadge variant="ok">
+                          Return {metrics.totalReturnPct.toFixed(2)}%
+                        </NeonBadge>
+                      )}
+                    </div>
+                    {result ? (
+                      <EquityCurve data={result.equity} liquidations={liqMarkers} height={240} />
+                    ) : (
+                      <p className="text-sm text-[var(--rex-muted)]">Запустите бэктест.</p>
+                    )}
+                  </GlassCard>
+                  <GlassCard className="p-4">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase text-[var(--rex-muted)]">
+                        Buy & Hold (stub close-only)
+                      </span>
+                      {benchmarkStub[0] && (
+                        <NeonBadge>
+                          Return {benchmarkStub[0].totalReturnPct.toFixed(2)}%
+                        </NeonBadge>
+                      )}
+                    </div>
+                    {benchmarkStub[0] ? (
+                      <EquityCurve data={benchmarkStub[0].equity} height={240} />
+                    ) : null}
+                  </GlassCard>
+                </div>
+                <GlassCard className="overflow-hidden p-0">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-white/[0.03] text-[11px] uppercase text-[var(--rex-muted)]">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Вариант</th>
+                        <th className="px-4 py-2">Total return %</th>
+                        <th className="px-4 py-2">Max DD %</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.06]">
+                      <tr>
+                        <td className="px-4 py-2">DCA strategy</td>
+                        <td className="px-4 py-2 font-mono">
+                          {metrics ? metrics.totalReturnPct.toFixed(2) : "—"}
+                        </td>
+                        <td className="px-4 py-2 font-mono">
+                          {metrics ? metrics.maxEquityDrawdownPct.toFixed(2) : "—"}
+                        </td>
+                      </tr>
+                      {benchmarkStub.map((b) => (
+                        <tr key={b.id}>
+                          <td className="px-4 py-2">{b.label}</td>
+                          <td className="px-4 py-2 font-mono">{b.totalReturnPct.toFixed(2)}</td>
+                          <td className="px-4 py-2 font-mono">{b.maxDrawdownPct.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </GlassCard>
+              </>
+            )}
+          </div>
+        )}
+
+        {researchTab === "data" && (
+          <DataQualityPanel
+            report={dataQualityReport}
+            sourceLabel={source === "binance" ? "Binance Spot" : "CSV"}
+            interval={interval}
+          />
+        )}
+
+        {researchTab === "reports" && (
+          <ReportingPanel
+            trades={result?.trades ?? []}
+            equity={result?.equity ?? []}
+            settings={settings}
+            symbol={effectiveSymbol}
+            interval={interval}
+            onImportSettings={mergeImportedSettings}
+          />
+        )}
+      </ResearchShell>
+
+      <TradeDetailsModal
+        trade={selected}
+        candles={result?.candles ?? candles}
+        interval={interval}
+        onClose={() => setSelected(null)}
+      />
+    </>
   );
 }

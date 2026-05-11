@@ -3,17 +3,30 @@
 @tailwind utilities;
 
 :root {
-  --tv-bg: #0c0e14;
-  --tv-panel: #131722;
-  --tv-toolbar: #1e222d;
-  --tv-border: #2e3241;
-  --tv-text: #d1d4dc;
-  --tv-muted: #787b86;
-  --tv-accent: #2962ff;
+  --tv-bg: #050814;
+  --tv-panel: #0c101f;
+  --tv-toolbar: #12192c;
+  --tv-border: rgba(148, 163, 184, 0.18);
+  --tv-text: #e2e8f0;
+  --tv-muted: #94a3b8;
+  --tv-accent: #22d3ee;
+
+  /* Research terminal — премиальная тёмная тема */
+  --rex-bg: #050814;
+  --rex-bg-elevated: #0a1020;
+  --rex-glass: rgba(15, 23, 42, 0.55);
+  --rex-text: #e8eef8;
+  --rex-muted: #8b9cb8;
+  --rex-accent: #22d3ee;
+  --rex-accent2: #a78bfa;
 }
 
 body {
   margin: 0;
-  background: var(--tv-bg);
-  color: var(--tv-text);
+  background: var(--rex-bg);
+  color: var(--rex-text);
+}
+
+.rex-sidebar {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
 }

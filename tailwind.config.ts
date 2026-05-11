@@ -7,13 +7,13 @@ export default {
       colors: {
         background: "var(--tv-bg)",
         foreground: "var(--tv-text)",
-        "tv-bg": "#0c0e14",
-        "tv-panel": "#131722",
-        "tv-toolbar": "#1e222d",
-        "tv-border": "#2e3241",
-        "tv-text": "#d1d4dc",
-        "tv-muted": "#787b86",
-        "tv-accent": "#2962ff",
+        "tv-bg": "#050814",
+        "tv-panel": "#0c101f",
+        "tv-toolbar": "#12192c",
+        "tv-border": "rgba(148,163,184,0.18)",
+        "tv-text": "#e2e8f0",
+        "tv-muted": "#94a3b8",
+        "tv-accent": "#22d3ee",
       },
       fontFamily: {
         sans: [
