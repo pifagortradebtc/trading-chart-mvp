@@ -1,6 +1,6 @@
 /**
  * Уровни цен для отображения на графике (DCA, TP, ликвидация).
- * Средняя цена после усреднений рисуется отдельно отрезком entry→exit в ChartHost.
+ * Средняя цена после усреднений рисуется отрезком entry→exit в ChartHost.
  */
 
 import type { DcaGridRow, TradeRecord } from "./types";
@@ -24,16 +24,21 @@ export interface ChartOverlayLevel {
   kind: OverlayLevelKind;
 }
 
-export function buildChartLevelsFromTrade(tr: TradeRecord): ChartOverlayLevel[] {
+const DCA_COLORS = ["#f59e0b", "#fb923c", "#fbbf24", "#d97706", "#92400e", "#78350f"];
+
+function levelsFromTrade(tr: TradeRecord, idPrefix: string): ChartOverlayLevel[] {
   const levels: ChartOverlayLevel[] = [];
   const rows = tr.dcaGrid?.rows ?? [];
 
   for (const r of rows) {
+    const isFirst = r.orderIndex === 1;
     levels.push({
       price: r.price,
-      label: r.orderIndex === 1 ? "Вход 1" : `DCA ${r.orderIndex}`,
-      color: r.orderIndex === 1 ? "#22c55e" : "#f59e0b",
-      kind: r.orderIndex === 1 ? "entry" : "dca",
+      label: isFirst
+        ? `${idPrefix}Вход 1`
+        : `${idPrefix}DCA ${r.orderIndex}`,
+      color: isFirst ? "#22c55e" : DCA_COLORS[(r.orderIndex - 2) % DCA_COLORS.length]!,
+      kind: isFirst ? "entry" : "dca",
     });
   }
 
@@ -41,14 +46,14 @@ export function buildChartLevelsFromTrade(tr: TradeRecord): ChartOverlayLevel[] 
   if (last) {
     levels.push({
       price: last.takeProfitPrice,
-      label: "Take profit",
+      label: idPrefix ? `${idPrefix}TP` : "Take profit",
       color: "#34d399",
       kind: "tp",
     });
     if (shouldDrawLiquidationLevel(tr, last)) {
       levels.push({
         price: last.approxLiquidationPrice,
-        label: "Ликвидация ~",
+        label: idPrefix ? `${idPrefix}Ликвидация ~` : "Ликвидация ~",
         color: "#ef4444",
         kind: "liq",
       });
@@ -56,4 +61,18 @@ export function buildChartLevelsFromTrade(tr: TradeRecord): ChartOverlayLevel[] 
   }
 
   return levels;
+}
+
+/** Одна сделка (детальный просмотр): подписи без номера сделки. */
+export function buildChartLevelsFromTrade(tr: TradeRecord): ChartOverlayLevel[] {
+  return levelsFromTrade(tr, "");
+}
+
+/** Весь прогон бэктеста: уровни лимитной сетки и TP по каждой сделке с префиксом #id. */
+export function buildSessionChartLevels(trades: TradeRecord[]): ChartOverlayLevel[] {
+  const out: ChartOverlayLevel[] = [];
+  for (const tr of trades) {
+    out.push(...levelsFromTrade(tr, `#${tr.id} `));
+  }
+  return out;
 }

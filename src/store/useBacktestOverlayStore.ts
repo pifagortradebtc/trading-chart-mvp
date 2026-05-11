@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { TradeRecord } from "@/lib/backtest/types";
 import {
   buildChartLevelsFromTrade,
+  buildSessionChartLevels,
   type ChartOverlayLevel,
 } from "@/lib/backtest/chartOverlayLevels";
 
@@ -29,7 +30,7 @@ interface BacktestOverlayState {
     interval: string,
     padMs?: number,
   ) => void;
-  /** Весь прогон: только маркеры вход/выход по всем сделкам. */
+  /** Весь прогон: маркеры, средняя, лимитные уровни сетки DCA по каждой сделке. */
   openSessionOnChart: (
     trades: TradeRecord[],
     symbolBinance: string,
@@ -74,7 +75,7 @@ export const useBacktestOverlayStore = create<BacktestOverlayState>((set) => ({
     const startMs = Math.max(0, fromMs - padMs);
     const endMs = toMs + padMs;
     set({
-      levels: [],
+      levels: buildSessionChartLevels(trades),
       sessionTrades: trades,
       fetchParams: {
         symbolBinance: sym,
