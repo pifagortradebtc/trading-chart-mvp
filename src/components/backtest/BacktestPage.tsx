@@ -319,7 +319,8 @@ export function BacktestPage() {
           setDataNote("");
         }
       } finally {
-        if (!cancelled && genAtStart === ohlcvRestoreGeneration.current) {
+        /** Не опираемся на cancelled: при смене глубины cleanup отменяет задачу, иначе finally не сбрасывал busy → кнопки «мертвые». */
+        if (genAtStart === ohlcvRestoreGeneration.current) {
           setAutoOhlcvBusy(false);
           setLoadMsg("");
         }
@@ -327,6 +328,8 @@ export function BacktestPage() {
     })();
     return () => {
       cancelled = true;
+      setAutoOhlcvBusy(false);
+      setLoadMsg("");
     };
   }, [source, effectiveSymbol, interval, yearsBack]);
 
@@ -406,6 +409,7 @@ export function BacktestPage() {
 
   const loadData = async () => {
     ohlcvRestoreGeneration.current += 1;
+    setAutoOhlcvBusy(false);
     setBusy(true);
     setWarning(undefined);
     setLoadMsg("");
