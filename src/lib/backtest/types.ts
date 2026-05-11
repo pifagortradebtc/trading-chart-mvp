@@ -8,6 +8,8 @@ export type TradeDirection = "long" | "short";
 export type DirectionMode = "long" | "short" | "auto";
 export type ExecutionOrder = "conservative" | "optimistic";
 export type EntryTiming = "next_open" | "signal_close";
+/** Изолированная — маржа только из «депозита стратегии»; кросс — общий кошелёк для ликвидации и лимита маржи. */
+export type MarginMode = "isolated" | "cross";
 export type MarketRegime = "range" | "trend";
 
 /** Режим индикатора по полю direction (Auto / Long / Short в Pine). */
@@ -41,6 +43,9 @@ export interface ChaikKeltSettings {
 
 export interface DcaBotSettings {
   startDepositUsdt: number;
+  /** Полный баланс кошелька (USDT). Для кросс-маржи: ликвидация и доступная маржа опираются на соотношение к депозиту стратегии. При изолированной марже не используется. */
+  walletBalanceUsdt: number;
+  marginMode: MarginMode;
   /** Доля депозита на первый ордер сетки, % (например 1 = 1%). */
   firstOrderDepositPct: number;
   leverage: number;

@@ -18,7 +18,7 @@ import type {
   TradeDirection,
   TradeRecord,
 } from "./types";
-import { approxLiquidationPrice } from "./risk";
+import { approxLiquidationPrice, effectiveLiquidationLeverage, maxMarginAvailableUsdt } from "./risk";
 
 interface WorkingTrade {
   id: number;
@@ -128,7 +128,8 @@ function processLongBar(
     }
   };
 
-  const liqNow = () => approxLiquidationPrice("long", tr.avgPrice, dca.leverage);
+  const liqNow = () =>
+    approxLiquidationPrice("long", tr.avgPrice, effectiveLiquidationLeverage(dca));
   const tpNow = () => tpPrice("long", tr.avgPrice, dca.takeProfitPct);
   const slNow = () =>
     dca.stopLossPct != null ? slPrice("long", tr.avgPrice, dca.stopLossPct) : null;
@@ -190,7 +191,8 @@ function processShortBar(
     }
   };
 
-  const liqNow = () => approxLiquidationPrice("short", tr.avgPrice, dca.leverage);
+  const liqNow = () =>
+    approxLiquidationPrice("short", tr.avgPrice, effectiveLiquidationLeverage(dca));
   const tpNow = () => tpPrice("short", tr.avgPrice, dca.takeProfitPct);
   const slNow = () =>
     dca.stopLossPct != null ? slPrice("short", tr.avgPrice, dca.stopLossPct) : null;
@@ -380,7 +382,11 @@ export function runBacktest(
             : exit === "sl" && settings.dca.stopLossPct != null
               ? slPrice(open.side, open.avgPrice, settings.dca.stopLossPct)
               : exit === "liquidation"
-                ? approxLiquidationPrice(open.side, open.avgPrice, settings.dca.leverage)
+                ? approxLiquidationPrice(
+                  open.side,
+                  open.avgPrice,
+                  effectiveLiquidationLeverage(settings.dca),
+                )
                 : c.close;
         finalizeTrade(open, exit, exitPrice, tMs);
       }
@@ -399,7 +405,9 @@ export function runBacktest(
           const grid = buildDcaGrid(pendingDir, ePx, settings.dca);
           const firstRow = grid.rows[0];
           const marginOk =
-            firstRow && firstRow.orderUsdt / settings.dca.leverage <= equity + 1e-9;
+            firstRow &&
+            firstRow.orderUsdt / settings.dca.leverage <=
+              maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
           if (marginOk) {
             open = createOpenTrade({
               id: tradeSeq++,
@@ -441,7 +449,10 @@ export function runBacktest(
           if (ePx != null && simFrom < n) {
             const grid = buildDcaGrid(dir, ePx, settings.dca);
             const firstRow = grid.rows[0];
-            const marginOk = firstRow && firstRow.orderUsdt / settings.dca.leverage <= equity + 1e-9;
+            const marginOk =
+              firstRow &&
+              firstRow.orderUsdt / settings.dca.leverage <=
+                maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
             if (marginOk) {
               open = createOpenTrade({
                 id: tradeSeq++,

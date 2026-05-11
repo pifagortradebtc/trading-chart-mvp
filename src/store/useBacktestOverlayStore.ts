@@ -16,13 +16,26 @@ export interface ChartFetchParams {
 
 interface BacktestOverlayState {
   levels: ChartOverlayLevel[];
+  /** Сделки для маркеров на графике (одна или все из прогона). */
+  sessionTrades: TradeRecord[];
   fetchParams: ChartFetchParams | null;
   metaTitle: string;
-  /** Поставить уровни и диапазон загрузки свечей с графика бэктеста */
+  /** Убрать watchlist, объём, RSI, инструменты рисования — только свечи и сделки. */
+  cleanChartUi: boolean;
+  /** Одна сделка: уровни DCA + маркеры. */
   openTradeOnChart: (
     trade: TradeRecord,
     symbolBinance: string,
     interval: string,
+    padMs?: number,
+  ) => void;
+  /** Весь прогон: только маркеры вход/выход по всем сделкам. */
+  openSessionOnChart: (
+    trades: TradeRecord[],
+    symbolBinance: string,
+    interval: string,
+    fromMs: number,
+    toMs: number,
     padMs?: number,
   ) => void;
   clear: () => void;
@@ -32,29 +45,54 @@ const PAD_DEFAULT_MS = 14 * 24 * 3600 * 1000;
 
 export const useBacktestOverlayStore = create<BacktestOverlayState>((set) => ({
   levels: [],
+  sessionTrades: [],
   fetchParams: null,
   metaTitle: "",
+  cleanChartUi: false,
 
   openTradeOnChart: (trade, symbolBinance, interval, padMs = PAD_DEFAULT_MS) => {
     const levels = buildChartLevelsFromTrade(trade);
     const startMs = Math.max(0, trade.entrySignalTime - padMs);
     const endMs = trade.exitTime + padMs;
+    const sym = symbolBinance.replace("/", "").toUpperCase();
     set({
       levels,
+      sessionTrades: [trade],
       fetchParams: {
-        symbolBinance: symbolBinance.replace("/", "").toUpperCase(),
+        symbolBinance: sym,
         interval,
         startMs,
         endMs,
       },
-      metaTitle: `Сделка #${trade.id} · ${trade.side.toUpperCase()} · ${trade.regime}`,
+      metaTitle: `Сделка #${trade.id} · ${sym} · ${interval} · ${trade.side.toUpperCase()} · ${trade.regime}`,
+      cleanChartUi: true,
+    });
+  },
+
+  openSessionOnChart: (trades, symbolBinance, interval, fromMs, toMs, padMs = PAD_DEFAULT_MS) => {
+    const sym = symbolBinance.replace("/", "").toUpperCase();
+    const startMs = Math.max(0, fromMs - padMs);
+    const endMs = toMs + padMs;
+    set({
+      levels: [],
+      sessionTrades: trades,
+      fetchParams: {
+        symbolBinance: sym,
+        interval,
+        startMs,
+        endMs,
+      },
+      metaTitle: `Бэктест · ${sym} · ${interval} · ${trades.length} сделок`,
+      cleanChartUi: true,
     });
   },
 
   clear: () =>
     set({
       levels: [],
+      sessionTrades: [],
       fetchParams: null,
       metaTitle: "",
+      cleanChartUi: false,
     }),
 }));

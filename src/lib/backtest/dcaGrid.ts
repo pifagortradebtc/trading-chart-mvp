@@ -3,7 +3,7 @@
  */
 
 import type { DcaBotSettings, DcaGridResult, DcaGridRow, TradeDirection } from "./types";
-import { approxLiquidationPrice } from "./risk";
+import { approxLiquidationPrice, effectiveLiquidationLeverage } from "./risk";
 
 /**
  * Строит сетку из `ordersCount` ордеров от первой цены входа.
@@ -27,6 +27,8 @@ export function buildDcaGrid(
     startDepositUsdt,
     firstOrderDepositPct,
   } = settings;
+
+  const liqLeverage = effectiveLiquidationLeverage(settings);
 
   const firstOrderUsdt = (startDepositUsdt * firstOrderDepositPct) / 100;
 
@@ -106,7 +108,7 @@ export function buildDcaGrid(
       side === "long"
         ? avgPrice * (1 + takeProfitPct / 100)
         : avgPrice * (1 - takeProfitPct / 100);
-    const liq = approxLiquidationPrice(side, avgPrice, leverage);
+    const liq = approxLiquidationPrice(side, avgPrice, liqLeverage);
     const drawdownFromFirstPct =
       side === "long"
         ? ((firstEntryPrice - avgPrice) / firstEntryPrice) * 100

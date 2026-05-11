@@ -27,12 +27,6 @@ export function BacktestSettingsForm({
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <p className="lg:col-span-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3 text-xs leading-relaxed text-[#9ca3af]">
-        <span className="font-semibold text-cyan-200/95">Один активный раунд:</span> пока текущая DCA-сетка
-        не закрыта (тейк-профит, стоп, ликвидация или конец теста), новые сигналы индикатора{" "}
-        <span className="text-[#d1d4dc]">не открывают вторую сетку</span>. Следующий вход возможен только
-        после полного закрытия позиции.
-      </p>
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
@@ -47,11 +41,6 @@ export function BacktestSettingsForm({
             Как в Pine (дефолты входа)
           </button>
         </div>
-        <p className="mb-3 text-[11px] leading-relaxed text-[#6b7280]">
-          Начальные значения формы совпадают со скриптом Pine (ADX 14/20, диапазон 150 баров, RSI 72/75,
-          Кельтнер 20/10/2, cooldown 1, cross off). Чайкин fast/slow 3/10 — как в индикаторе; осциллятор
-          считается на загруженном таймфрейме OHLCV (в Pine Чайкин можно вешать на другой ТФ — см. комментарий в коде).
-        </p>
         <div className="grid gap-3 text-sm">
           <label className="flex flex-col gap-1">
             <span className="text-[#787b86]">
@@ -340,6 +329,47 @@ export function BacktestSettingsForm({
                 })}{" "}
                 USDT при текущем депозите
               </span>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>
+                Тип маржи
+                <Tip>
+                  Кросс: цена ликвидации и проверка маржи первого ордера используют полный баланс кошелька
+                  относительно депозита стратегии (упрощённая модель). Изолированная: как раньше — только
+                  equity стратегии.
+                </Tip>
+              </span>
+              <select
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                value={settings.dca.marginMode}
+                onChange={(e) =>
+                  patchDca({
+                    marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
+                  })
+                }
+              >
+                <option value="isolated">Изолированная</option>
+                <option value="cross">Кросс</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Баланс кошелька USDT
+                <Tip>
+                  Полный счёт для кросс-маржи (например в 4 раза больше учётного депозита при том же плече).
+                  При изолированной марже на расчёт ликвидации не используется.
+                </Tip>
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.dca.walletBalanceUsdt}
+                onChange={(e) => patchDca({ walletBalanceUsdt: Number(e.target.value) })}
+              />
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">

@@ -32,6 +32,8 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
 
 export const DEFAULT_DCA: DcaBotSettings = {
   startDepositUsdt: 10_000,
+  walletBalanceUsdt: 10_000,
+  marginMode: "isolated",
   /** 1% от 10k ≈ 100 USDT — как прежний дефолт в абсолютных долларах. */
   firstOrderDepositPct: 1,
   leverage: 4,
@@ -64,6 +66,12 @@ export function migrateDcaSettings(
   }
   if (!Number.isFinite(merged.firstOrderDepositPct) || merged.firstOrderDepositPct <= 0) {
     merged.firstOrderDepositPct = DEFAULT_DCA.firstOrderDepositPct;
+  }
+  if (merged.marginMode !== "isolated" && merged.marginMode !== "cross") {
+    merged.marginMode = DEFAULT_DCA.marginMode;
+  }
+  if (!Number.isFinite(merged.walletBalanceUsdt) || merged.walletBalanceUsdt <= 0) {
+    merged.walletBalanceUsdt = merged.startDepositUsdt;
   }
   return merged;
 }

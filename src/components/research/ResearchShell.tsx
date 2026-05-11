@@ -63,10 +63,6 @@ export function ResearchShell({
                 <h1 className="mt-2 bg-gradient-to-r from-white via-cyan-100 to-violet-200 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl">
                   DCA Research Terminal
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm text-[var(--rex-muted)]">
-                  Чайкин + Кельтнер · факторная DCA-сетка · риск-метрики · лаборатории оптимизации и
-                  стресс-тесты (часть — заглушки с понятной архитектурой).
-                </p>
               </div>
               {heroStats && (
                 <div className="flex flex-wrap gap-2 text-[11px]">

@@ -54,120 +54,6 @@ const INTERVALS = ["15m", "1h", "4h", "1d"] as const;
 /** Информационное сообщение dataProvider/API — не показываем как глобальный алерт на всех вкладках. */
 const OHLCV_PARTIAL_HISTORY_PREFIX = "Биржа отдала данные только с";
 
-/** Соответствуют пресетам Fast в проде; у всех TP = 0.6%. */
-type PresetName = "conservative" | "start" | "aggressive" | "medium" | "custom";
-
-const TP_ALL_PRESETS = 0.6;
-
-function presetSettings(name: Exclude<PresetName, "custom">): Partial<BacktestSettings> {
-  const base = DEFAULT_BACKTEST.dca;
-  if (name === "conservative") {
-    /** Fast — Консервативно */
-    return {
-      dca: {
-        ...base,
-        leverage: 4,
-        ordersCount: 7,
-        priceOverlapPct: 25,
-        priceFactor: 1.6,
-        volumeFactor: 1.2,
-        takeProfitPct: TP_ALL_PRESETS,
-      },
-    };
-  }
-  if (name === "start") {
-    /** Fast — Старт */
-    return {
-      dca: {
-        ...base,
-        leverage: 4,
-        ordersCount: 4,
-        priceOverlapPct: 20,
-        priceFactor: 1.0,
-        volumeFactor: 1.6,
-        takeProfitPct: TP_ALL_PRESETS,
-      },
-    };
-  }
-  if (name === "aggressive") {
-    /** Fast — Агрессивно */
-    return {
-      dca: {
-        ...base,
-        leverage: 6,
-        ordersCount: 4,
-        priceOverlapPct: 15,
-        priceFactor: 1.8,
-        volumeFactor: 1.75,
-        takeProfitPct: TP_ALL_PRESETS,
-      },
-    };
-  }
-  /** Fast — Средний риск, прибыль */
-  if (name === "medium") {
-    return {
-      dca: {
-        ...base,
-        leverage: 4,
-        ordersCount: 5,
-        priceOverlapPct: 25,
-        priceFactor: 1.0,
-        volumeFactor: 1.2,
-        takeProfitPct: TP_ALL_PRESETS,
-      },
-    };
-  }
-  const _exhaustive: never = name;
-  return _exhaustive;
-}
-
-/** Пояснения для UI: что именно перезаписывается при выборе пресета. */
-const PRESET_UI: Record<
-  PresetName,
-  {
-    titleRu: string;
-    titleEn: string;
-    oneLine: string;
-    tooltip: string;
-  }
-> = {
-  conservative: {
-    titleRu: "Консервативно",
-    titleEn: "Conservative",
-    oneLine: "Плечо 4×, 7 ордеров, overlap 25%, цена ×1.6 / объём ×1.2 · TP 0.6%.",
-    tooltip:
-      "Fast «Консервативно»: плечо 4×, ордеров 7, перекрытие цены 25%, price_factor 1.6, volume_factor 1.2, take profit 0.6%. Режим long/short не меняется (как в форме). Индикатор V2 не трогаем.",
-  },
-  start: {
-    titleRu: "Старт",
-    titleEn: "Start",
-    oneLine: "Плечо 4×, 4 ордера, overlap 20%, цена ×1.0 / объём ×1.6 · TP 0.6%.",
-    tooltip:
-      "Fast «Старт»: плечо 4×, ордеров 4, overlap 20%, price_factor 1.0, volume_factor 1.6, TP 0.6%. Узкая сетка, выше нарастание объёма по уровням.",
-  },
-  aggressive: {
-    titleRu: "Агрессивно",
-    titleEn: "Aggressive",
-    oneLine: "Плечо 6×, 4 ордера, overlap 15%, цена ×1.8 / объём ×1.75 · TP 0.6%.",
-    tooltip:
-      "Fast «Агрессивно»: плечо 6×, ордеров 4, overlap 15%, price_factor 1.8, volume_factor 1.75, TP 0.6%. Уже шаг по цене, выше нагрузка на маржу.",
-  },
-  medium: {
-    titleRu: "Средний риск",
-    titleEn: "Medium",
-    oneLine: "Плечо 4×, 5 ордеров, overlap 25%, цена ×1.0 / объём ×1.2 · TP 0.6%.",
-    tooltip:
-      "Fast «Средний риск, прибыль»: плечо 4×, ордеров 5, overlap 25%, price_factor 1.0, volume_factor 1.2, TP 0.6%.",
-  },
-  custom: {
-    titleRu: "Свой",
-    titleEn: "Custom",
-    oneLine: "Все цифры только из формы ниже; пресет не подставляет значения автоматически.",
-    tooltip:
-      "Поля DCA и индикатора вручную. Чтобы применить готовый набор — выберите Консервативно / Старт / Агрессивно / Средний риск.",
-  },
-};
-
 const inp =
   "rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-sm text-[var(--rex-text)] outline-none ring-cyan-500/0 transition-shadow focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/20";
 
@@ -175,7 +61,6 @@ export function BacktestPage() {
   const router = useRouter();
   const [researchTab, setResearchTab] = useState<ResearchTabId>("strategy");
   const [settings, setSettings] = useState<BacktestSettings>(DEFAULT_BACKTEST);
-  const [preset, setPreset] = useState<PresetName>("conservative");
   const [symbol, setSymbol] = useState("ETHUSDT");
   const [customPair, setCustomPair] = useState("");
   const [interval, setInterval] = useState<(typeof INTERVALS)[number]>("15m");
@@ -362,19 +247,17 @@ export function BacktestPage() {
     [effectiveSymbol, interval, router],
   );
 
-  const applyPreset = useCallback(
-    (name: Exclude<PresetName, "custom">) => {
-      const p = presetSettings(name);
-      setSettings((prev) => ({
-        ...prev,
-        ...p,
-        dca: { ...prev.dca, ...p.dca },
-        indicator: { ...prev.indicator },
-      }));
-      setPreset(name);
-    },
-    [],
-  );
+  const openSessionOnChart = useCallback(() => {
+    if (!result?.trades.length) return;
+    useBacktestOverlayStore.getState().openSessionOnChart(
+      result.trades,
+      effectiveSymbol,
+      interval,
+      result.dataRange.fromMs,
+      result.dataRange.toMs,
+    );
+    router.push("/chart");
+  }, [result, effectiveSymbol, interval, router]);
 
   const mergeImportedSettings = useCallback((s: BacktestSettings) => {
     setSettings({
@@ -383,7 +266,6 @@ export function BacktestPage() {
       dca: migrateDcaSettings({ ...DEFAULT_BACKTEST.dca, ...s.dca }),
       indicator: { ...DEFAULT_BACKTEST.indicator, ...s.indicator },
     });
-    setPreset("custom");
   }, []);
 
   const runMiniOptimization = useCallback(async () => {
@@ -683,9 +565,17 @@ export function BacktestPage() {
       </button>
       <button
         type="button"
+        disabled={!result?.trades.length}
+        onClick={() => openSessionOnChart()}
+        title="Открыть график той же пары и ТФ со всеми сделками прогона"
+        className="rounded-xl border border-emerald-500/45 bg-emerald-500/15 px-4 py-2.5 text-sm font-medium text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-40"
+      >
+        График со сделками
+      </button>
+      <button
+        type="button"
         onClick={() => {
           setSettings(DEFAULT_BACKTEST);
-          setPreset("conservative");
         }}
         className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm hover:bg-white/[0.08]"
       >
@@ -832,73 +722,7 @@ export function BacktestPage() {
                   </div>
                 )}
 
-                <div className="mt-5 space-y-3">
-                  <div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--rex-muted)]">
-                      Пресеты DCA
-                    </span>
-                    <p className="mt-1.5 max-w-3xl text-[11px] leading-relaxed text-[var(--rex-muted)]">
-                      Это <strong className="font-medium text-[var(--rex-text)]">готовые наборы параметров сетки</strong>{" "}
-                      (плечо, число уровней DCA, перекрытие диапазона цены, множители шага цены и объёма).{" "}
-                      <strong className="font-medium text-[var(--rex-text)]">Тейк-профит 0.6%</strong> одинаковый во всех четырёх
-                      пресетах (как в ваших Fast-профилях). Режим long/short не меняется — берётся из блока DCA. Индикатор V2 пресеты{" "}
-                      <strong className="font-medium text-[var(--rex-text)]">не меняют</strong>.
-                    </p>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                    {(["conservative", "start", "aggressive", "medium"] as const).map((p) => {
-                      const meta = PRESET_UI[p];
-                      const active = preset === p;
-                      return (
-                        <button
-                          key={p}
-                          type="button"
-                          title={meta.tooltip}
-                          onClick={() => applyPreset(p)}
-                          className={`flex flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                            active
-                              ? "border-cyan-500/50 bg-cyan-500/10 shadow-[0_0_20px_-8px_rgba(34,211,238,0.45)]"
-                              : "border-white/[0.08] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]"
-                          }`}
-                        >
-                          <span className="text-[13px] font-semibold text-[var(--rex-text)]">{meta.titleRu}</span>
-                          <span className="text-[10px] uppercase tracking-wide text-[var(--rex-muted)]">
-                            {meta.titleEn}
-                          </span>
-                          <span className="text-[11px] leading-snug text-[var(--rex-muted)]">{meta.oneLine}</span>
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      title={PRESET_UI.custom.tooltip}
-                      onClick={() => setPreset("custom")}
-                      className={`flex flex-col gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                        preset === "custom"
-                          ? "border-violet-500/45 bg-violet-500/10 shadow-[0_0_20px_-8px_rgba(167,139,250,0.35)]"
-                          : "border-white/[0.08] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.05]"
-                      }`}
-                    >
-                      <span className="text-[13px] font-semibold text-[var(--rex-text)]">
-                        {PRESET_UI.custom.titleRu}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-wide text-[var(--rex-muted)]">
-                        {PRESET_UI.custom.titleEn}
-                      </span>
-                      <span className="text-[11px] leading-snug text-[var(--rex-muted)]">
-                        {PRESET_UI.custom.oneLine}
-                      </span>
-                    </button>
-                  </div>
-                  <p className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-[var(--rex-muted)]">
-                    <span className="font-medium text-cyan-200/90">Активно:</span>{" "}
-                    <span className="text-[var(--rex-text)]">{PRESET_UI[preset].titleRu}</span> ({PRESET_UI[preset].titleEn}) —{" "}
-                    {PRESET_UI[preset].oneLine}
-                    <span className="text-[var(--rex-muted)]"> · Наведите на карточку для полной подсказки.</span>
-                  </p>
-                </div>
-
-                <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-[var(--rex-muted)]">
+                <label className="mt-5 flex cursor-pointer items-center gap-2 text-sm text-[var(--rex-muted)]">
                   <input
                     type="checkbox"
                     checked={persistSnapshots}
@@ -911,25 +735,13 @@ export function BacktestPage() {
                   <button
                     type="button"
                     disabled={busy || autoOhlcvBusy}
-                    title="Подставляет последний сохранённый бэктест (настройки, сделки, кривая). Свечи подтягиваются сами при смене пары."
+                    title="Подставляет последний сохранённый бэктест (настройки, сделки, кривая)"
                     onClick={() => void restoreFromServer()}
                     className="text-left text-[11px] text-sky-300/90 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Восстановить последний бэктест с сервера (сделки и equity)
                   </button>
-                  <span className="text-[10px] text-[var(--rex-muted)]">
-                    OHLCV для выбранной пары подставляется автоматически — эта ссылка только для результата прошлого прогона.
-                  </span>
                 </div>
-                <p className="mt-2 text-[11px] leading-relaxed text-[var(--rex-muted)]">
-                  OHLCV кладётся в{" "}
-                  <strong className="font-medium text-[var(--rex-text)]">IndexedDB</strong> (ключ: пара +
-                  таймфрейм + глубина лет). При смене пары или открытии страницы данные подтягиваются сами, если вы уже
-                  их качали. «Загрузить OHLCV» и галочка «Полная перезагрузка» — только когда нужно принудительно
-                  обновить ряд. На сервере маршрут{" "}
-                  <code className="font-mono text-[10px] text-cyan-300/90">/api/ohlcv</code> кеширует те же свечи на
-                  диске.
-                </p>
 
                 {(busy || autoOhlcvBusy) && !candles.length && (
                   <div className="mt-4 space-y-2">

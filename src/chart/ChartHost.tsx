@@ -14,6 +14,7 @@ import { useMarketStore } from "@/store/useMarketStore";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 import { useIndicatorStore } from "@/store/useIndicatorStore";
 import { sma, ema } from "@/lib/indicators/math";
+import { buildTradeMarkers } from "@/lib/backtest/chartTradeMarkers";
 
 /** Core candlestick + volume + MA overlays. RSI lives in `RsiPane`. Series refs cleaned on unmount. */
 export function ChartHost({ children }: { children?: React.ReactNode }) {
@@ -29,8 +30,16 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const logScale = useMarketStore((s) => s.logScale);
   const instances = useIndicatorStore((s) => s.instances);
   const overlayLevels = useBacktestOverlayStore((s) => s.levels);
+  const cleanChartUi = useBacktestOverlayStore((s) => s.cleanChartUi);
+  const sessionTrades = useBacktestOverlayStore((s) => s.sessionTrades);
 
   const dcaPriceLinesRef = useRef<IPriceLine[]>([]);
+
+  const tradeMarkers = useMemo(
+    () =>
+      cleanChartUi && sessionTrades.length > 0 ? buildTradeMarkers(sessionTrades) : [],
+    [cleanChartUi, sessionTrades],
+  );
 
   const [ctx, setCtx] = useState<{
     chart: IChartApi | null;
@@ -163,6 +172,23 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     chartRef.current?.timeScale().fitContent();
   }, [candleData, volData]);
 
+  /** Режим бэктеста: без объёма под свечами — ценовая шкала на всю высоту. */
+  useEffect(() => {
+    const chart = chartRef.current;
+    const vol = volRef.current;
+    if (!chart || !vol) return;
+    if (cleanChartUi) {
+      vol.applyOptions({ visible: false });
+      chart.priceScale("right").applyOptions({
+        scaleMargins: { top: 0.06, bottom: 0.06 },
+      });
+    } else {
+      chart.priceScale("right").applyOptions({
+        scaleMargins: { top: 0.06, bottom: 0.18 },
+      });
+    }
+  }, [cleanChartUi]);
+
   /* Log scale */
   useEffect(() => {
     const chart = chartRef.current;
@@ -178,6 +204,19 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     const candleSeries = candleRef.current;
     const vol = volRef.current;
     if (!chart || !candleSeries || !vol || candles.length === 0) return;
+
+    if (cleanChartUi) {
+      vol.applyOptions({ visible: false });
+      indicatorSeriesRef.current.forEach((s) => {
+        try {
+          chart.removeSeries(s);
+        } catch {
+          /* ignore */
+        }
+      });
+      indicatorSeriesRef.current.clear();
+      return;
+    }
 
     indicatorSeriesRef.current.forEach((s) => {
       try {
@@ -219,7 +258,14 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       );
       indicatorSeriesRef.current.set(inst.id, line);
     });
-  }, [candles, instances]);
+  }, [candles, instances, cleanChartUi]);
+
+  /** Входы и выходы сделок (бэктест). */
+  useEffect(() => {
+    const series = candleRef.current;
+    if (!series) return;
+    series.setMarkers(tradeMarkers);
+  }, [tradeMarkers, candleData]);
 
   /** Горизонтальные линии DCA / TP / ликвидации с бэктеста */
   useEffect(() => {
