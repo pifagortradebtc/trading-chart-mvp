@@ -264,7 +264,7 @@ async function extendCachedFromBinanceClient(
   mergedIn: Candle[],
   opts: LoadOptions & { yearsBack: number },
 ): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string }> {
-  const { startMs, endMs, symbol, interval, yearsBack, onProgress } = opts;
+  const { startMs, endMs, interval, yearsBack, onProgress } = opts;
   const iv = binanceIntervalToMs(interval);
   let merged = trimCandlesOlderThan(mergedIn, endMs, yearsBack, iv);
   merged = mergeCandlesSorted([], merged);
@@ -274,7 +274,6 @@ async function extendCachedFromBinanceClient(
   }
 
   const firstMs = merged[0]!.time * 1000;
-  const lastMs = merged[merged.length - 1]!.time * 1000;
 
   if (firstMs > startMs + iv) {
     onProgress?.({

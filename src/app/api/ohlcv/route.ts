@@ -210,7 +210,6 @@ async function handleStableV2(
   } else {
     merged = mergeCandlesSorted([], merged);
     const firstMs = merged[0]!.time * 1000;
-    const lastMs = merged[merged.length - 1]!.time * 1000;
 
     if (firstMs > startMs + iv) {
       touchedBinance = true;
