@@ -6,7 +6,7 @@ import type { BacktestSettings, ChaikKeltSettings, DcaBotSettings } from "./type
  * осциллятор строится по тому же ряду свечей, что загружен как OHLCV (совпадение с TV — при том же ТФ или если в Pine Чайкин = ТФ графика).
  */
 export const DEFAULT_CHAIK: ChaikKeltSettings = {
-  directionFilter: "auto",
+  directionFilter: "long_only",
   chaikinFast: 3,
   chaikinSlow: 10,
   rangeBars: 150,
@@ -34,8 +34,8 @@ export const DEFAULT_DCA: DcaBotSettings = {
   startDepositUsdt: 10_000,
   walletBalanceUsdt: 10_000,
   marginMode: "isolated",
-  /** 1% от 10k ≈ 100 USDT — как прежний дефолт в абсолютных долларах. */
-  firstOrderDepositPct: 1,
+  /** 7% от депозита — первый ордер сетки. */
+  firstOrderDepositPct: 7,
   leverage: 4,
   ordersCount: 7,
   priceOverlapPct: 25,
