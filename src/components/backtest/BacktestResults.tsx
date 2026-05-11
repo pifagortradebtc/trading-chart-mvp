@@ -1,6 +1,6 @@
 "use client";
 
-import type { MetricsSummary } from "@/lib/backtest/metrics";
+import { exitReasonLabelRu, type MetricsSummary } from "@/lib/backtest/metrics";
 
 function Card({
   label,
@@ -88,7 +88,16 @@ export function BacktestResults({ m }: { m: MetricsSummary | null }) {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card label="Худшая сделка" value={m.worstTradeUsdt.toFixed(2)} tone="loss" />
+        <Card
+          label="Худшая сделка"
+          value={m.worstTradeUsdt.toFixed(2)}
+          tone="loss"
+          hint={
+            m.worstTradeExitReason != null && m.worstTradeId != null
+              ? `Сделка #${m.worstTradeId}: ${exitReasonLabelRu(m.worstTradeExitReason)}. Плюс на TP только если выход именно по тейку; убыток возможен при стопе, ликвидации или принудительном закрытии в конце диапазона данных.`
+              : "Минимальный PnL по сделкам; наведите после нового прогона — покажем причину выхода худшей сделки."
+          }
+        />
         <Card label="Лучшая сделка" value={m.bestTradeUsdt.toFixed(2)} tone="profit" />
         <Card
           label="Средняя длительность"

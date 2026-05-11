@@ -4,6 +4,22 @@
 
 import type { EquityPoint, TradeRecord } from "./types";
 
+/** Человекочитаемо: почему закрылась худшая сделка (для подсказок в UI). */
+export function exitReasonLabelRu(r: TradeRecord["exitReason"]): string {
+  switch (r) {
+    case "tp":
+      return "тейк-профит";
+    case "sl":
+      return "стоп-лосс";
+    case "liquidation":
+      return "ликвидация";
+    case "end_of_test":
+      return "конец диапазона данных (принудительное закрытие)";
+    default:
+      return String(r);
+  }
+}
+
 export interface MetricsSummary {
   totalPnlUsdt: number;
   totalReturnPct: number;
@@ -18,6 +34,9 @@ export interface MetricsSummary {
   maxConsecutiveWins: number;
   liquidations: number;
   worstTradeUsdt: number;
+  /** По какой причине закрылась сделка с минимальным PnL (объясняет убыток при «всегда TP»). В старых снимках может отсутствовать. */
+  worstTradeExitReason?: TradeRecord["exitReason"] | null;
+  worstTradeId?: number | null;
   bestTradeUsdt: number;
   avgTradeDurationMs: number;
   maxTradeDurationMs: number;
@@ -73,7 +92,12 @@ export function computeMetrics(
   const maxEqDd = maxDrawdownFromEquity(equity);
 
   const liquidations = trades.filter((t) => t.exitReason === "liquidation").length;
-  const worst = trades.length ? Math.min(...trades.map((t) => t.pnlUsdt)) : 0;
+
+  let worstTrade: TradeRecord | null = null;
+  for (const t of trades) {
+    if (!worstTrade || t.pnlUsdt < worstTrade.pnlUsdt) worstTrade = t;
+  }
+  const worst = worstTrade?.pnlUsdt ?? 0;
   const best = trades.length ? Math.max(...trades.map((t) => t.pnlUsdt)) : 0;
 
   const durations = trades.map((t) => t.durationMs).filter((d) => Number.isFinite(d));
@@ -117,6 +141,8 @@ export function computeMetrics(
     maxConsecutiveWins: maxWinStreak,
     liquidations,
     worstTradeUsdt: worst,
+    worstTradeExitReason: worstTrade?.exitReason ?? null,
+    worstTradeId: worstTrade?.id ?? null,
     bestTradeUsdt: best,
     avgTradeDurationMs: avgDur,
     maxTradeDurationMs: maxDur,
