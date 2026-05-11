@@ -14,6 +14,7 @@ import { TradeDetailsModal } from "./TradeDetailsModal";
 import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
 import type { TradeRecord } from "@/lib/backtest/types";
+import type { BacktestSnapshotFile } from "@/lib/backtest/snapshotTypes";
 
 const PAIRS = [
   "ETHUSDT",
@@ -91,6 +92,8 @@ export function BacktestPage() {
   const [result, setResult] = useState<ReturnType<typeof runBacktest> | null>(null);
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [selected, setSelected] = useState<TradeRecord | null>(null);
+  /** Сохранять результат бэктеста в файлы на persistent disk (через API). */
+  const [persistSnapshots, setPersistSnapshots] = useState(true);
 
   const effectiveSymbol = useMemo(() => {
     const c = customPair.trim().toUpperCase().replace("/", "");
@@ -170,7 +173,7 @@ export function BacktestPage() {
     }
   };
 
-  const run = () => {
+  const run = async () => {
     if (!candles.length) {
       setWarning("Сначала загрузите исторические данные.");
       return;
@@ -178,7 +181,95 @@ export function BacktestPage() {
     const startMs = candles[0]!.time * 1000;
     const res = runBacktest(candles, effectiveSymbol, settings, startMs);
     setResult(res);
-    setMetrics(computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt));
+    const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
+    setMetrics(m);
+
+    if (!persistSnapshots) return;
+    try {
+      const save = await fetch("/api/backtest/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: effectiveSymbol,
+          interval,
+          yearsBack,
+          settings,
+          trades: res.trades,
+          equity: res.equity,
+          metrics: m,
+          candleCount: candles.length,
+        }),
+      });
+      if (!save.ok) {
+        const err = (await save.json().catch(() => ({}))) as { error?: string };
+        console.warn("Снимок не сохранён:", err.error ?? save.status);
+      }
+    } catch (e) {
+      console.warn("Снимок не сохранён (сеть или диск недоступны)", e);
+    }
+  };
+
+  const restoreFromServer = async () => {
+    setWarning(undefined);
+    try {
+      const r = await fetch("/api/backtest/snapshot");
+      const j = (await r.json()) as { snapshot: BacktestSnapshotFile | null };
+      if (!j.snapshot) {
+        setWarning("На сервере пока нет сохранённого бэктеста.");
+        return;
+      }
+      const snap = j.snapshot;
+      setSettings(snap.settings);
+      if ((PAIRS as readonly string[]).includes(snap.symbol)) {
+        setSymbol(snap.symbol);
+        setCustomPair("");
+      } else {
+        setSymbol("ETHUSDT");
+        setCustomPair(snap.symbol);
+      }
+      const iv = (INTERVALS as readonly string[]).includes(snap.interval)
+        ? (snap.interval as (typeof INTERVALS)[number])
+        : "15m";
+      setInterval(iv);
+      setYearsBack(snap.yearsBack || 8);
+      setMetrics(snap.metrics);
+
+      if (!candles.length) {
+        setWarning(
+          "Настройки восстановлены. Нажмите «Загрузить OHLCV» для тех же параметров — при включённом диске данные возьмутся из файлового кеша без повторной загрузки с Binance.",
+        );
+        return;
+      }
+
+      if (candles.length !== snap.candleCount) {
+        setWarning(
+          `В браузере загружено ${candles.length} баров, в снимке ${snap.candleCount}. Загрузите OHLCV с теми же параметрами (кеш на диске сервера ускорит это).`,
+        );
+        return;
+      }
+
+      const t0 = candles[0]!.time * 1000;
+      const t1 = candles[candles.length - 1]!.time * 1000;
+      setResult({
+        candles,
+        trades: snap.trades,
+        equity: snap.equity,
+        signals: new Array(candles.length).fill(null),
+        signalMeta: new Array(candles.length).fill(null),
+        dataRange: {
+          fromMs: t0,
+          toMs: t1,
+          requestedFromMs: t0,
+        },
+      });
+      setDataNote((prev) =>
+        prev.includes("Восстановлено с сервера")
+          ? prev
+          : `${prev} · Восстановлено с сервера.`,
+      );
+    } catch (e) {
+      setWarning(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const liqMarkers = useMemo(
@@ -205,10 +296,17 @@ export function BacktestPage() {
             <button
               type="button"
               disabled={busy || !candles.length}
-              onClick={run}
+              onClick={() => void run()}
               className="rounded-xl bg-[#2962ff] px-6 py-2.5 font-semibold text-white shadow-lg hover:bg-[#1e55f5] disabled:opacity-40"
             >
               Запустить бэктест
+            </button>
+            <button
+              type="button"
+              onClick={() => void restoreFromServer()}
+              className="rounded-xl border border-sky-600/50 bg-sky-950/40 px-4 py-2.5 text-sm text-sky-200 hover:bg-sky-950/70"
+            >
+              Восстановить снимок с сервера
             </button>
             <button
               type="button"
@@ -340,6 +438,16 @@ export function BacktestPage() {
               Custom
             </button>
           </div>
+
+          <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-[#9ca3af]">
+            <input
+              type="checkbox"
+              checked={persistSnapshots}
+              onChange={(e) => setPersistSnapshots(e.target.checked)}
+              className="rounded border-[#2e3241]"
+            />
+            Сохранять результаты бэктеста на диск сервера (persistent disk на Render)
+          </label>
 
           {loadMsg && <p className="mt-3 text-xs text-sky-400">{loadMsg}</p>}
           {dataNote && <p className="mt-2 text-sm text-[#9ca3af]">{dataNote}</p>}

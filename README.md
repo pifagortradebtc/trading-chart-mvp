@@ -23,4 +23,18 @@ npm run dev
 
 После деплоя приложение доступно по URL вида `https://trading-chart-mvp.onrender.com`.
 
-**Примечание:** тариф Free «засыпает» без трафика — первый запрос после паузы может занять ~1 минуту.
+### Persistent Disk (кеш OHLCV и снимки бэктеста)
+
+Чтобы **не скачивать заново** большие исторические ряды и хранить последний результат бэктеста на диске Render:
+
+1. В сервисе → **Disks** → **Add Disk** (или через Blueprint в `render.yaml`, монтирование в `/data`).
+2. Переменная **`PERSISTENT_DISK_ROOT=/data`** должна совпадать с **Mount Path** диска.
+
+На сервере:
+
+- **`GET /api/ohlcv`** кеширует свечи в `{PERSISTENT_DISK_ROOT}/ohlcv/`.
+- **`POST /api/backtest/snapshot`** сохраняет метрики, сделки и equity в `{PERSISTENT_DISK_ROOT}/snapshots/`.
+
+Клиент запрашивает OHLCV через этот API. Локально без переменной используется папка **`.cache-disk/`** (в `.gitignore`). См. `.env.example`.
+
+**Примечание:** тариф Free «засыпает» без трафика — первый запрос после паузы может занять ~1 минуту. Отдельный persistent disk на Render может требовать платный план; если Blueprint с `disk:` не создаётся — добавьте диск вручную в Dashboard и задайте `PERSISTENT_DISK_ROOT`.

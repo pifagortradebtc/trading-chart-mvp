@@ -1,9 +1,7 @@
-# Blueprint для Render: Web Service (Next.js)
-# После пуша в GitHub: Dashboard → New → Blueprint → подключить репозиторий.
+# Blueprint для Render: Web Service (Next.js) + persistent disk для кеша OHLCV и снимков бэктеста.
 #
-# Или создайте Web Service вручную:
-#   Build:  npm ci && npm run build
-#   Start:  npm start
+# Persistent Disk обычно доступен на платных типах сервиса; при ошибке Blueprint уберите блок disk
+# и добавьте диск вручную: Dashboard → сервис → Disks → Add Disk → Mount Path = /data
 
 services:
   - type: web
@@ -13,6 +11,12 @@ services:
     region: frankfurt
     buildCommand: npm ci && npm run build
     startCommand: npm start
+    disk:
+      name: trading-cache
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "20"
+      - key: PERSISTENT_DISK_ROOT
+        value: /data

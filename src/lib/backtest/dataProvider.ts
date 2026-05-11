@@ -4,6 +4,9 @@
 
 import type { Candle } from "@/types/candle";
 import type { FetchProgress } from "./types";
+import { binanceRowToCandle, mergeCandlesSorted } from "./ohlcvUtils";
+
+export { binanceRowToCandle, mergeCandlesSorted } from "./ohlcvUtils";
 
 const DB_NAME = "pifagor-backtest-cache";
 const STORE = "ohlcv";
@@ -64,25 +67,6 @@ async function idbSet(key: string, value: unknown): Promise<void> {
   } catch {
     /** игнор если IndexedDB недоступен */
   }
-}
-
-/** Нормализация Binance kline → Candle (time в секундах). */
-export function binanceRowToCandle(row: unknown[]): Candle {
-  return {
-    time: Math.floor(Number(row[0]) / 1000),
-    open: Number(row[1]),
-    high: Number(row[2]),
-    low: Number(row[3]),
-    close: Number(row[4]),
-    volume: Number(row[5]),
-  };
-}
-
-export function mergeCandlesSorted(a: Candle[], b: Candle[]): Candle[] {
-  const map = new Map<number, Candle>();
-  for (const c of a) map.set(c.time, c);
-  for (const c of b) map.set(c.time, c);
-  return Array.from(map.values()).sort((x, y) => x.time - y.time);
 }
 
 /**
@@ -202,11 +186,70 @@ export function parseOhlcvCsv(text: string): Candle[] {
   return out.sort((a, b) => a.time - b.time);
 }
 
-/** Унифицированная загрузка (пока Binance + CSV через вызывающий код). */
+/**
+ * Пытается загрузить через `/api/ohlcv` (кеш на persistent disk на Render).
+ * Если API недоступен или отключён (`NEXT_PUBLIC_SERVER_DISK_CACHE=0`) — прямой Binance + IndexedDB.
+ */
+async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
+  candles: Candle[];
+  oldestAvailableMs: number | null;
+  warning?: string;
+} | null> {
+  if (typeof window === "undefined") return null;
+  if (process.env.NEXT_PUBLIC_SERVER_DISK_CACHE === "0") return null;
+
+  const params = new URLSearchParams({
+    symbol: opts.symbol.replace("/", ""),
+    interval: opts.interval,
+    startMs: String(opts.startMs),
+    endMs: String(opts.endMs),
+  });
+
+  const res = await fetch(`/api/ohlcv?${params}`);
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    error?: string;
+    candles?: Candle[];
+    oldestAvailableMs?: number | null;
+    warning?: string;
+    source?: string;
+  };
+  if (data.error || !data.candles) return null;
+
+  opts.onProgress?.({
+    loadedBars: data.candles.length,
+    phase: data.source === "disk" ? "cache" : "network",
+    message:
+      data.source === "disk"
+        ? "Сервер: данные с диска (persistent)"
+        : "Сервер: загружено с Binance и записано на диск",
+  });
+
+  return {
+    candles: data.candles,
+    oldestAvailableMs: data.oldestAvailableMs ?? null,
+    warning: data.warning,
+  };
+}
+
+/** Унифицированная загрузка: серверный диск → прямой Binance + IndexedDB. */
 export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
   warning?: string;
 }> {
+  try {
+    const fromServer = await loadOhlcvViaServerApi(opts);
+    if (fromServer?.candles?.length) {
+      opts.onProgress?.({
+        loadedBars: fromServer.candles.length,
+        phase: "done",
+        message: "Готово",
+      });
+      return fromServer;
+    }
+  } catch {
+    /** fallback ниже */
+  }
   return fetchBinanceSpotKlines(opts);
 }
