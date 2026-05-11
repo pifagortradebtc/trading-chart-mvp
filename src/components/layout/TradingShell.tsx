@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { TopBar } from "@/components/panels/TopBar";
 import { LeftToolbar } from "@/components/panels/LeftToolbar";
 import { RightSidebar } from "@/components/panels/RightSidebar";
@@ -11,10 +12,14 @@ import { useIndicatorStore } from "@/store/useIndicatorStore";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 
 export function TradingShell() {
+  const pathname = usePathname();
+  /** Страница только для графика бэктеста — без терминала (watchlist, RSI-панель и т.д.). */
+  const chartRouteOnly = pathname === "/chart";
   const openSettings = useIndicatorStore((s) => s.openSettings);
   const metaTitle = useBacktestOverlayStore((s) => s.metaTitle);
   const cleanChartUi = useBacktestOverlayStore((s) => s.cleanChartUi);
   const clearOverlay = useBacktestOverlayStore((s) => s.clear);
+  const minimalChrome = cleanChartUi || chartRouteOnly;
 
   return (
     <div className="flex h-screen min-h-[480px] flex-col bg-tv-bg text-tv-text">
@@ -25,7 +30,7 @@ export function TradingShell() {
           <span className="truncate font-medium">{metaTitle}</span>
           <span className="flex shrink-0 items-center gap-2">
             <span className="hidden text-sky-300/90 sm:inline">
-              {cleanChartUi
+              {minimalChrome
                 ? "Стрелка — сигнал; оранжевые точки — исполнение лимитов усреднения (DCA 2…); горизонтали — вся запланированная сетка до выхода; при одной сделке на графике виден любой выход (TP / ликв. / SL)."
                 : "Зелёный — вход, оранжевый — DCA, зелёный TP, красный — ликвидация"}
             </span>
@@ -43,9 +48,9 @@ export function TradingShell() {
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1">
-        {!cleanChartUi ? <LeftToolbar /> : null}
+        {!minimalChrome ? <LeftToolbar /> : null}
         <div className="flex min-w-0 flex-1 flex-col">
-          {!cleanChartUi ? (
+          {!minimalChrome ? (
             <div className="flex h-10 shrink-0 items-center gap-2 border-b border-tv-border bg-tv-panel px-3">
               <button
                 type="button"
@@ -58,7 +63,7 @@ export function TradingShell() {
           ) : null}
           <ChartWorkspace />
         </div>
-        {!cleanChartUi ? <RightSidebar /> : null}
+        {!minimalChrome ? <RightSidebar /> : null}
       </div>
       <IndicatorSettingsModal />
     </div>

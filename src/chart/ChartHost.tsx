@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ColorType,
@@ -33,9 +34,12 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const candles = useMarketStore((s) => s.candles);
   const logScale = useMarketStore((s) => s.logScale);
   const instances = useIndicatorStore((s) => s.instances);
+  const pathname = usePathname();
   const overlayLevels = useBacktestOverlayStore((s) => s.levels);
   const cleanChartUi = useBacktestOverlayStore((s) => s.cleanChartUi);
   const sessionTrades = useBacktestOverlayStore((s) => s.sessionTrades);
+  /** Свечи + сделки без EMA/объёма/RSI: режим бэктеста или страница `/chart`. */
+  const minimalChartMode = cleanChartUi || pathname === "/chart";
 
   /** На длинных прогонах отрисовываем последние N сделок (как и отрезки DCA). */
   const sessionTradesChart = useMemo(() => {
@@ -49,10 +53,10 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
 
   const tradeMarkers = useMemo(
     () =>
-      cleanChartUi && sessionTradesChart.length > 0
+      minimalChartMode && sessionTradesChart.length > 0
         ? buildBacktestChartMarkers(sessionTradesChart)
         : [],
-    [cleanChartUi, sessionTradesChart],
+    [minimalChartMode, sessionTradesChart],
   );
 
   const [ctx, setCtx] = useState<{
@@ -199,7 +203,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     const chart = chartRef.current;
     const vol = volRef.current;
     if (!chart || !vol) return;
-    if (cleanChartUi) {
+    if (minimalChartMode) {
       vol.applyOptions({ visible: false });
       chart.priceScale("right").applyOptions({
         scaleMargins: { top: 0.06, bottom: 0.06 },
@@ -209,7 +213,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
         scaleMargins: { top: 0.06, bottom: 0.18 },
       });
     }
-  }, [cleanChartUi]);
+  }, [minimalChartMode]);
 
   /* Log scale */
   useEffect(() => {
@@ -227,7 +231,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     const vol = volRef.current;
     if (!chart || !candleSeries || !vol || candles.length === 0) return;
 
-    if (cleanChartUi) {
+    if (minimalChartMode) {
       vol.applyOptions({ visible: false });
       indicatorSeriesRef.current.forEach((s) => {
         try {
@@ -280,7 +284,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       );
       indicatorSeriesRef.current.set(inst.id, line);
     });
-  }, [candles, instances, cleanChartUi]);
+  }, [candles, instances, minimalChartMode]);
 
   /** Входы и выходы сделок (бэктест). */
   useEffect(() => {
@@ -303,7 +307,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     });
     dcaGridSeriesRef.current = [];
 
-    if (!cleanChartUi || sessionTradesChart.length === 0) return;
+    if (!minimalChartMode || sessionTradesChart.length === 0) return;
 
     const specs = buildDcaSegmentSpecs(sessionTradesChart);
     for (const spec of specs) {
@@ -321,7 +325,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       ]);
       dcaGridSeriesRef.current.push(line);
     }
-  }, [sessionTradesChart, candleData, cleanChartUi]);
+  }, [sessionTradesChart, candleData, minimalChartMode]);
 
   /** Горизонтальные линии уровней из стора (обычно пусто в режиме бэктеста). */
   useEffect(() => {

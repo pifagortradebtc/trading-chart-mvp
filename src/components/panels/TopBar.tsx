@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { TIMEFRAMES, type Timeframe } from "@/types/candle";
 import { useMarketStore } from "@/store/useMarketStore";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
 
 export function TopBar() {
+  const pathname = usePathname();
+  const chartRouteOnly = pathname === "/chart";
   const symbol = useMarketStore((s) => s.symbol);
   const timeframe = useMarketStore((s) => s.timeframe);
   const logScale = useMarketStore((s) => s.logScale);
@@ -14,14 +17,20 @@ export function TopBar() {
   const setLogScale = useMarketStore((s) => s.setLogScale);
   const cleanChartUi = useBacktestOverlayStore((s) => s.cleanChartUi);
 
-  if (cleanChartUi) {
+  const compactHeader = cleanChartUi || chartRouteOnly;
+
+  if (compactHeader) {
     return (
       <header className="flex h-[42px] shrink-0 items-center gap-4 border-b border-tv-border bg-tv-panel px-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold uppercase tracking-wide text-tv-text">{symbol}</span>
           <span className="rounded bg-tv-toolbar px-2 py-0.5 text-xs font-medium text-tv-muted">{timeframe}</span>
         </div>
-        <span className="text-[11px] text-tv-muted">Пара и ТФ совпадают с бэктестом</span>
+        <span className="hidden min-w-0 text-[11px] text-tv-muted sm:inline">
+          {cleanChartUi
+            ? "Пара и ТФ совпадают с бэктестом"
+            : "Откройте график кнопкой «График со сделками» на бэктесте — здесь только свечи и разметка"}
+        </span>
         <Link
           href="/backtest"
           className="ml-auto shrink-0 text-xs text-tv-accent underline-offset-2 hover:underline"
