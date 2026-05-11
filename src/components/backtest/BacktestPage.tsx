@@ -648,14 +648,6 @@ export function BacktestPage() {
       </button>
       <button
         type="button"
-        disabled={busy || autoOhlcvBusy}
-        onClick={() => void restoreFromServer()}
-        className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2.5 text-sm text-sky-100 hover:bg-sky-500/20 disabled:opacity-40"
-      >
-        Восстановить снимок
-      </button>
-      <button
-        type="button"
         onClick={() => {
           setSettings(DEFAULT_BACKTEST);
           setPreset("conservative");
@@ -697,7 +689,11 @@ export function BacktestPage() {
                     <span className="text-[var(--rex-muted)]">Пара</span>
                     <select
                       value={symbol}
-                      onChange={(e) => setSymbol(e.target.value)}
+                      onChange={(e) => {
+                        setSymbol(e.target.value);
+                        /** Иначе старый текст в «Другая пара» перекрывает выбор из списка. */
+                        setCustomPair("");
+                      }}
                       className={inp}
                     >
                       {PAIRS.map((p) => (
@@ -864,16 +860,28 @@ export function BacktestPage() {
                   />
                   Сохранять снимок на сервер (persistent disk)
                 </label>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <button
+                    type="button"
+                    disabled={busy || autoOhlcvBusy}
+                    title="Подставляет последний сохранённый бэктест (настройки, сделки, кривая). Свечи подтягиваются сами при смене пары."
+                    onClick={() => void restoreFromServer()}
+                    className="text-left text-[11px] text-sky-300/90 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Восстановить последний бэктест с сервера (сделки и equity)
+                  </button>
+                  <span className="text-[10px] text-[var(--rex-muted)]">
+                    OHLCV для выбранной пары подставляется автоматически — эта ссылка только для результата прошлого прогона.
+                  </span>
+                </div>
                 <p className="mt-2 text-[11px] leading-relaxed text-[var(--rex-muted)]">
                   OHLCV кладётся в{" "}
                   <strong className="font-medium text-[var(--rex-text)]">IndexedDB</strong> (ключ: пара +
-                  таймфрейм + глубина лет). Повторное «Загрузить OHLCV» обычно{" "}
-                  <strong className="font-medium text-[var(--rex-text)]">докачивает только новые бары</strong>;
-                  полный скачивание — галочка «Полная перезагрузка».                   На сервере с persistent disk маршрут{" "}
-                  <code className="font-mono text-[10px] text-cyan-300/90">/api/ohlcv</code> хранит свои файлы
-                  по тому же принципу и тоже не пересоздаёт кеш при каждом запросе. При открытии страницы OHLCV для
-                  выбранной пары подставляется сам (IndexedDB или автозагрузка); кнопка «Восстановить снимок»
-                  подтягивает настройки и свечи с сервера без отдельного нажатия «Загрузить OHLCV».
+                  таймфрейм + глубина лет). При смене пары или открытии страницы данные подтягиваются сами, если вы уже
+                  их качали. «Загрузить OHLCV» и галочка «Полная перезагрузка» — только когда нужно принудительно
+                  обновить ряд. На сервере маршрут{" "}
+                  <code className="font-mono text-[10px] text-cyan-300/90">/api/ohlcv</code> кеширует те же свечи на
+                  диске.
                 </p>
 
                 {(busy || autoOhlcvBusy) && !candles.length && (
