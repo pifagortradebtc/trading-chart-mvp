@@ -289,7 +289,10 @@ export function BacktestPage() {
               DCA Backtest · V2_ЧайкКельт
             </h1>
             <p className="text-sm text-[#787b86]">
-              Первый вход только по сигналу индикатора, затем факторная DCA-сетка.
+              Первый вход только по сигналу индикатора, затем факторная DCA-сетка.{" "}
+              <a href="/chart" className="text-sky-400/90 underline-offset-2 hover:underline">
+                Демо-график (mock)
+              </a>
             </p>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">

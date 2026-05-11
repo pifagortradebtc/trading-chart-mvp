@@ -9,7 +9,9 @@ npm install
 npm run dev
 ```
 
-Откройте [http://localhost:3000/backtest](http://localhost:3000/backtest).
+Главная страница сайта перенаправляет на бэктест: [http://localhost:3000](http://localhost:3000) → `/backtest`.
+
+Демо графика с mock-данными (старый MVP): [http://localhost:3000/chart](http://localhost:3000/chart).
 
 ## Деплой на Render
 

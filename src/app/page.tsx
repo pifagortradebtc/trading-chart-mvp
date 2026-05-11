@@ -1,5 +1,6 @@
-import { TradingShell } from "@/components/layout/TradingShell";
+import { redirect } from "next/navigation";
 
+/** По умолчанию открываем страницу бэктеста DCA. Демо-график: `/chart`. */
 export default function Home() {
-  return <TradingShell />;
+  redirect("/backtest");
 }
