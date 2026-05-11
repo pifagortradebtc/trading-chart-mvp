@@ -1,9 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Candle } from "@/types/candle";
-import { loadOhlcvBinance, parseOhlcvCsv } from "@/lib/backtest/dataProvider";
+import {
+  loadOhlcvBinance,
+  parseOhlcvCsv,
+  tryLoadOhlcvBrowserCache,
+} from "@/lib/backtest/dataProvider";
 import { runBacktestOffMainThread } from "@/lib/backtest/runBacktestClient";
 import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
 import type { BacktestSettings } from "@/lib/backtest/types";
@@ -123,6 +127,8 @@ export function BacktestPage() {
   const [selected, setSelected] = useState<TradeRecord | null>(null);
   const [persistSnapshots, setPersistSnapshots] = useState(true);
   const [runProgress, setRunProgress] = useState<number | null>(null);
+  /** Сбрасывает незавершённое восстановление OHLCV из IndexedDB, если пользователь нажал «Загрузить». */
+  const ohlcvRestoreGeneration = useRef(0);
 
   const effectiveSymbol = useMemo(() => {
     const c = customPair.trim().toUpperCase().replace("/", "");
@@ -181,6 +187,45 @@ export function BacktestPage() {
     };
   }, [effectiveSymbol, interval, candles.length, settings.dca.startDepositUsdt, metrics]);
 
+  /**
+   * Восстановление OHLCV из IndexedDB при смене пары/ТФ/глубины или первом заходе.
+   * Не перезаписывает результат активной кнопки «Загрузить OHLCV» (см. ohlcvRestoreGeneration).
+   */
+  useEffect(() => {
+    if (source !== "binance") return;
+    const genAtStart = ohlcvRestoreGeneration.current;
+    let cancelled = false;
+    const endMs = Date.now();
+    const startMs = endMs - yearsBack * 365.25 * 24 * 3600 * 1000;
+    void (async () => {
+      const hit = await tryLoadOhlcvBrowserCache(
+        effectiveSymbol,
+        interval,
+        yearsBack,
+        startMs,
+        endMs,
+      );
+      if (cancelled || genAtStart !== ohlcvRestoreGeneration.current) {
+        return;
+      }
+      if (hit?.candles?.length) {
+        const first = hit.candles[0]!;
+        const last = hit.candles[hit.candles.length - 1]!;
+        setCandles(hit.candles);
+        setDataNote(
+          `Восстановлено из кеша браузера (IndexedDB): ${hit.candles.length} баров · ${new Date(first.time * 1000).toISOString().slice(0, 10)} — ${new Date(last.time * 1000).toISOString().slice(0, 10)}`,
+        );
+        if (hit.warning) setWarning(hit.warning);
+      } else {
+        setCandles([]);
+        setDataNote("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [source, effectiveSymbol, interval, yearsBack]);
+
   const openTradeOnChart = useCallback(
     (t: TradeRecord) => {
       useBacktestOverlayStore.getState().openTradeOnChart(t, effectiveSymbol, interval);
@@ -214,6 +259,7 @@ export function BacktestPage() {
   }, []);
 
   const loadData = async () => {
+    ohlcvRestoreGeneration.current += 1;
     setBusy(true);
     setWarning(undefined);
     setLoadMsg("");
@@ -232,6 +278,8 @@ export function BacktestPage() {
         interval,
         startMs,
         endMs,
+        yearsBack,
+        forceRefresh: true,
         useCache: true,
         onProgress: (p) =>
           setLoadMsg(`${p.phase}: ${p.message} (${p.loadedBars} баров)`),
@@ -253,6 +301,7 @@ export function BacktestPage() {
 
   const onCsvFile = async (file: File | null) => {
     if (!file) return;
+    ohlcvRestoreGeneration.current += 1;
     setBusy(true);
     try {
       const text = await file.text();
@@ -579,6 +628,13 @@ export function BacktestPage() {
                   />
                   Сохранять снимок на сервер (persistent disk)
                 </label>
+                <p className="mt-2 text-[11px] leading-relaxed text-[var(--rex-muted)]">
+                  OHLCV с Binance дополнительно кладётся в{" "}
+                  <strong className="font-medium text-[var(--rex-text)]">IndexedDB</strong> этого браузера
+                  (ключ: пара + таймфрейм + глубина лет). После перезагрузки или деплоя на сервере данные
+                  подставляются снова без повторной загрузки с биржи, пока вы не нажмёте «Загрузить OHLCV»
+                  заново.
+                </p>
 
                 {busy && !candles.length && (
                   <div className="mt-4 space-y-2">

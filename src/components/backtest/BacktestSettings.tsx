@@ -26,6 +26,12 @@ export function BacktestSettingsForm({
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      <p className="lg:col-span-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3 text-xs leading-relaxed text-[#9ca3af]">
+        <span className="font-semibold text-cyan-200/95">Один активный раунд:</span> пока текущая DCA-сетка
+        не закрыта (тейк-профит, стоп, ликвидация или конец теста), новые сигналы индикатора{" "}
+        <span className="text-[#d1d4dc]">не открывают вторую сетку</span>. Следующий вход возможен только
+        после полного закрытия позиции.
+      </p>
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
           Индикатор V2_ЧайкКельт

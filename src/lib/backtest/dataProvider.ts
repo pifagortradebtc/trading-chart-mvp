@@ -20,8 +20,70 @@ export interface LoadOptions {
   interval: string;
   startMs: number;
   endMs: number;
+  /** Стабильный ключ IndexedDB: пара + TF + глубина лет (не зависит от «сегодня» как endMs). */
+  yearsBack?: number;
+  /** Пропустить чтение локального кеша и заново запросить сервер/Binance. */
+  forceRefresh?: boolean;
   onProgress?: (p: FetchProgress) => void;
   useCache?: boolean;
+}
+
+interface StableCacheRow {
+  candles: Candle[];
+  oldestAvailableMs: number | null;
+  warning?: string;
+  savedAt: number;
+}
+
+/** Ключ кеша в IndexedDB: один раз скачали ETH 15m × 8 лет — тот же ключ после перезагрузки и деплоя. */
+export function stableBrowserCacheKey(
+  symbol: string,
+  interval: string,
+  yearsBack: number,
+): string {
+  const sym = symbol.replace("/", "").toUpperCase();
+  return `v2_${sym}_${interval}_y${yearsBack}`;
+}
+
+export async function saveOhlcvBrowserCache(
+  symbol: string,
+  interval: string,
+  yearsBack: number,
+  payload: {
+    candles: Candle[];
+    oldestAvailableMs: number | null;
+    warning?: string;
+  },
+): Promise<void> {
+  const key = stableBrowserCacheKey(symbol, interval, yearsBack);
+  const row: StableCacheRow = {
+    ...payload,
+    savedAt: Date.now(),
+  };
+  await idbSet(key, row);
+}
+
+/** Прочитать сохранённые свечи и подрезать под текущее окно [startMs, endMs]. */
+export async function tryLoadOhlcvBrowserCache(
+  symbol: string,
+  interval: string,
+  yearsBack: number,
+  startMs: number,
+  endMs: number,
+): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string } | null> {
+  const key = stableBrowserCacheKey(symbol, interval, yearsBack);
+  const row = await idbGet<StableCacheRow>(key);
+  if (!row?.candles?.length) return null;
+  const trimmed = row.candles.filter((c) => {
+    const t = c.time * 1000;
+    return t >= startMs && t <= endMs;
+  });
+  const candles = trimmed.length > 0 ? trimmed : row.candles;
+  return {
+    candles,
+    oldestAvailableMs: row.oldestAvailableMs ?? null,
+    warning: row.warning,
+  };
 }
 
 function cacheKey(symbol: string, interval: string): string {
@@ -78,9 +140,11 @@ export async function fetchBinanceSpotKlines(opts: LoadOptions): Promise<{
   oldestAvailableMs: number | null;
   warning?: string;
 }> {
-  const { symbol, interval, startMs, endMs, onProgress, useCache = true } = opts;
+  const { symbol, interval, startMs, endMs, onProgress, useCache = true, forceRefresh = false } =
+    opts;
+  /** Легаси-ключ зависел от endMs=«сейчас» — при новом заходе не совпадал; оставляем для старых записей. */
   const key = `${cacheKey(symbol, interval)}_${startMs}_${endMs}`;
-  if (useCache) {
+  if (useCache && !forceRefresh) {
     const cached = await idbGet<{ candles: Candle[]; oldestMs: number | null }>(key);
     if (cached?.candles?.length) {
       onProgress?.({
@@ -232,16 +296,50 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
   };
 }
 
-/** Унифицированная загрузка: серверный диск → прямой Binance + IndexedDB. */
+/** Унифицированная загрузка: стабильный IndexedDB → серверный диск → Binance REST; после успеха — сохранение v2-кеша. */
 export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
   warning?: string;
 }> {
+  const sym = opts.symbol.replace("/", "").toUpperCase();
+  const {
+    startMs,
+    endMs,
+    yearsBack,
+    useCache = true,
+    forceRefresh = false,
+    onProgress,
+  } = opts;
+
+  if (!forceRefresh && useCache && yearsBack != null) {
+    const hit = await tryLoadOhlcvBrowserCache(sym, opts.interval, yearsBack, startMs, endMs);
+    if (hit?.candles?.length) {
+      onProgress?.({
+        loadedBars: hit.candles.length,
+        phase: "cache",
+        message: "Из локального кеша браузера (IndexedDB)",
+      });
+      onProgress?.({ loadedBars: hit.candles.length, phase: "done", message: "Готово" });
+      return {
+        candles: hit.candles,
+        oldestAvailableMs: hit.oldestAvailableMs,
+        warning: hit.warning,
+      };
+    }
+  }
+
   try {
     const fromServer = await loadOhlcvViaServerApi(opts);
     if (fromServer?.candles?.length) {
-      opts.onProgress?.({
+      if (yearsBack != null) {
+        await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
+          candles: fromServer.candles,
+          oldestAvailableMs: fromServer.oldestAvailableMs ?? null,
+          warning: fromServer.warning,
+        });
+      }
+      onProgress?.({
         loadedBars: fromServer.candles.length,
         phase: "done",
         message: "Готово",
@@ -251,5 +349,14 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
   } catch {
     /** fallback ниже */
   }
-  return fetchBinanceSpotKlines(opts);
+
+  const direct = await fetchBinanceSpotKlines(opts);
+  if (yearsBack != null && direct.candles.length) {
+    await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
+      candles: direct.candles,
+      oldestAvailableMs: direct.oldestAvailableMs ?? null,
+      warning: direct.warning,
+    });
+  }
+  return direct;
 }

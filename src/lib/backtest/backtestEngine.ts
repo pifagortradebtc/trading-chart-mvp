@@ -1,6 +1,9 @@
 /**
  * Движок бэктеста DCA: первый вход по сигналу V2_ЧайкКельт, затем сетка.
  * Без lookahead: решения на баре i после формирования OHLC[i].
+ *
+ * Правило позиционирования: одновременно не более одной открытой сетки — пока раунд не закрыт,
+ * новые сигналы игнорируются (см. ветку «Новый сигнал»: условие `!open`).
  */
 
 import type { Candle } from "@/types/candle";
@@ -385,7 +388,10 @@ export function runBacktest(
 
     runPositionStep();
 
-    /** Отложенный вход по open следующей свечи — после возможного закрытия сделки на этом баре */
+    /**
+     * Отложенный вход по open следующей свечи — только если сейчас нет открытого раунда (open === null).
+     * Инвариант: пока сетка DCA не закрыта (TP / SL / ликвидация / конец теста), новый вход не ставится.
+     */
     if (!open && pendingSignalBar !== null && pendingDir && settings.entryTiming === "next_open") {
       if (i === pendingSignalBar + 1) {
         const ePx = firstEntryPriceAtBar(candles, pendingSignalBar, "next_open");
@@ -416,7 +422,10 @@ export function runBacktest(
 
     runPositionStep();
 
-    /** Новый сигнал */
+    /**
+     * Новый сигнал индикатора: принимается только при отсутствии активной позиции и отложенного входа.
+     * Одновременно может существовать не больше одного «раунда» (одна сетка до полного закрытия).
+     */
     if (!open && pendingSignalBar === null) {
       const dir = resolveDirection(i, longActive, shortActive, settings);
       if (dir) {
