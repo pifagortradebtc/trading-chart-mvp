@@ -178,6 +178,8 @@ export function BacktestPage() {
   const [interval, setInterval] = useState<(typeof INTERVALS)[number]>("15m");
   const [yearsBack, setYearsBack] = useState(8);
   const [source, setSource] = useState<"binance" | "csv">("binance");
+  /** Включите, чтобы игнорировать IndexedDB и заново тянуть полный ряд (редко нужно). */
+  const [forceOhlcvRefresh, setForceOhlcvRefresh] = useState(false);
   const [csvName, setCsvName] = useState<string | null>(null);
 
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -384,7 +386,7 @@ export function BacktestPage() {
         startMs,
         endMs,
         yearsBack,
-        forceRefresh: true,
+        forceRefresh: forceOhlcvRefresh,
         useCache: true,
         onProgress: (p) =>
           setLoadMsg(`${p.phase}: ${p.message} (${p.loadedBars} баров)`),
@@ -669,6 +671,18 @@ export function BacktestPage() {
                       <option value="csv">CSV файл</option>
                     </select>
                   </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--rex-muted)]">
+                    <input
+                      type="checkbox"
+                      className="rounded border-white/20"
+                      checked={forceOhlcvRefresh}
+                      disabled={source !== "binance"}
+                      onChange={(e) => setForceOhlcvRefresh(e.target.checked)}
+                    />
+                    <span title="Иначе подтягиваются только новые бары поверх сохранённых">
+                      Полная перезагрузка (без кеша)
+                    </span>
+                  </label>
                   <button
                     type="button"
                     disabled={busy || source !== "binance"}
@@ -767,11 +781,13 @@ export function BacktestPage() {
                   Сохранять снимок на сервер (persistent disk)
                 </label>
                 <p className="mt-2 text-[11px] leading-relaxed text-[var(--rex-muted)]">
-                  OHLCV с Binance дополнительно кладётся в{" "}
-                  <strong className="font-medium text-[var(--rex-text)]">IndexedDB</strong> этого браузера
-                  (ключ: пара + таймфрейм + глубина лет). После перезагрузки или деплоя на сервере данные
-                  подставляются снова без повторной загрузки с биржи, пока вы не нажмёте «Загрузить OHLCV»
-                  заново.
+                  OHLCV кладётся в{" "}
+                  <strong className="font-medium text-[var(--rex-text)]">IndexedDB</strong> (ключ: пара +
+                  таймфрейм + глубина лет). Повторное «Загрузить OHLCV» обычно{" "}
+                  <strong className="font-medium text-[var(--rex-text)]">докачивает только новые бары</strong>;
+                  полный скачивание — галочка «Полная перезагрузка». На сервере с persistent disk маршрут{" "}
+                  <code className="font-mono text-[10px] text-cyan-300/90">/api/ohlcv</code> хранит свои файлы
+                  по тому же принципу и тоже не пересоздаёт кеш при каждом запросе.
                 </p>
 
                 {busy && !candles.length && (

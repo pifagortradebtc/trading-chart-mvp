@@ -5,6 +5,51 @@
 import type { Candle } from "@/types/candle";
 import { binanceRowToCandle, mergeCandlesSorted } from "@/lib/backtest/ohlcvUtils";
 
+/** Свечи с startTime ≥ startMs вперёд до endMs (постранично). */
+export async function fetchBinanceKlinesForward(opts: {
+  symbol: string;
+  interval: string;
+  startMs: number;
+  endMs: number;
+  onChunk?: (loaded: number) => void;
+}): Promise<Candle[]> {
+  const { symbol, interval, startMs, endMs, onChunk } = opts;
+  const sym = symbol.replace("/", "");
+  const out: Candle[] = [];
+  let cursor = startMs;
+  let guard = 500;
+
+  while (guard-- > 0 && cursor <= endMs) {
+    const url = new URL("https://api.binance.com/api/v3/klines");
+    url.searchParams.set("symbol", sym);
+    url.searchParams.set("interval", interval);
+    url.searchParams.set("startTime", String(cursor));
+    url.searchParams.set("endTime", String(endMs));
+    url.searchParams.set("limit", "1000");
+
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Binance ${res.status}: ${txt}`);
+    }
+    const raw = (await res.json()) as unknown[][];
+    if (!raw.length) break;
+
+    for (const row of raw) {
+      const c = binanceRowToCandle(row);
+      if (c.time * 1000 <= endMs) out.push(c);
+    }
+
+    onChunk?.(out.length);
+
+    const lastOpen = raw[raw.length - 1]![0] as number;
+    if (lastOpen >= endMs || raw.length < 1000) break;
+    cursor = lastOpen + 1;
+  }
+
+  return mergeCandlesSorted([], out);
+}
+
 export async function fetchBinanceKlinesServer(opts: {
   symbol: string;
   interval: string;

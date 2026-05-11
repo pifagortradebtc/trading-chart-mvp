@@ -4,7 +4,13 @@
 
 import type { Candle } from "@/types/candle";
 import type { FetchProgress } from "./types";
-import { binanceRowToCandle, mergeCandlesSorted } from "./ohlcvUtils";
+import {
+  binanceIntervalToMs,
+  binanceRowToCandle,
+  filterCandlesToRange,
+  mergeCandlesSorted,
+  trimCandlesOlderThan,
+} from "./ohlcvUtils";
 
 export { binanceRowToCandle, mergeCandlesSorted } from "./ohlcvUtils";
 
@@ -64,6 +70,18 @@ export async function saveOhlcvBrowserCache(
 }
 
 /** Прочитать сохранённые свечи и подрезать под текущее окно [startMs, endMs]. */
+/** Полная серия из IndexedDB (без подрезки окна) — для инкрементальной докачки. */
+export async function readStableBrowserCacheRow(
+  symbol: string,
+  interval: string,
+  yearsBack: number,
+): Promise<StableCacheRow | null> {
+  const key = stableBrowserCacheKey(symbol, interval, yearsBack);
+  const row = await idbGet<StableCacheRow>(key);
+  if (!row?.candles?.length) return null;
+  return row;
+}
+
 export async function tryLoadOhlcvBrowserCache(
   symbol: string,
   interval: string,
@@ -71,8 +89,7 @@ export async function tryLoadOhlcvBrowserCache(
   startMs: number,
   endMs: number,
 ): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string } | null> {
-  const key = stableBrowserCacheKey(symbol, interval, yearsBack);
-  const row = await idbGet<StableCacheRow>(key);
+  const row = await readStableBrowserCacheRow(symbol, interval, yearsBack);
   if (!row?.candles?.length) return null;
   const trimmed = row.candles.filter((c) => {
     const t = c.time * 1000;
@@ -132,33 +149,14 @@ async function idbSet(key: string, value: unknown): Promise<void> {
 }
 
 /**
- * Загрузка с Binance Spot REST (публичный API).
- * Постранично назад во времени до достижения startMs или исчерпания данных.
+ * Скачать окно [startMs, endMs] с Binance (назад по страницам), без IndexedDB.
  */
-export async function fetchBinanceSpotKlines(opts: LoadOptions): Promise<{
+async function downloadBinanceWindow(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
   warning?: string;
 }> {
-  const { symbol, interval, startMs, endMs, onProgress, useCache = true, forceRefresh = false } =
-    opts;
-  /** Легаси-ключ зависел от endMs=«сейчас» — при новом заходе не совпадал; оставляем для старых записей. */
-  const key = `${cacheKey(symbol, interval)}_${startMs}_${endMs}`;
-  if (useCache && !forceRefresh) {
-    const cached = await idbGet<{ candles: Candle[]; oldestMs: number | null }>(key);
-    if (cached?.candles?.length) {
-      onProgress?.({
-        loadedBars: cached.candles.length,
-        phase: "cache",
-        message: "Загружено из кеша IndexedDB",
-      });
-      return {
-        candles: cached.candles,
-        oldestAvailableMs: cached.oldestMs ?? null,
-      };
-    }
-  }
-
+  const { symbol, interval, startMs, endMs, onProgress } = opts;
   const out: Candle[] = [];
   let end = endMs;
   let oldestInBatch: number | null = null;
@@ -209,16 +207,156 @@ export async function fetchBinanceSpotKlines(opts: LoadOptions): Promise<{
     warning = `Биржа отдала данные только с ${new Date(candles[0]!.time * 1000).toISOString().slice(0, 10)}; запрошенный период начинался раньше.`;
   }
 
+  return {
+    candles,
+    oldestAvailableMs: oldestInBatch,
+    warning,
+  };
+}
+
+/** Докачка «вперёд» от startMs до endMs (браузер). */
+async function downloadBinanceForward(opts: LoadOptions): Promise<Candle[]> {
+  const { symbol, interval, startMs, endMs, onProgress } = opts;
+  const sym = symbol.replace("/", "");
+  const out: Candle[] = [];
+  let cursor = startMs;
+  let guard = 500;
+
+  while (guard-- > 0 && cursor <= endMs) {
+    const url = new URL("https://api.binance.com/api/v3/klines");
+    url.searchParams.set("symbol", sym);
+    url.searchParams.set("interval", interval);
+    url.searchParams.set("startTime", String(cursor));
+    url.searchParams.set("endTime", String(endMs));
+    url.searchParams.set("limit", "1000");
+
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Binance ${res.status}: ${txt}`);
+    }
+    const raw = (await res.json()) as unknown[][];
+    if (!raw.length) break;
+
+    for (const row of raw) {
+      const c = binanceRowToCandle(row);
+      if (c.time * 1000 <= endMs) out.push(c);
+    }
+
+    onProgress?.({
+      loadedBars: out.length,
+      phase: "network",
+      message: `Binance: догрузка ${out.length}…`,
+    });
+
+    const lastOpen = raw[raw.length - 1]![0] as number;
+    if (lastOpen >= endMs || raw.length < 1000) break;
+    cursor = lastOpen + 1;
+  }
+
+  return mergeCandlesSorted([], out);
+}
+
+/**
+ * Дополнить кеш из Binance в браузере (пробелы назад / вперёд относительно уже имеющихся свечей).
+ */
+async function extendCachedFromBinanceClient(
+  mergedIn: Candle[],
+  opts: LoadOptions & { yearsBack: number },
+): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string }> {
+  const { startMs, endMs, symbol, interval, yearsBack, onProgress } = opts;
+  const iv = binanceIntervalToMs(interval);
+  let merged = trimCandlesOlderThan(mergedIn, endMs, yearsBack, iv);
+  merged = mergeCandlesSorted([], merged);
+
+  if (!merged.length) {
+    return downloadBinanceWindow(opts);
+  }
+
+  const firstMs = merged[0]!.time * 1000;
+  const lastMs = merged[merged.length - 1]!.time * 1000;
+
+  if (firstMs > startMs + iv) {
+    onProgress?.({
+      loadedBars: merged.length,
+      phase: "network",
+      message: "Binance: догрузка истории…",
+    });
+    const back = await downloadBinanceWindow({
+      ...opts,
+      startMs,
+      endMs: Math.min(endMs, firstMs - 1),
+    });
+    merged = mergeCandlesSorted(merged, back.candles);
+  }
+
+  merged = mergeCandlesSorted([], merged);
+  const lastAfter = merged[merged.length - 1]!.time * 1000;
+
+  if (lastAfter < endMs - iv) {
+    const fwd = await downloadBinanceForward({
+      ...opts,
+      startMs: Math.max(startMs, lastAfter + 1),
+      endMs,
+    });
+    merged = mergeCandlesSorted(merged, fwd);
+  }
+
+  merged = trimCandlesOlderThan(merged, endMs, yearsBack, iv);
+  merged = mergeCandlesSorted([], merged);
+
+  let warning: string | undefined;
+  if (merged.length && merged[0]!.time * 1000 > startMs + 60_000) {
+    warning = `Биржа отдала данные только с ${new Date(merged[0]!.time * 1000).toISOString().slice(0, 10)}; запрошенный период начинался раньше.`;
+  }
+
+  return {
+    candles: merged,
+    oldestAvailableMs: merged.length ? merged[0]!.time * 1000 : null,
+    warning,
+  };
+}
+
+/**
+ * Загрузка с Binance Spot REST (публичный API).
+ * Постранично назад во времени до достижения startMs или исчерпания данных.
+ */
+export async function fetchBinanceSpotKlines(opts: LoadOptions): Promise<{
+  candles: Candle[];
+  oldestAvailableMs: number | null;
+  warning?: string;
+}> {
+  const { symbol, interval, startMs, endMs, onProgress, useCache = true, forceRefresh = false } =
+    opts;
+  /** Легаси-ключ зависел от endMs=«сейчас» — при новом заходе не совпадал; оставляем для старых записей. */
+  const key = `${cacheKey(symbol, interval)}_${startMs}_${endMs}`;
+  if (useCache && !forceRefresh) {
+    const cached = await idbGet<{ candles: Candle[]; oldestMs: number | null }>(key);
+    if (cached?.candles?.length) {
+      onProgress?.({
+        loadedBars: cached.candles.length,
+        phase: "cache",
+        message: "Загружено из кеша IndexedDB",
+      });
+      return {
+        candles: cached.candles,
+        oldestAvailableMs: cached.oldestMs ?? null,
+      };
+    }
+  }
+
+  const { candles, oldestAvailableMs, warning } = await downloadBinanceWindow(opts);
+
   await idbSet(key, {
     candles,
-    oldestMs: oldestInBatch,
+    oldestMs: oldestAvailableMs,
   });
 
   onProgress?.({ loadedBars: candles.length, phase: "done", message: "Готово" });
 
   return {
     candles,
-    oldestAvailableMs: oldestInBatch,
+    oldestAvailableMs,
     warning,
   };
 }
@@ -268,6 +406,9 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
     startMs: String(opts.startMs),
     endMs: String(opts.endMs),
   });
+  if (opts.yearsBack != null) {
+    params.set("yearsBack", String(opts.yearsBack));
+  }
 
   const res = await fetch(`/api/ohlcv?${params}`);
   if (!res.ok) return null;
@@ -296,7 +437,7 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
   };
 }
 
-/** Унифицированная загрузка: стабильный IndexedDB → серверный диск → Binance REST; после успеха — сохранение v2-кеша. */
+/** Унифицированная загрузка: стабильный IndexedDB → серверный диск (v2, инкремент) → Binance REST; после успеха — слияние в v2-кеш. */
 export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
@@ -311,21 +452,34 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
     forceRefresh = false,
     onProgress,
   } = opts;
+  const iv = binanceIntervalToMs(opts.interval);
 
   if (!forceRefresh && useCache && yearsBack != null) {
-    const hit = await tryLoadOhlcvBrowserCache(sym, opts.interval, yearsBack, startMs, endMs);
-    if (hit?.candles?.length) {
-      onProgress?.({
-        loadedBars: hit.candles.length,
-        phase: "cache",
-        message: "Из локального кеша браузера (IndexedDB)",
-      });
-      onProgress?.({ loadedBars: hit.candles.length, phase: "done", message: "Готово" });
-      return {
-        candles: hit.candles,
-        oldestAvailableMs: hit.oldestAvailableMs,
-        warning: hit.warning,
-      };
+    const row = await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
+    if (row?.candles?.length) {
+      let merged = trimCandlesOlderThan(row.candles, endMs, yearsBack, iv);
+      merged = mergeCandlesSorted([], merged);
+      if (merged.length) {
+        const firstMs = merged[0]!.time * 1000;
+        const lastMs = merged[merged.length - 1]!.time * 1000;
+        const needBack = firstMs > startMs + iv;
+        const needFwd = lastMs < endMs - iv;
+        if (!needBack && !needFwd) {
+          let out = filterCandlesToRange(merged, startMs, endMs);
+          if (!out.length) out = merged;
+          onProgress?.({
+            loadedBars: out.length,
+            phase: "cache",
+            message: "Из локального кеша браузера (IndexedDB)",
+          });
+          onProgress?.({ loadedBars: out.length, phase: "done", message: "Готово" });
+          return {
+            candles: out,
+            oldestAvailableMs: row.oldestAvailableMs ?? null,
+            warning: row.warning,
+          };
+        }
+      }
     }
   }
 
@@ -333,8 +487,17 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
     const fromServer = await loadOhlcvViaServerApi(opts);
     if (fromServer?.candles?.length) {
       if (yearsBack != null) {
+        const prevRow = forceRefresh
+          ? null
+          : await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
+        const combined = trimCandlesOlderThan(
+          mergeCandlesSorted(prevRow?.candles ?? [], fromServer.candles),
+          endMs,
+          yearsBack,
+          iv,
+        );
         await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
-          candles: fromServer.candles,
+          candles: combined,
           oldestAvailableMs: fromServer.oldestAvailableMs ?? null,
           warning: fromServer.warning,
         });
@@ -350,10 +513,43 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
     /** fallback ниже */
   }
 
+  if (!forceRefresh && useCache && yearsBack != null) {
+    const row = await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
+    if (row?.candles?.length) {
+      const extended = await extendCachedFromBinanceClient(row.candles, {
+        ...opts,
+        yearsBack,
+      });
+      await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
+        candles: extended.candles,
+        oldestAvailableMs: extended.oldestAvailableMs ?? null,
+        warning: extended.warning,
+      });
+      const trimmed = filterCandlesToRange(extended.candles, startMs, endMs);
+      onProgress?.({
+        loadedBars: trimmed.length,
+        phase: "done",
+        message: "Готово",
+      });
+      return {
+        candles: trimmed.length ? trimmed : extended.candles,
+        oldestAvailableMs: extended.oldestAvailableMs ?? null,
+        warning: extended.warning,
+      };
+    }
+  }
+
   const direct = await fetchBinanceSpotKlines(opts);
   if (yearsBack != null && direct.candles.length) {
+    const prevRow = forceRefresh ? null : await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
+    const combined = trimCandlesOlderThan(
+      mergeCandlesSorted(prevRow?.candles ?? [], direct.candles),
+      endMs,
+      yearsBack,
+      iv,
+    );
     await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
-      candles: direct.candles,
+      candles: combined,
       oldestAvailableMs: direct.oldestAvailableMs ?? null,
       warning: direct.warning,
     });

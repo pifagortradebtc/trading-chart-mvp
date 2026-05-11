@@ -34,6 +34,12 @@ export function safeOhlcvFileId(symbol: string, interval: string, startMs: numbe
   return `${symbol}_${interval}_${h}.json`;
 }
 
+/** Стабильное имя файла: одна серия на пару + TF + глубину лет (без startMs/endMs). */
+export function stableOhlcvFileName(symbol: string, interval: string, yearsBack: number): string {
+  const sym = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return `v2_${sym}_${interval}_y${yearsBack}.json`;
+}
+
 export async function readJsonFile<T>(fullPath: string): Promise<T | null> {
   try {
     const raw = await fs.readFile(fullPath, "utf-8");
