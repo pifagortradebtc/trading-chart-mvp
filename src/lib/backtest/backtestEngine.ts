@@ -45,6 +45,7 @@ interface WorkingTrade {
   signalSnapshot: SignalBarState | null;
 }
 
+/** Тейк-профит от средней позиции `avg`, не от первого входа. Пересчитывается после каждого DCA. */
 function tpPrice(side: TradeDirection, avg: number, tpPct: number): number {
   return side === "long"
     ? avg * (1 + tpPct / 100)

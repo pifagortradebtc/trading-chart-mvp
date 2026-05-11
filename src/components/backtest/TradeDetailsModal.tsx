@@ -105,7 +105,7 @@ export function TradeDetailsModal({
                   <th className="px-2 py-2">Монета</th>
                   <th className="px-2 py-2">Σ USDT</th>
                   <th className="px-2 py-2">Средняя</th>
-                  <th className="px-2 py-2">TP</th>
+                  <th className="px-2 py-2">TP (от средней)</th>
                   <th className="px-2 py-2">Ликв. ~</th>
                   <th className="px-2 py-2">Просадка %</th>
                   <th className="px-2 py-2">Маржа</th>

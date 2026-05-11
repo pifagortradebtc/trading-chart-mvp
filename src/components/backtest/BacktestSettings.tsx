@@ -444,7 +444,12 @@ export function BacktestSettingsForm({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
-              <span>Take profit %</span>
+              <span>
+                Take profit %
+                <Tip>
+                  От текущей средней позиции после каждого DCA, не от первого входа; при нескольких входах цель — средняя плюс этот процент.
+                </Tip>
+              </span>
               <input
                 type="number"
                 step={0.01}
@@ -454,7 +459,10 @@ export function BacktestSettingsForm({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span>Stop loss % (optional)</span>
+              <span>
+                Stop loss % (optional)
+                <Tip>Также от текущей средней позиции, если задан.</Tip>
+              </span>
               <input
                 type="number"
                 step={0.1}

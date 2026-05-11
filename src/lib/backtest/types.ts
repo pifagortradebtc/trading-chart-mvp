@@ -58,7 +58,14 @@ export interface DcaBotSettings {
   priceOverlapPct: number;
   priceFactor: number;
   volumeFactor: number;
+  /**
+   * Цель тейк-профита в % от **текущей средней цены позиции** (после каждого исполнения DCA),
+   * не от цены первого входа. В движке: `avgPrice * (1 ± takeProfitPct/100)`.
+   */
   takeProfitPct: number;
+  /**
+   * Стоп в % от **текущей средней** (как TP). `null` — без стопа в симуляции.
+   */
   stopLossPct: number | null;
   feePctPerSide: number;
   /** Упрощённо: доля от номинала позиции за период удержания (0 = выкл). */
@@ -82,6 +89,7 @@ export interface DcaGridRow {
   qtyCoin: number;
   cumNotionalUsdt: number;
   avgPrice: number;
+  /** TP при гипотетическом исполнении ордеров 1…N: средняя после этих входов + takeProfitPct%. */
   takeProfitPrice: number;
   approxLiquidationPrice: number;
   drawdownFromFirstPct: number;

@@ -42,6 +42,7 @@ export const DEFAULT_DCA: DcaBotSettings = {
   priceOverlapPct: 25,
   priceFactor: 1.6,
   volumeFactor: 1.2,
+  /** % от текущей средней позиции (после каждого DCA), не от первого входа. */
   takeProfitPct: 0.6,
   stopLossPct: null,
   feePctPerSide: 0.055,

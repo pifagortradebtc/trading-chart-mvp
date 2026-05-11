@@ -104,6 +104,7 @@ export function buildDcaGrid(
     cumQty += qty;
     cumNotional += orderUsdt;
     const avgPrice = cumNotional / cumQty;
+    // TP всегда от накопленной средней по исполненным уровням 1…(i+1), не от первой цены входа.
     const tpRaw =
       side === "long"
         ? avgPrice * (1 + takeProfitPct / 100)
