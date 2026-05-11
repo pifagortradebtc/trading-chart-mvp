@@ -78,6 +78,26 @@ function cooldownOk(lastSignalBar: number, i: number, cooldownBars: number): boo
   return i - lastSignalBar > cooldownBars;
 }
 
+/** Pine: cross_mode выкл → достаточно ch>0; вкл → только бар пересечения нуля снизу вверх. */
+function chaikinBullish(cfg: ChaikKeltSettings, chOsc: number[], i: number): boolean {
+  const ch = chOsc[i];
+  if (!Number.isFinite(ch) || ch <= 0) return false;
+  if (!cfg.crossMode) return true;
+  if (i === 0) return false;
+  const prev = chOsc[i - 1];
+  return Number.isFinite(prev) && prev <= 0;
+}
+
+/** Pine: cross_mode выкл → ch<0; вкл → пересечение сверху вниз. */
+function chaikinBearish(cfg: ChaikKeltSettings, chOsc: number[], i: number): boolean {
+  const ch = chOsc[i];
+  if (!Number.isFinite(ch) || ch >= 0) return false;
+  if (!cfg.crossMode) return true;
+  if (i === 0) return false;
+  const prev = chOsc[i - 1];
+  return Number.isFinite(prev) && prev >= 0;
+}
+
 /** LONG RANGE */
 function longRange(
   i: number,
@@ -85,9 +105,12 @@ function longRange(
   cfg: ChaikKeltSettings,
 ): { ok: boolean; reason: string } {
   const { chOsc, adx, diPlus, diMinus, rsiVal, rangePosPct } = series;
-  const ch = chOsc[i];
   const adxv = adx[i];
-  if (!Number.isFinite(ch) || ch <= 0) return { ok: false, reason: "Chaikin ≤ 0" };
+  if (!chaikinBullish(cfg, chOsc, i))
+    return {
+      ok: false,
+      reason: cfg.crossMode ? "Нет пересечения Чайкина в лонг" : "Chaikin ≤ 0",
+    };
   if (!Number.isFinite(adxv) || adxv > cfg.adxThreshold) return { ok: false, reason: "Не боковик (ADX)" };
   const rp = rangePosPct[i];
   if (!Number.isFinite(rp) || rp >= cfg.rangeMaxPctLong) return { ok: false, reason: "Позиция в диапазоне ≥ max%" };
@@ -114,7 +137,11 @@ function longTrend(
   const low = candles.map((c) => c.low);
   const ch = chOsc[i];
   const adxv = adx[i];
-  if (!Number.isFinite(ch) || ch <= 0) return { ok: false, reason: "Chaikin ≤ 0" };
+  if (!chaikinBullish(cfg, chOsc, i))
+    return {
+      ok: false,
+      reason: cfg.crossMode ? "Нет пересечения Чайкина в лонг" : "Chaikin ≤ 0",
+    };
   if (!Number.isFinite(adxv) || adxv <= cfg.adxThreshold) return { ok: false, reason: "Нет тренда (ADX)" };
   const ema = emaPullback[i];
   if (!Number.isFinite(ema)) return { ok: false, reason: "EMA нет" };
@@ -145,9 +172,12 @@ function shortRange(
   cfg: ChaikKeltSettings,
 ): { ok: boolean; reason: string } {
   const { chOsc, adx, diPlus, diMinus, rsiVal, rangePosPct } = series;
-  const ch = chOsc[i];
   const adxv = adx[i];
-  if (!Number.isFinite(ch) || ch >= 0) return { ok: false, reason: "Chaikin ≥ 0" };
+  if (!chaikinBearish(cfg, chOsc, i))
+    return {
+      ok: false,
+      reason: cfg.crossMode ? "Нет пересечения Чайкина в шорт" : "Chaikin ≥ 0",
+    };
   if (!Number.isFinite(adxv) || adxv > cfg.adxThreshold) return { ok: false, reason: "Не боковик (ADX)" };
   const rp = rangePosPct[i];
   if (!Number.isFinite(rp) || rp <= cfg.rangeMinPctShort) return { ok: false, reason: "Позиция в диапазоне ≤ min%" };
@@ -174,7 +204,11 @@ function shortTrend(
   const high = candles.map((c) => c.high);
   const ch = chOsc[i];
   const adxv = adx[i];
-  if (!Number.isFinite(ch) || ch >= 0) return { ok: false, reason: "Chaikin ≥ 0" };
+  if (!chaikinBearish(cfg, chOsc, i))
+    return {
+      ok: false,
+      reason: cfg.crossMode ? "Нет пересечения Чайкина в шорт" : "Chaikin ≥ 0",
+    };
   if (!Number.isFinite(adxv) || adxv <= cfg.adxThreshold) return { ok: false, reason: "Нет тренда (ADX)" };
   const ema = emaPullback[i];
   if (!Number.isFinite(ema)) return { ok: false, reason: "EMA нет" };

@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_CHAIK } from "@/lib/backtest/backtestDefaults";
 import type { BacktestSettings } from "@/lib/backtest/types";
 
 function Tip({ children }: { children: React.ReactNode }) {
@@ -33,9 +34,24 @@ export function BacktestSettingsForm({
         после полного закрытия позиции.
       </p>
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
-        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
-          Индикатор V2_ЧайкКельт
-        </h3>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+            Индикатор V2_ЧайкКельт
+          </h3>
+          <button
+            type="button"
+            className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
+            title="Все поля блока — значения из Pine по умолчанию (вход в сделку)"
+            onClick={() => patchInd({ ...DEFAULT_CHAIK })}
+          >
+            Как в Pine (дефолты входа)
+          </button>
+        </div>
+        <p className="mb-3 text-[11px] leading-relaxed text-[#6b7280]">
+          Начальные значения формы совпадают со скриптом Pine (ADX 14/20, диапазон 150 баров, RSI 72/75,
+          Кельтнер 20/10/2, cooldown 1, cross off). Чайкин fast/slow 3/10 — как в индикаторе; осциллятор
+          считается на загруженном таймфрейме OHLCV (в Pine Чайкин можно вешать на другой ТФ — см. комментарий в коде).
+        </p>
         <div className="grid gap-3 text-sm">
           <label className="flex flex-col gap-1">
             <span className="text-[#787b86]">
@@ -166,6 +182,119 @@ export function BacktestSettingsForm({
               onChange={(e) => patchInd({ cooldownBars: Number(e.target.value) })}
             />
           </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="rounded border-[#2e3241]"
+              checked={settings.indicator.crossMode}
+              onChange={(e) => patchInd({ crossMode: e.target.checked })}
+            />
+            <span className="text-[#787b86]">
+              Только пересечение нуля Чайкина
+              <Tip>Pine cross_mode: сигнал на баре пересечения, а не пока осциллятор с нужной стороны нуля</Tip>
+            </span>
+          </label>
+          <details className="rounded-lg border border-[#2e3241] bg-[#0c0e14]/80 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-[#787b86]">
+              Остальные параметры входа (как в Pine)
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span>Период ADX</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.adxLength}
+                  onChange={(e) => patchInd({ adxLength: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Окно диапазона (баров)</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rangeBars}
+                  onChange={(e) => patchInd({ rangeBars: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Макс. позиция лонг %</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rangeMaxPctLong}
+                  onChange={(e) => patchInd({ rangeMaxPctLong: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Мин. позиция шорт %</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rangeMinPctShort}
+                  onChange={(e) => patchInd({ rangeMinPctShort: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Допуск отката к EMA %</span>
+                <input
+                  type="number"
+                  step={0.1}
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.pullbackPct}
+                  onChange={(e) => patchInd({ pullbackPct: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Баров для импульса (lookback)</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.divLookback}
+                  onChange={(e) => patchInd({ divLookback: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Период RSI</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rsiLen}
+                  onChange={(e) => patchInd({ rsiLen: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex items-center gap-2 pt-6">
+                <input
+                  type="checkbox"
+                  checked={settings.indicator.rsiEnabled}
+                  onChange={(e) => patchInd({ rsiEnabled: e.target.checked })}
+                />
+                <span>RSI включён</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>RSI шорт боковик &gt;</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rsiRangeThresholdShort}
+                  onChange={(e) =>
+                    patchInd({ rsiRangeThresholdShort: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>RSI шорт тренд &gt;</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rsiTrendThresholdShort}
+                  onChange={(e) =>
+                    patchInd({ rsiTrendThresholdShort: Number(e.target.value) })
+                  }
+                />
+              </label>
+            </div>
+          </details>
         </div>
       </section>
 

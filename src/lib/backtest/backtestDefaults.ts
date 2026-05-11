@@ -1,5 +1,10 @@
 import type { BacktestSettings, ChaikKeltSettings, DcaBotSettings } from "./types";
 
+/**
+ * Стандартные input Pine `V2_ЧайкКельт` (значения по умолчанию в скрипте).
+ * Чайкин в Pine считается на отдельном ТФ (`request.security`, по умолчанию `"15"`); в бэктесте
+ * осциллятор строится по тому же ряду свечей, что загружен как OHLCV (совпадение с TV — при том же ТФ или если в Pine Чайкин = ТФ графика).
+ */
 export const DEFAULT_CHAIK: ChaikKeltSettings = {
   directionFilter: "auto",
   chaikinFast: 3,
