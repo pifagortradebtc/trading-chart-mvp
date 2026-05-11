@@ -1,6 +1,10 @@
 "use client";
 
-import { exitReasonLabelRu, type MetricsSummary } from "@/lib/backtest/metrics";
+import {
+  exitReasonLabelRu,
+  worstTradeDetailRu,
+  type MetricsSummary,
+} from "@/lib/backtest/metrics";
 
 function Card({
   label,
@@ -44,6 +48,7 @@ export function BacktestResults({ m }: { m: MetricsSummary | null }) {
 
   const pf =
     m.profitFactor === Infinity ? "∞" : m.profitFactor.toFixed(2);
+  const endClose = m.endOfTestCloses ?? 0;
 
   return (
     <div className="space-y-4">
@@ -73,6 +78,14 @@ export function BacktestResults({ m }: { m: MetricsSummary | null }) {
         />
       </div>
 
+      {endClose > 0 ? (
+        <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+          Принудительное закрытие на последней свече (лимитный TP не достигнут):{" "}
+          <span className="font-semibold text-amber-200">{endClose}</span>. При кросс-марже и без
+          стопа это не ликвидация и не SL — просто конец загруженной истории.
+        </p>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Сделок" value={String(m.trades)} hint="Закрытых сделок" tone="info" />
         <Card label="Win rate %" value={`${m.winRatePct.toFixed(1)}%`} />
@@ -94,8 +107,8 @@ export function BacktestResults({ m }: { m: MetricsSummary | null }) {
           tone="loss"
           hint={
             m.worstTradeExitReason != null && m.worstTradeId != null
-              ? `Сделка #${m.worstTradeId}: ${exitReasonLabelRu(m.worstTradeExitReason)}. Плюс на TP только если выход именно по тейку; убыток возможен при стопе, ликвидации или принудительном закрытии в конце диапазона данных.`
-              : "Минимальный PnL по сделкам; наведите после нового прогона — покажем причину выхода худшей сделки."
+              ? `Сделка #${m.worstTradeId}: ${exitReasonLabelRu(m.worstTradeExitReason)}. ${worstTradeDetailRu(m.worstTradeExitReason)}`
+              : "Минимальный PnL по сделкам; после нового прогона наведите — будет причина выхода худшей сделки."
           }
         />
         <Card label="Лучшая сделка" value={m.bestTradeUsdt.toFixed(2)} tone="profit" />

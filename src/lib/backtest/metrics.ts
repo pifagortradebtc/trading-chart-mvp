@@ -20,6 +20,20 @@ export function exitReasonLabelRu(r: TradeRecord["exitReason"]): string {
   }
 }
 
+/** Развёрнутое объяснение для карточки «Худшая сделка» (с учётом кросс / без стопа в типичной стратегии). */
+export function worstTradeDetailRu(reason: TradeRecord["exitReason"]): string {
+  switch (reason) {
+    case "end_of_test":
+      return "К последней свече выборки цена не достигла лимитного TP — позиция закрыта по close последнего бара. Это не стоп и не ликвидация: при кросс-марже и без SL в движке других принудительных выходов нет.";
+    case "tp":
+      return "Выход по тейку от средней; отрицательный PnL бывает, если комиссии и фunding съели прибыль при узком TP.";
+    case "sl":
+      return "В настройках задан Stop loss % — срабатывание стопа от средней.";
+    case "liquidation":
+      return "Ветка ликвидации только при изолированной марже; при кросс-марже в бэктесте она отключена.";
+  }
+}
+
 export interface MetricsSummary {
   totalPnlUsdt: number;
   totalReturnPct: number;
@@ -33,6 +47,8 @@ export interface MetricsSummary {
   maxConsecutiveLosses: number;
   maxConsecutiveWins: number;
   liquidations: number;
+  /** Сделки, закрытые принудительно на последней свече (нет времени дойти до TP). В старых снимках может отсутствовать. */
+  endOfTestCloses?: number;
   worstTradeUsdt: number;
   /** По какой причине закрылась сделка с минимальным PnL (объясняет убыток при «всегда TP»). В старых снимках может отсутствовать. */
   worstTradeExitReason?: TradeRecord["exitReason"] | null;
@@ -92,6 +108,7 @@ export function computeMetrics(
   const maxEqDd = maxDrawdownFromEquity(equity);
 
   const liquidations = trades.filter((t) => t.exitReason === "liquidation").length;
+  const endOfTestCloses = trades.filter((t) => t.exitReason === "end_of_test").length;
 
   let worstTrade: TradeRecord | null = null;
   for (const t of trades) {
@@ -140,6 +157,7 @@ export function computeMetrics(
     maxConsecutiveLosses: maxLossStreak,
     maxConsecutiveWins: maxWinStreak,
     liquidations,
+    endOfTestCloses,
     worstTradeUsdt: worst,
     worstTradeExitReason: worstTrade?.exitReason ?? null,
     worstTradeId: worstTrade?.id ?? null,
