@@ -171,6 +171,64 @@ export function BacktestSettingsForm({
               onChange={(e) => patchInd({ cooldownBars: Number(e.target.value) })}
             />
           </label>
+          <label className="flex flex-col gap-1">
+            <span>
+              ТФ Чайкина (метка Pine)
+              <Tip>
+                В Pine осциллятор на `request.security`; в веб-бэктесте ряд совпадает с загруженным ТФ графика.
+                Для сравнения с TV задайте тот же интервал на графике или совпадающий расчёт.
+              </Tip>
+            </span>
+            <input
+              type="text"
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              value={settings.indicator.chaikinTf}
+              onChange={(e) => patchInd({ chaikinTf: e.target.value })}
+            />
+          </label>
+          <div className="rounded-lg border border-[#2e3241] bg-[#0c0e14]/60 px-3 py-2">
+            <p className="mb-2 text-xs text-[#787b86]">
+              Якорь лонга (ОТКАТОМ БЭК V2): при лимите якорь = close − ATR×k, иначе close; ATR по длине Keltner ATR.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.indicator.useLimitRange}
+                  onChange={(e) => patchInd({ useLimitRange: e.target.checked })}
+                />
+                <span>Лимит в боковике</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>k ATR (боковик)</span>
+                <input
+                  type="number"
+                  step={0.01}
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.limitRangeAtr}
+                  onChange={(e) => patchInd({ limitRangeAtr: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.indicator.useLimitTrend}
+                  onChange={(e) => patchInd({ useLimitTrend: e.target.checked })}
+                />
+                <span>Лимит в тренде</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>k ATR (тренд)</span>
+                <input
+                  type="number"
+                  step={0.01}
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.limitTrendAtr}
+                  onChange={(e) => patchInd({ limitTrendAtr: Number(e.target.value) })}
+                />
+              </label>
+            </div>
+          </div>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -338,8 +396,37 @@ export function BacktestSettingsForm({
                 })}{" "}
                 USDT при текущем торговом депозите
               </span>
+              <span className="text-[10px] text-[#6b7280]">
+                Для LONG по сетке Pine сумма ордеров = «Сумма сетки» ниже (или депозит, если пусто); % первого ордера
+                в этом режиме не задаёт распределение лонг-сетки.
+              </span>
             </label>
           </div>
+          <label className="flex flex-col gap-1">
+            <span>
+              Сумма номиналов сетки USDT (Pine marginPerTrade)
+              <Tip>
+                Опционально: если задано, сумма USDT по всем ордерам лонг-сетки равна этому значению (как в Pine).
+                Пустое поле — используется торговый депозит.
+              </Tip>
+            </span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              value={settings.dca.gridTotalNotionalUsdt ?? ""}
+              placeholder={`по умолчанию ${settings.dca.startDepositUsdt}`}
+              onChange={(e) =>
+                patchDca({
+                  gridTotalNotionalUsdt:
+                    e.target.value === "" || Number(e.target.value) <= 0
+                      ? undefined
+                      : Number(e.target.value),
+                })
+              }
+            />
+          </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>
@@ -478,6 +565,21 @@ export function BacktestSettingsForm({
               />
             </label>
           </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="rounded border-[#2e3241]"
+              checked={settings.dca.takeProfitOnClose}
+              onChange={(e) => patchDca({ takeProfitOnClose: e.target.checked })}
+            />
+            <span className="text-[#787b86]">
+              TP по close бара (как Pine)
+              <Tip>
+                Включено: выход по TP, если close достиг цели. Выключено: достаточно касания high/low intrabar
+                (агрессивнее).
+              </Tip>
+            </span>
+          </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>Комиссия % за сторону</span>
@@ -543,7 +645,13 @@ export function BacktestSettingsForm({
         </h3>
         <div className="flex flex-wrap gap-6 text-sm">
           <label className="flex flex-col gap-1">
-            <span>Вход</span>
+            <span>
+              Вход
+              <Tip>
+                LONG ОТКАТОМ: якорь и лимит/маркет первого ордера задаются как в Pine (не этим селектором). Ниже —
+                только для SHORT: open следующей свечи или close сигнальной.
+              </Tip>
+            </span>
             <select
               className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
               value={settings.entryTiming}

@@ -45,6 +45,21 @@ interface WorkingTrade {
   signalSnapshot: SignalBarState | null;
 }
 
+/** Отложенный вход в лонг по правилам Pine ОТКАТОМ: лимит на якоре или маркет на open следующего бара. */
+type PendingLongOpen =
+  | {
+      kind: "limit_first";
+      signalBar: number;
+      grid: ReturnType<typeof buildDcaGrid>;
+      meta: SignalBarState | null;
+    }
+  | {
+      kind: "market_next_open";
+      signalBar: number;
+      grid: ReturnType<typeof buildDcaGrid>;
+      meta: SignalBarState | null;
+    };
+
 /** Тейк-профит от средней позиции `avg`, не от первого входа. Пересчитывается после каждого DCA. */
 function tpPrice(side: TradeDirection, avg: number, tpPct: number): number {
   return side === "long"
@@ -106,7 +121,6 @@ function processLongBar(
 ): "tp" | "sl" | "liquidation" | "none" {
   const c = candles[i];
   const low = c.low;
-  const high = c.high;
   const { dca, executionOrder } = settings;
 
   const applyFillsDown = () => {
@@ -135,11 +149,18 @@ function processLongBar(
   const liqNow = () =>
     approxLiquidationPrice("long", tr.avgPrice, effectiveLiquidationLeverage(dca));
   const tpNow = () => tpPrice("long", tr.avgPrice, dca.takeProfitPct);
+  const tpHit = () => {
+    if (tr.qty <= 0) return false;
+    const t = tpNow();
+    return dca.takeProfitOnClose ? c.close >= t : c.high >= t;
+  };
   const slNow = () =>
     dca.stopLossPct != null ? slPrice("long", tr.avgPrice, dca.stopLossPct) : null;
 
+  applyFillsDown();
+  if (tr.qty <= 0) return "none";
+
   if (executionOrder === "conservative") {
-    applyFillsDown();
     const liqP = liqNow();
     if (
       dca.marginMode !== "cross" &&
@@ -150,11 +171,9 @@ function processLongBar(
     }
     const slP = slNow();
     if (slP != null && low <= slP) return "sl";
-    if (high >= tpNow()) return "tp";
+    if (tpHit()) return "tp";
   } else {
-    /** optimistic: сначала TP */
-    if (high >= tpNow()) return "tp";
-    applyFillsDown();
+    if (tpHit()) return "tp";
     const liqP = liqNow();
     if (
       dca.marginMode !== "cross" &&
@@ -181,7 +200,6 @@ function processShortBar(
   settings: BacktestSettings,
 ): "tp" | "sl" | "liquidation" | "none" {
   const c = candles[i];
-  const low = c.low;
   const high = c.high;
   const { dca, executionOrder } = settings;
 
@@ -211,11 +229,18 @@ function processShortBar(
   const liqNow = () =>
     approxLiquidationPrice("short", tr.avgPrice, effectiveLiquidationLeverage(dca));
   const tpNow = () => tpPrice("short", tr.avgPrice, dca.takeProfitPct);
+  const tpHit = () => {
+    if (tr.qty <= 0) return false;
+    const t = tpNow();
+    return dca.takeProfitOnClose ? c.close <= t : c.low <= t;
+  };
   const slNow = () =>
     dca.stopLossPct != null ? slPrice("short", tr.avgPrice, dca.stopLossPct) : null;
 
+  applyFillsUp();
+  if (tr.qty <= 0) return "none";
+
   if (executionOrder === "conservative") {
-    applyFillsUp();
     const liqP = liqNow();
     if (
       dca.marginMode !== "cross" &&
@@ -226,10 +251,9 @@ function processShortBar(
     }
     const slP = slNow();
     if (slP != null && high >= slP) return "sl";
-    if (low <= tpNow()) return "tp";
+    if (tpHit()) return "tp";
   } else {
-    if (low <= tpNow()) return "tp";
-    applyFillsUp();
+    if (tpHit()) return "tp";
     const liqP = liqNow();
     if (
       dca.marginMode !== "cross" &&
@@ -272,6 +296,13 @@ function createOpenTrade(
     firstPrice: number;
     /** Время исполнения первого ордера сетки (мс). */
     firstFillTimeMs: number;
+    /**
+     * Фактическая цена исполнения первого ордера (маркет — open следующего бара; лимит — цена уровня).
+     * По умолчанию = `firstPrice` (якорь сетки).
+     */
+    firstFillPrice?: number;
+    /** Позиция открыта, но первый ордер ещё не исполнен (лимитный вход в ожидании). */
+    emptyPosition?: boolean;
   },
 ): WorkingTrade | null {
   const {
@@ -286,6 +317,8 @@ function createOpenTrade(
     simulationFromBar,
     firstPrice,
     firstFillTimeMs,
+    firstFillPrice: firstFillPriceParam,
+    emptyPosition,
   } =
     params;
   if (grid.rows.length === 0) return null;
@@ -297,7 +330,35 @@ function createOpenTrade(
   const regime = detectRegime(meta, dir);
   const comment =
     dir === "long" ? meta?.reasonLong ?? "LONG сигнал" : meta?.reasonShort ?? "SHORT сигнал";
-  const qty0 = firstRow.orderUsdt / firstRow.price;
+
+  if (emptyPosition) {
+    return {
+      id,
+      symbol,
+      side: dir,
+      regime,
+      signalBar,
+      entryBar,
+      simulationFromBar,
+      firstPrice: firstRow.price,
+      filledLevels: 0,
+      qty: 0,
+      cumNotional: 0,
+      avgPrice: firstRow.price,
+      feesUsdt: 0,
+      fundingUsdt: 0,
+      grid,
+      comment,
+      maxDrawdownPct: 0,
+      maxDcaReached: 0,
+      dcaFillTimesMs: [],
+      signalSnapshot: meta,
+    };
+  }
+
+  const fillPx = firstFillPriceParam ?? firstPrice;
+  const qty0 = firstRow.orderUsdt / fillPx;
+  const avg0 = fillPx;
 
   return {
     id,
@@ -307,11 +368,11 @@ function createOpenTrade(
     signalBar,
     entryBar,
     simulationFromBar,
-    firstPrice,
+    firstPrice: fillPx,
     filledLevels: 1,
     qty: qty0,
     cumNotional: firstRow.orderUsdt,
-    avgPrice: firstRow.price,
+    avgPrice: avg0,
     feesUsdt: (firstRow.orderUsdt * settings.dca.feePctPerSide) / 100,
     fundingUsdt: 0,
     grid,
@@ -333,7 +394,10 @@ export function runBacktest(
   const signalsOut: (boolean | null)[] = new Array(n).fill(null);
   const metaOut: (SignalBarState | null)[] = new Array(n).fill(null);
 
-  const { longActive, shortActive, meta } = computeChaikSignals(candles, settings.indicator);
+  const { longActive, shortActive, meta, series } = computeChaikSignals(
+    candles,
+    settings.indicator,
+  );
 
   let equity = settings.dca.startDepositUsdt;
   const equityCurve: EquityPoint[] = [];
@@ -341,6 +405,7 @@ export function runBacktest(
   const trades: TradeRecord[] = [];
 
   let open: WorkingTrade | null = null;
+  let pendingLongOpen: PendingLongOpen | null = null;
   let pendingSignalBar: number | null = null;
   let pendingDir: TradeDirection | null = null;
   let tradeSeq = 1;
@@ -423,7 +488,9 @@ export function runBacktest(
 
       if (exit !== "none") {
         const exitPrice =
-          exit === "tp"
+          exit === "tp" && settings.dca.takeProfitOnClose
+            ? c.close
+            : exit === "tp"
             ? tpPrice(open.side, open.avgPrice, settings.dca.takeProfitPct)
             : exit === "sl" && settings.dca.stopLossPct != null
               ? slPrice(open.side, open.avgPrice, settings.dca.stopLossPct)
@@ -438,13 +505,76 @@ export function runBacktest(
       }
     };
 
+    /** Pine long: маркет — первый fill по open следующего бара после сигнала. */
+    if (!open && pendingLongOpen?.kind === "market_next_open" && i === pendingLongOpen.signalBar + 1) {
+      const grid = pendingLongOpen.grid;
+      const firstRow = grid.rows[0]!;
+      const fillPx = c.open;
+      const marginOk =
+        firstRow.orderUsdt / settings.dca.leverage <=
+        maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
+      if (marginOk) {
+        const o = createOpenTrade({
+          id: tradeSeq++,
+          symbol,
+          dir: "long",
+          signalBar: pendingLongOpen.signalBar,
+          settings,
+          meta: pendingLongOpen.meta,
+          grid,
+          entryBar: i,
+          simulationFromBar: i,
+          firstPrice: grid.firstEntryPrice,
+          firstFillPrice: fillPx,
+          firstFillTimeMs: c.time * 1000,
+        });
+        if (o) open = o;
+      }
+      pendingLongOpen = null;
+    }
+
+    /** Pine long: лимит — первый fill при low <= цены первого уровня сетки. */
+    if (!open && pendingLongOpen?.kind === "limit_first") {
+      const grid = pendingLongOpen.grid;
+      const firstRow = grid.rows[0]!;
+      if (c.low <= firstRow.price) {
+        const marginOk =
+          firstRow.orderUsdt / settings.dca.leverage <=
+          maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
+        if (marginOk) {
+          const o = createOpenTrade({
+            id: tradeSeq++,
+            symbol,
+            dir: "long",
+            signalBar: pendingLongOpen.signalBar,
+            settings,
+            meta: pendingLongOpen.meta,
+            grid,
+            entryBar: i,
+            simulationFromBar: i,
+            firstPrice: grid.firstEntryPrice,
+            firstFillPrice: firstRow.price,
+            firstFillTimeMs: c.time * 1000,
+          });
+          if (o) open = o;
+        }
+        pendingLongOpen = null;
+      }
+    }
+
     runPositionStep();
 
     /**
      * Отложенный вход по open следующей свечи — только если сейчас нет открытого раунда (open === null).
      * Инвариант: пока сетка DCA не закрыта (TP / SL / ликвидация / конец теста), новый вход не ставится.
      */
-    if (!open && pendingSignalBar !== null && pendingDir && settings.entryTiming === "next_open") {
+    if (
+      !open &&
+      pendingSignalBar !== null &&
+      pendingDir &&
+      pendingLongOpen === null &&
+      settings.entryTiming === "next_open"
+    ) {
       if (i === pendingSignalBar + 1) {
         const ePx = firstEntryPriceAtBar(candles, pendingSignalBar, "next_open");
         if (ePx != null) {
@@ -455,7 +585,7 @@ export function runBacktest(
             firstRow.orderUsdt / settings.dca.leverage <=
               maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
           if (marginOk) {
-            open = createOpenTrade({
+            const o = createOpenTrade({
               id: tradeSeq++,
               symbol,
               dir: pendingDir,
@@ -468,6 +598,7 @@ export function runBacktest(
               firstPrice: ePx,
               firstFillTimeMs: c.time * 1000,
             });
+            if (o) open = o;
           }
         }
         pendingSignalBar = null;
@@ -481,30 +612,78 @@ export function runBacktest(
      * Новый сигнал индикатора: принимается только при отсутствии активной позиции и отложенного входа.
      * Одновременно может существовать не больше одного «раунда» (одна сетка до полного закрытия).
      */
-    if (!open && pendingSignalBar === null) {
+    if (!open && pendingSignalBar === null && pendingLongOpen === null) {
       const dir = resolveDirection(i, longActive, shortActive, settings);
-      if (dir) {
+      if (dir === "long") {
+        signalsOut[i] = true;
+        const snap: SignalBarState | null = meta[i] ?? null;
+        const ind = settings.indicator;
+        const atrv = series.atrKelt[i] ?? NaN;
+        const useLimitNow =
+          Number.isFinite(atrv) &&
+          atrv > 0 &&
+          snap !== null &&
+          ((snap.longRange && ind.useLimitRange) || (snap.longTrend && ind.useLimitTrend));
+        const limitPull =
+          snap !== null && snap.longTrend && ind.useLimitTrend
+            ? ind.limitTrendAtr
+            : ind.limitRangeAtr;
+        const anchor = useLimitNow ? c.close - limitPull * atrv : c.close;
+        if (Number.isFinite(anchor) && anchor > 0) {
+          const grid = buildDcaGrid("long", anchor, settings.dca);
+          const firstRow = grid.rows[0];
+          const marginOk =
+            firstRow &&
+            firstRow.orderUsdt / settings.dca.leverage <=
+              maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
+          if (marginOk) {
+            if (useLimitNow) {
+              if (c.low <= firstRow!.price) {
+                const o = createOpenTrade({
+                  id: tradeSeq++,
+                  symbol,
+                  dir: "long",
+                  signalBar: i,
+                  settings,
+                  meta: snap,
+                  grid,
+                  entryBar: i,
+                  simulationFromBar: i,
+                  firstPrice: grid.firstEntryPrice,
+                  firstFillPrice: firstRow!.price,
+                  firstFillTimeMs: c.time * 1000,
+                });
+                if (o) open = o;
+              } else {
+                pendingLongOpen = { kind: "limit_first", signalBar: i, grid, meta: snap };
+              }
+            } else if (i + 1 < n) {
+              pendingLongOpen = { kind: "market_next_open", signalBar: i, grid, meta: snap };
+            }
+          }
+        }
+      } else if (dir === "short") {
         signalsOut[i] = true;
         if (settings.entryTiming === "next_open") {
           if (i + 1 < n) {
             pendingSignalBar = i;
-            pendingDir = dir;
+            pendingDir = "short";
           }
         } else {
           const ePx = firstEntryPriceAtBar(candles, i, "signal_close");
           const simFrom = firstSimulationBar(i, "signal_close");
           if (ePx != null && simFrom < n) {
-            const grid = buildDcaGrid(dir, ePx, settings.dca);
+            const grid = buildDcaGrid("short", ePx, settings.dca);
             const firstRow = grid.rows[0];
             const marginOk =
               firstRow &&
               firstRow.orderUsdt / settings.dca.leverage <=
                 maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
             if (marginOk) {
-              open = createOpenTrade({
+              const o = createOpenTrade({
                 id: tradeSeq++,
                 symbol,
-                dir,
+                dir: "short",
                 signalBar: i,
                 settings,
                 meta: meta[i] ?? null,
@@ -514,6 +693,7 @@ export function runBacktest(
                 firstPrice: ePx,
                 firstFillTimeMs: c.time * 1000,
               });
+              if (o) open = o;
             }
           }
         }
@@ -521,6 +701,8 @@ export function runBacktest(
         signalsOut[i] = longActive[i] || shortActive[i] ? false : null;
       }
     }
+
+    runPositionStep();
 
     pushEquity(tMs);
     if (equity > peak) peak = equity;

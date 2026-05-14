@@ -18,6 +18,8 @@ export type IndicatorDirectionFilter = "auto" | "long_only" | "short_only";
 export interface ChaikKeltSettings {
   /** Фильтр направления на уровне Pine direction */
   directionFilter: IndicatorDirectionFilter;
+  /** Таймфрейм Чайкина в Pine (`request.security`); в веб-бэктесте осциллятор считается по загруженным свечам — для совпадения с TV задайте тот же ТФ графика. */
+  chaikinTf: string;
   chaikinFast: number;
   chaikinSlow: number;
   rangeBars: number;
@@ -39,6 +41,12 @@ export interface ChaikKeltSettings {
   keltnerMult: number;
   cooldownBars: number;
   crossMode: boolean;
+  /** Pine «С ОТКАТОМ БЭК V2»: лимитный первый вход в боковике (цена = close − ATR×k). */
+  useLimitRange: boolean;
+  limitRangeAtr: number;
+  /** Лимитный первый вход в тренде. */
+  useLimitTrend: boolean;
+  limitTrendAtr: number;
 }
 
 export interface DcaBotSettings {
@@ -73,6 +81,13 @@ export interface DcaBotSettings {
   allowLong: boolean;
   allowShort: boolean;
   mode: DirectionMode;
+  /**
+   * Сумма номиналов всех ордеров сетки в USDT (Pine `marginPerTrade`).
+   * Если не задано, используется `startDepositUsdt`.
+   */
+  gridTotalNotionalUsdt?: number;
+  /** Как в Pine: TP при достижении цели по **close** бара (`close >= avg×(1+tp%)`). Если false — по high (агрессивнее). */
+  takeProfitOnClose: boolean;
 }
 
 export interface BacktestSettings {

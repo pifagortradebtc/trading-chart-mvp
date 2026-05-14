@@ -6,6 +6,7 @@
 import type { Candle } from "@/types/candle";
 import {
   adxDi,
+  atr,
   chaikinOscillator,
   emaFromSeries,
   highestHigh,
@@ -33,6 +34,8 @@ export interface ChaikComputedSeries {
   rangeHigh: number[];
   rangeLow: number[];
   rangePosPct: number[];
+  /** ATR(keltnerAtrLen) — для лимитного входа Pine (откат × ATR). */
+  atrKelt: number[];
 }
 
 export function computeChaikSeries(candles: Candle[], cfg: ChaikKeltSettings): ChaikComputedSeries {
@@ -54,6 +57,7 @@ export function computeChaikSeries(candles: Candle[], cfg: ChaikKeltSettings): C
     cfg.keltnerAtrLen,
     cfg.keltnerMult,
   );
+  const atrKelt = atr(high, low, close, cfg.keltnerAtrLen);
   const rangeHigh = highestHigh(high, cfg.rangeBars);
   const rangeLow = lowestLow(low, cfg.rangeBars);
   const rangePosPct = new Array(n).fill(NaN);
@@ -64,7 +68,7 @@ export function computeChaikSeries(candles: Candle[], cfg: ChaikKeltSettings): C
     rangePosPct[i] = ((close[i] - rl) / (rh - rl)) * 100;
   }
 
-  return { chOsc, adx, diPlus, diMinus, rsiVal, emaPullback, kUpper, kLower, rangeHigh, rangeLow, rangePosPct };
+  return { chOsc, adx, diPlus, diMinus, rsiVal, emaPullback, kUpper, kLower, rangeHigh, rangeLow, rangePosPct, atrKelt };
 }
 
 function dirAllowed(filter: IndicatorDirectionFilter, side: TradeDirection): boolean {

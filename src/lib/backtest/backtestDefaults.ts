@@ -7,6 +7,7 @@ import type { BacktestSettings, ChaikKeltSettings, DcaBotSettings } from "./type
  */
 export const DEFAULT_CHAIK: ChaikKeltSettings = {
   directionFilter: "long_only",
+  chaikinTf: "15",
   chaikinFast: 3,
   chaikinSlow: 10,
   rangeBars: 150,
@@ -28,6 +29,10 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
   keltnerMult: 2.0,
   cooldownBars: 1,
   crossMode: false,
+  useLimitRange: true,
+  limitRangeAtr: 0.3,
+  useLimitTrend: false,
+  limitTrendAtr: 0.15,
 };
 
 export const DEFAULT_DCA: DcaBotSettings = {
@@ -50,6 +55,7 @@ export const DEFAULT_DCA: DcaBotSettings = {
   allowLong: true,
   allowShort: false,
   mode: "long",
+  takeProfitOnClose: true,
 };
 
 /** Совместимость со старыми JSON/снимками с полем `firstOrderUsdt`. */
@@ -74,6 +80,9 @@ export function migrateDcaSettings(
   }
   if (!Number.isFinite(merged.walletBalanceUsdt) || merged.walletBalanceUsdt <= 0) {
     merged.walletBalanceUsdt = merged.startDepositUsdt;
+  }
+  if (typeof merged.takeProfitOnClose !== "boolean") {
+    merged.takeProfitOnClose = true;
   }
   return merged;
 }

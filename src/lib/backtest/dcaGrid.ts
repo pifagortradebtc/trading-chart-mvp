@@ -1,22 +1,17 @@
 /**
- * Расчёт факторной DCA-сетки: цены уровней, объёмы, средняя цена, TP, приблизительная ликвидация.
+ * DCA-сетка: для LONG — как в Pine `ChaykKelt_OTKATOM_BACK_V2` (`f_initGrid`);
+ * для SHORT — прежняя геометрия по overlap (редкий режим).
  */
 
 import type { DcaBotSettings, DcaGridResult, DcaGridRow, TradeDirection } from "./types";
 import { approxLiquidationPrice, effectiveLiquidationLeverage } from "./risk";
 
 /**
- * Строит сетку из `ordersCount` ордеров от первой цены входа.
- * Общий диапазон цены от первого до последнего уровня = priceOverlapPct% от первой цены (в сторону усреднения).
- *
- * Расстояния между соседними уровнями растут в геометрической прогрессии с множителем priceFactor.
- * Объёмы ордеров в USDT: каждый следующий умножается на volumeFactor.
+ * Pine `f_initGrid(price)` для лонга: сумма USDT по ордерам = `marginPerTrade`,
+ * цены от anchor вниз по нормированным весам (priceCoef).
  */
-export function buildDcaGrid(
-  side: TradeDirection,
-  firstEntryPrice: number,
-  settings: DcaBotSettings,
-): DcaGridResult {
+export function buildDcaGridPineOtkatomLong(anchorPrice: number, settings: DcaBotSettings): DcaGridResult {
+  const side: TradeDirection = "long";
   const {
     ordersCount,
     priceOverlapPct,
@@ -24,96 +19,80 @@ export function buildDcaGrid(
     volumeFactor,
     takeProfitPct,
     leverage,
+    gridTotalNotionalUsdt,
     startDepositUsdt,
-    firstOrderDepositPct,
   } = settings;
+
+  const marginPerTrade = gridTotalNotionalUsdt ?? startDepositUsdt;
+  const gridOrders = Math.max(1, Math.floor(ordersCount));
+  const F = priceFactor;
+  const M = volumeFactor;
 
   const liqLeverage = effectiveLiquidationLeverage(settings);
 
-  const firstOrderUsdt = (startDepositUsdt * firstOrderDepositPct) / 100;
-
   if (
-    ordersCount < 1 ||
-    firstEntryPrice <= 0 ||
-    !Number.isFinite(firstEntryPrice) ||
+    anchorPrice <= 0 ||
+    !Number.isFinite(anchorPrice) ||
     priceOverlapPct <= 0 ||
-    !Number.isFinite(firstOrderUsdt) ||
-    firstOrderUsdt <= 0
+    !Number.isFinite(marginPerTrade) ||
+    marginPerTrade <= 0
   ) {
-    return {
-      side,
-      firstEntryPrice,
-      rows: [],
-    };
+    return { side, firstEntryPrice: anchorPrice, rows: [] };
   }
 
-  const totalLevels = Math.max(1, Math.floor(ordersCount));
-  const overlapAbs =
-    side === "long"
-      ? firstEntryPrice * (priceOverlapPct / 100)
-      : firstEntryPrice * (priceOverlapPct / 100);
+  const lowestPrice = anchorPrice * (1 - priceOverlapPct / 100);
+  const priceRange = anchorPrice - lowestPrice;
 
-  /** Интервалов между уровнями = totalLevels - 1 */
-  const intervals = Math.max(0, totalLevels - 1);
-  const rows: DcaGridRow[] = [];
-
-  /** Геометрические шаги сырья (в долларах движения цены), сумма = overlapAbs */
-  let stepWeights: number[] = [];
-  if (intervals === 0) {
-    stepWeights = [];
-  } else if (Math.abs(priceFactor - 1) < 1e-12) {
-    const w = 1 / intervals;
-    stepWeights = Array.from({ length: intervals }, () => overlapAbs * w);
+  let coefSum: number;
+  if (gridOrders <= 1) {
+    coefSum = 1;
+  } else if (Math.abs(F - 1) < 1e-12) {
+    coefSum = gridOrders - 1;
   } else {
-    /** Сумма геом. прогрессии: a + a*r + ... = a * (r^n - 1)/(r - 1) = overlapAbs */
-    const r = priceFactor;
-    const n = intervals;
-    const sumGeom = (r ** n - 1) / (r - 1);
-    const a = overlapAbs / sumGeom;
-    stepWeights = [];
-    for (let k = 0; k < intervals; k++) {
-      stepWeights.push(a * r ** k);
-    }
+    coefSum = (F ** (gridOrders - 1) - 1) / (F - 1);
   }
 
-  /** Цены уровней */
+  let volumeCoefSum: number;
+  if (Math.abs(M - 1) < 1e-12) {
+    volumeCoefSum = gridOrders;
+  } else {
+    volumeCoefSum = (M ** gridOrders - 1) / (M - 1);
+  }
+
+  const baseQtyUsdt = marginPerTrade / volumeCoefSum;
+
   const prices: number[] = [];
-  prices.push(firstEntryPrice);
-  for (let k = 0; k < intervals; k++) {
-    const step = stepWeights[k] ?? 0;
-    const prev = prices[prices.length - 1]!;
-    const next =
-      side === "long" ? prev - step : prev + step;
-    prices.push(next);
-  }
-
-  /** Объёмы USDT по уровням */
   const notionals: number[] = [];
-  for (let i = 0; i < totalLevels; i++) {
-    const usdt = firstOrderUsdt * volumeFactor ** i;
-    notionals.push(usdt);
+
+  for (let i = 0; i < gridOrders; i++) {
+    let priceCoef_i: number;
+    if (Math.abs(F - 1) < 1e-12) {
+      priceCoef_i = i;
+    } else {
+      priceCoef_i = (F ** i - 1) / (F - 1);
+    }
+    const normalized = coefSum > 0 ? priceCoef_i / coefSum : 0;
+    const price_i = anchorPrice - priceRange * normalized;
+    prices.push(price_i);
+
+    const volumeCoef_i = M ** i;
+    notionals.push(baseQtyUsdt * volumeCoef_i);
   }
 
   let cumQty = 0;
   let cumNotional = 0;
+  const rows: DcaGridRow[] = [];
 
-  for (let i = 0; i < totalLevels; i++) {
+  for (let i = 0; i < gridOrders; i++) {
     const price = prices[i]!;
     const orderUsdt = notionals[i]!;
     const qty = orderUsdt / price;
     cumQty += qty;
     cumNotional += orderUsdt;
     const avgPrice = cumNotional / cumQty;
-    // TP всегда от накопленной средней по исполненным уровням 1…(i+1), не от первой цены входа.
-    const tpRaw =
-      side === "long"
-        ? avgPrice * (1 + takeProfitPct / 100)
-        : avgPrice * (1 - takeProfitPct / 100);
-    const liq = approxLiquidationPrice(side, avgPrice, liqLeverage);
-    const drawdownFromFirstPct =
-      side === "long"
-        ? ((firstEntryPrice - avgPrice) / firstEntryPrice) * 100
-        : ((avgPrice - firstEntryPrice) / firstEntryPrice) * 100;
+    const tpRaw = avgPrice * (1 + takeProfitPct / 100);
+    const liq = approxLiquidationPrice("long", avgPrice, liqLeverage);
+    const drawdownFromFirstPct = ((anchorPrice - avgPrice) / anchorPrice) * 100;
     const marginUsed = cumNotional / leverage;
 
     rows.push({
@@ -132,7 +111,114 @@ export function buildDcaGrid(
 
   return {
     side,
-    firstEntryPrice,
+    firstEntryPrice: anchorPrice,
     rows,
   };
+}
+
+/** Прежняя сетка (overlap + первый ордер % от депозита) — для SHORT. */
+function buildDcaGridLegacyShort(
+  firstEntryPrice: number,
+  settings: DcaBotSettings,
+): DcaGridResult {
+  const side: TradeDirection = "short";
+  const {
+    ordersCount,
+    priceOverlapPct,
+    priceFactor,
+    volumeFactor,
+    takeProfitPct,
+    leverage,
+    startDepositUsdt,
+    firstOrderDepositPct,
+  } = settings;
+
+  const liqLeverage = effectiveLiquidationLeverage(settings);
+  const firstOrderUsdt = (startDepositUsdt * firstOrderDepositPct) / 100;
+
+  if (
+    ordersCount < 1 ||
+    firstEntryPrice <= 0 ||
+    !Number.isFinite(firstEntryPrice) ||
+    priceOverlapPct <= 0 ||
+    !Number.isFinite(firstOrderUsdt) ||
+    firstOrderUsdt <= 0
+  ) {
+    return { side, firstEntryPrice, rows: [] };
+  }
+
+  const totalLevels = Math.max(1, Math.floor(ordersCount));
+  const overlapAbs = firstEntryPrice * (priceOverlapPct / 100);
+  const intervals = Math.max(0, totalLevels - 1);
+  let stepWeights: number[] = [];
+  if (intervals === 0) {
+    stepWeights = [];
+  } else if (Math.abs(priceFactor - 1) < 1e-12) {
+    const w = 1 / intervals;
+    stepWeights = Array.from({ length: intervals }, () => overlapAbs * w);
+  } else {
+    const r = priceFactor;
+    const n = intervals;
+    const sumGeom = (r ** n - 1) / (r - 1);
+    const a = overlapAbs / sumGeom;
+    stepWeights = [];
+    for (let k = 0; k < intervals; k++) {
+      stepWeights.push(a * r ** k);
+    }
+  }
+
+  const prices: number[] = [firstEntryPrice];
+  for (let k = 0; k < intervals; k++) {
+    const step = stepWeights[k] ?? 0;
+    const prev = prices[prices.length - 1]!;
+    prices.push(prev + step);
+  }
+
+  const notionals: number[] = [];
+  for (let i = 0; i < totalLevels; i++) {
+    notionals.push(firstOrderUsdt * volumeFactor ** i);
+  }
+
+  let cumQty = 0;
+  let cumNotional = 0;
+  const rows: DcaGridRow[] = [];
+
+  for (let i = 0; i < totalLevels; i++) {
+    const price = prices[i]!;
+    const orderUsdt = notionals[i]!;
+    const qty = orderUsdt / price;
+    cumQty += qty;
+    cumNotional += orderUsdt;
+    const avgPrice = cumNotional / cumQty;
+    const tpRaw = avgPrice * (1 - takeProfitPct / 100);
+    const liq = approxLiquidationPrice("short", avgPrice, liqLeverage);
+    const drawdownFromFirstPct = ((avgPrice - firstEntryPrice) / firstEntryPrice) * 100;
+    const marginUsed = cumNotional / leverage;
+
+    rows.push({
+      orderIndex: i + 1,
+      price,
+      orderUsdt,
+      qtyCoin: qty,
+      cumNotionalUsdt: cumNotional,
+      avgPrice,
+      takeProfitPrice: tpRaw,
+      approxLiquidationPrice: liq,
+      drawdownFromFirstPct,
+      marginUsedUsdt: marginUsed,
+    });
+  }
+
+  return { side, firstEntryPrice, rows };
+}
+
+export function buildDcaGrid(
+  side: TradeDirection,
+  firstEntryPrice: number,
+  settings: DcaBotSettings,
+): DcaGridResult {
+  if (side === "long") {
+    return buildDcaGridPineOtkatomLong(firstEntryPrice, settings);
+  }
+  return buildDcaGridLegacyShort(firstEntryPrice, settings);
 }
