@@ -14,6 +14,7 @@ import type { BacktestResult, BacktestSettings, TradeRecord } from "@/lib/backte
 import { DEFAULT_BACKTEST, migrateDcaSettings } from "@/lib/backtest/backtestDefaults";
 import { BacktestSettingsForm } from "./BacktestSettings";
 import { BacktestResults } from "./BacktestResults";
+import { BacktestStrategyDashboard } from "./BacktestStrategyDashboard";
 import { TradeDetailsModal } from "./TradeDetailsModal";
 import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
@@ -164,7 +165,11 @@ export function BacktestPage() {
   useEffect(() => {
     const { lastResult, lastMetrics } = useBacktestLastRunStore.getState();
     if (!lastResult?.trades?.length) return;
-    setResult(lastResult);
+    setResult({
+      ...lastResult,
+      openPositionAtDataEnd: lastResult.openPositionAtDataEnd ?? null,
+      lastBarAtrKelt: lastResult.lastBarAtrKelt,
+    });
     if (lastMetrics) setMetrics(lastMetrics);
     if (lastResult.candles?.length) {
       setCandles(lastResult.candles);
@@ -565,6 +570,8 @@ export function BacktestPage() {
           toMs: t1,
           requestedFromMs: t0,
         },
+        openPositionAtDataEnd: null,
+        lastBarAtrKelt: undefined,
       };
       setResult(restored);
       useBacktestLastRunStore.getState().setLastRun(restored, snap.metrics);
@@ -795,8 +802,11 @@ export function BacktestPage() {
 
         {researchTab === "results" && (
           <div className="space-y-6">
-            <InterpretationPanel items={interpretation} />
             <BacktestResults m={metrics} />
+            {result && metrics ? (
+              <BacktestStrategyDashboard result={result} settings={settings} interval={interval} />
+            ) : null}
+            <InterpretationPanel items={interpretation} />
             {metrics && advancedMetrics && (
               <ExtendedKpiGrid m={metrics} adv={advancedMetrics} />
             )}

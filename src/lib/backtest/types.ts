@@ -127,6 +127,9 @@ export interface SignalBarState {
   reasonShort: string;
 }
 
+/** Первый ордер сетки: лимит (цена уровня) или маркет (open следующего бара и т.п.). */
+export type FirstEntryKind = "limit" | "market";
+
 export interface TradeRecord {
   id: number;
   symbol: string;
@@ -137,6 +140,10 @@ export interface TradeRecord {
   entrySignalTime: number;
   entryTime: number;
   exitTime: number;
+  /** Индекс бара первого исполненного входа (0-based). У старых снимков может отсутствовать. */
+  entryBarIndex?: number;
+  /** Индекс бара выхода. У старых снимков может отсутствовать. */
+  exitBarIndex?: number;
   firstEntryPrice: number;
   avgEntryPrice: number;
   exitPrice: number;
@@ -147,6 +154,8 @@ export interface TradeRecord {
   pnlUsdt: number;
   pnlPctOnMargin: number;
   feesUsdt: number;
+  /** Тип первого входа (для статистики Lim/Mkt). У старых снимков — неизвестно. */
+  firstEntryKind?: FirstEntryKind;
   exitReason: "tp" | "sl" | "liquidation" | "end_of_test";
   durationMs: number;
   comment: string;
@@ -167,6 +176,34 @@ export interface EquityPoint {
   peakEquity: number;
 }
 
+/**
+ * Состояние открытой позиции на последнем баре выборки (до принудительного закрытия в движке).
+ * Позволяет показать в UI блок «Позиция» как в Pine, даже если сделка затем записана как end_of_test.
+ */
+export interface OpenPositionSnapshot {
+  symbol: string;
+  side: TradeDirection;
+  regime: MarketRegime;
+  avgEntryPrice: number;
+  takeProfitPrice: number;
+  markPrice: number;
+  filledLevels: number;
+  totalGridOrders: number;
+  /** Нереализованный PnL % от использованной маржи (без комиссии выхода). */
+  unrealizedPnlPctOnMargin: number;
+  /** Расстояние от mark до TP в % к mark (лонг: вверх до TP). */
+  distanceToTpPct: number;
+  openedAtMs: number;
+  lastBarAtMs: number;
+  durationMs: number;
+  maxDrawdownPct: number;
+  firstEntryKind: FirstEntryKind;
+  cumNotionalUsdt: number;
+  leverage: number;
+  /** Баров от первого входа до последнего бара выборки (включительно). */
+  durationBars: number;
+}
+
 export interface BacktestResult {
   candles: Candle[];
   signals: (boolean | null)[];
@@ -175,6 +212,10 @@ export interface BacktestResult {
   equity: EquityPoint[];
   warning?: string;
   dataRange: { fromMs: number; toMs: number; requestedFromMs: number };
+  /** ATR Кельтнера на последнем баре (для панели настроек как в Pine). */
+  lastBarAtrKelt?: number;
+  /** Снимок позиции перед закрытием на конце данных; `null` — позиции не было. */
+  openPositionAtDataEnd: OpenPositionSnapshot | null;
 }
 
 export interface FetchProgress {

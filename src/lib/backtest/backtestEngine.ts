@@ -13,7 +13,9 @@ import type {
   BacktestResult,
   BacktestSettings,
   EquityPoint,
+  FirstEntryKind,
   MarketRegime,
+  OpenPositionSnapshot,
   SignalBarState,
   TradeDirection,
   TradeRecord,
@@ -43,6 +45,7 @@ interface WorkingTrade {
   /** Время исполнения каждого уровня (первая точка — первый вход). */
   dcaFillTimesMs: number[];
   signalSnapshot: SignalBarState | null;
+  firstEntryKind: FirstEntryKind;
 }
 
 /** Отложенный вход в лонг по правилам Pine ОТКАТОМ: лимит на якоре или маркет на open следующего бара. */
@@ -282,6 +285,54 @@ function detectRegime(snapshot: SignalBarState | null, side: TradeDirection): Ma
   return "range";
 }
 
+function buildOpenPositionSnapshot(
+  tr: WorkingTrade,
+  markPrice: number,
+  openedAtMs: number,
+  lastBarAtMs: number,
+  exitBarIndex: number,
+  settings: BacktestSettings,
+): OpenPositionSnapshot {
+  const dca = settings.dca;
+  const avg = tr.avgPrice;
+  const qty = tr.qty;
+  const tpTarget = tpPrice(tr.side, avg, dca.takeProfitPct);
+  const marginUsed = tr.cumNotional > 0 ? tr.cumNotional / dca.leverage : 0;
+  const gross =
+    tr.side === "long" ? qty * (markPrice - avg) : qty * (avg - markPrice);
+  const unrealizedPnlPctOnMargin = marginUsed > 0 ? (gross / marginUsed) * 100 : 0;
+
+  let distanceToTpPct = 0;
+  if (markPrice > 0) {
+    if (tr.side === "long") {
+      distanceToTpPct = ((tpTarget - markPrice) / markPrice) * 100;
+    } else {
+      distanceToTpPct = ((markPrice - tpTarget) / markPrice) * 100;
+    }
+  }
+
+  return {
+    symbol: tr.symbol,
+    side: tr.side,
+    regime: tr.regime,
+    avgEntryPrice: avg,
+    takeProfitPrice: tpTarget,
+    markPrice,
+    filledLevels: tr.filledLevels,
+    totalGridOrders: tr.grid.rows.length,
+    unrealizedPnlPctOnMargin,
+    distanceToTpPct,
+    openedAtMs,
+    lastBarAtMs,
+    durationMs: Math.max(0, lastBarAtMs - openedAtMs),
+    maxDrawdownPct: tr.maxDrawdownPct,
+    firstEntryKind: tr.firstEntryKind,
+    cumNotionalUsdt: tr.cumNotional,
+    leverage: dca.leverage,
+    durationBars: Math.max(1, exitBarIndex - tr.entryBar + 1),
+  };
+}
+
 function createOpenTrade(
   params: {
     id: number;
@@ -303,6 +354,7 @@ function createOpenTrade(
     firstFillPrice?: number;
     /** Позиция открыта, но первый ордер ещё не исполнен (лимитный вход в ожидании). */
     emptyPosition?: boolean;
+    firstEntryKind?: FirstEntryKind;
   },
 ): WorkingTrade | null {
   const {
@@ -319,6 +371,7 @@ function createOpenTrade(
     firstFillTimeMs,
     firstFillPrice: firstFillPriceParam,
     emptyPosition,
+    firstEntryKind = "market",
   } =
     params;
   if (grid.rows.length === 0) return null;
@@ -353,6 +406,7 @@ function createOpenTrade(
       maxDcaReached: 0,
       dcaFillTimesMs: [],
       signalSnapshot: meta,
+      firstEntryKind,
     };
   }
 
@@ -381,6 +435,7 @@ function createOpenTrade(
     maxDcaReached: 1,
     dcaFillTimesMs: [firstFillTimeMs],
     signalSnapshot: meta,
+    firstEntryKind,
   };
 }
 
@@ -409,13 +464,20 @@ export function runBacktest(
   let pendingSignalBar: number | null = null;
   let pendingDir: TradeDirection | null = null;
   let tradeSeq = 1;
+  let openPositionAtDataEnd: OpenPositionSnapshot | null = null;
 
   const pushEquity = (tMs: number) => {
     const dd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
     equityCurve.push({ time: tMs, equity, drawdownPct: dd, peakEquity: peak });
   };
 
-  const finalizeTrade = (tr: WorkingTrade, exit: TradeRecord["exitReason"], exitPrice: number, tMs: number) => {
+  const finalizeTrade = (
+    tr: WorkingTrade,
+    exit: TradeRecord["exitReason"],
+    exitPrice: number,
+    tMs: number,
+    barIndex: number,
+  ) => {
     const gross =
       tr.side === "long"
         ? tr.qty * (exitPrice - tr.avgPrice)
@@ -438,6 +500,8 @@ export function runBacktest(
       entrySignalTime: (candles[tr.signalBar]?.time ?? Math.floor(tMs / 1000)) * 1000,
       entryTime: entryT * 1000,
       exitTime: tMs,
+      entryBarIndex: tr.entryBar,
+      exitBarIndex: barIndex,
       firstEntryPrice: tr.firstPrice,
       avgEntryPrice: tr.avgPrice,
       exitPrice,
@@ -448,6 +512,7 @@ export function runBacktest(
       pnlPctOnMargin:
         tr.cumNotional > 0 ? (pnl / (tr.cumNotional / settings.dca.leverage)) * 100 : 0,
       feesUsdt: tr.feesUsdt,
+      firstEntryKind: tr.firstEntryKind,
       exitReason: exit,
       durationMs: tMs - entryT * 1000,
       comment: tr.comment,
@@ -501,7 +566,7 @@ export function runBacktest(
                   effectiveLiquidationLeverage(settings.dca),
                 )
                 : c.close;
-        finalizeTrade(open, exit, exitPrice, tMs);
+        finalizeTrade(open, exit, exitPrice, tMs, i);
       }
     };
 
@@ -527,6 +592,7 @@ export function runBacktest(
           firstPrice: grid.firstEntryPrice,
           firstFillPrice: fillPx,
           firstFillTimeMs: c.time * 1000,
+          firstEntryKind: "market",
         });
         if (o) open = o;
       }
@@ -555,6 +621,7 @@ export function runBacktest(
             firstPrice: grid.firstEntryPrice,
             firstFillPrice: firstRow.price,
             firstFillTimeMs: c.time * 1000,
+            firstEntryKind: "limit",
           });
           if (o) open = o;
         }
@@ -597,6 +664,7 @@ export function runBacktest(
               simulationFromBar: i,
               firstPrice: ePx,
               firstFillTimeMs: c.time * 1000,
+              firstEntryKind: "market",
             });
             if (o) open = o;
           }
@@ -652,6 +720,7 @@ export function runBacktest(
                   firstPrice: grid.firstEntryPrice,
                   firstFillPrice: firstRow!.price,
                   firstFillTimeMs: c.time * 1000,
+                  firstEntryKind: "limit",
                 });
                 if (o) open = o;
               } else {
@@ -692,6 +761,7 @@ export function runBacktest(
                 simulationFromBar: simFrom,
                 firstPrice: ePx,
                 firstFillTimeMs: c.time * 1000,
+                firstEntryKind: "market",
               });
               if (o) open = o;
             }
@@ -708,10 +778,26 @@ export function runBacktest(
     if (equity > peak) peak = equity;
   }
 
+  let lastBarAtrKelt: number | undefined;
+  if (n > 0) {
+    const ax = series.atrKelt[n - 1];
+    if (typeof ax === "number" && Number.isFinite(ax)) lastBarAtrKelt = ax;
+  }
+
   if (open && n > 0) {
-    const c = candles[n - 1]!;
-    const tMs = c.time * 1000;
-    finalizeTrade(open, "end_of_test", c.close, tMs);
+    const cLast = candles[n - 1]!;
+    const tMsEnd = cLast.time * 1000;
+    const barIdx = n - 1;
+    const openedAtMs = (candles[open.entryBar]?.time ?? 0) * 1000;
+    openPositionAtDataEnd = buildOpenPositionSnapshot(
+      open,
+      cLast.close,
+      openedAtMs,
+      tMsEnd,
+      barIdx,
+      settings,
+    );
+    finalizeTrade(open, "end_of_test", cLast.close, tMsEnd, barIdx);
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;
@@ -724,5 +810,7 @@ export function runBacktest(
     trades,
     equity: equityCurve,
     dataRange: { fromMs, toMs, requestedFromMs },
+    lastBarAtrKelt,
+    openPositionAtDataEnd,
   };
 }
