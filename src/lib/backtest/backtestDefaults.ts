@@ -43,7 +43,7 @@ export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
   dcaStartMs: Date.UTC(2017, 11, 31, 0, 0, 0, 0),
   dcaEndMs: Date.UTC(2034, 11, 31, 0, 0, 0, 0),
   usePineExitRules: true,
-  closewhen100: false,
+  closewhen100: true,
   maxPyramidingEntries: 200,
 };
 
@@ -77,11 +77,45 @@ export const DEFAULT_PIFAGOR_DCA: DcaBotSettings = {
   walletBalanceUsdt: 1_000_000,
   leverage: 1,
   feePctPerSide: 0,
+  fundingPctPer8h: 0,
   takeProfitPct: 100,
   stopLossPct: null,
   takeProfitOnClose: true,
   marginMode: "isolated",
+  allowLong: true,
+  allowShort: false,
+  mode: "long",
 };
+
+/** Единственные настраиваемые поля в UI — остальное как в Pine TV. */
+export function applyPifagorTvDefaults(
+  settings: BacktestSettings,
+  overrides?: { startDepositUsdt?: number; entryNotionalUsdt?: number },
+): BacktestSettings {
+  const deposit =
+    overrides?.startDepositUsdt ??
+    settings.dca.startDepositUsdt ??
+    DEFAULT_PIFAGOR_DCA.startDepositUsdt;
+  const entry =
+    overrides?.entryNotionalUsdt ??
+    settings.pifagorAlts.entryNotionalUsdt ??
+    DEFAULT_PIFAGOR_ALTS.entryNotionalUsdt;
+
+  return {
+    ...settings,
+    strategyKind: "pifagor_alts",
+    pifagorAlts: {
+      ...DEFAULT_PIFAGOR_ALTS,
+      entryNotionalUsdt: Math.max(1, entry),
+    },
+    dca: {
+      ...settings.dca,
+      ...DEFAULT_PIFAGOR_DCA,
+      startDepositUsdt: Math.max(1, deposit),
+      walletBalanceUsdt: Math.max(1, deposit),
+    },
+  };
+}
 
 /** Совместимость со старыми JSON/снимками с полем `firstOrderUsdt`. */
 export function migrateDcaSettings(
@@ -124,7 +158,7 @@ export const DEFAULT_BACKTEST: BacktestSettings = {
 /** Слияние снимка / частичного JSON с актуальными дефолтами (новые поля стратегии Pifagor). */
 export function migrateBacktestSettings(raw: Partial<BacktestSettings>): BacktestSettings {
   const sk = raw.strategyKind === "pifagor_alts" ? "pifagor_alts" : "chaik_dca";
-  return {
+  const base: BacktestSettings = {
     ...DEFAULT_BACKTEST,
     ...raw,
     strategyKind: sk,
@@ -135,4 +169,11 @@ export function migrateBacktestSettings(raw: Partial<BacktestSettings>): Backtes
     dca: migrateDcaSettings({ ...DEFAULT_DCA, ...raw.dca }),
     pifagorAlts: { ...DEFAULT_PIFAGOR_ALTS, ...raw.pifagorAlts },
   };
+  if (sk === "pifagor_alts") {
+    return applyPifagorTvDefaults(base, {
+      startDepositUsdt: base.dca.startDepositUsdt,
+      entryNotionalUsdt: base.pifagorAlts.entryNotionalUsdt,
+    });
+  }
+  return base;
 }

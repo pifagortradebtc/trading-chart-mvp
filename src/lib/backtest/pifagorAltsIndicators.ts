@@ -101,6 +101,11 @@ function qxsaSeries(qsrc: number[], qlen: number, qwei: number): number[] {
 }
 
 /** Pine `ta.ema`: при na на входе удерживает предыдущее значение. */
+function pineNz(v: number): number {
+  return Number.isFinite(v) ? v : 0;
+}
+
+/** Pine `ta.ema`: при na на входе удерживает предыдущее значение. */
 function emaFromSeriesPine(values: number[], period: number): number[] {
   const out = new Array(values.length).fill(NaN);
   if (period <= 0 || values.length === 0) return out;
@@ -114,9 +119,16 @@ function emaFromSeriesPine(values: number[], period: number): number[] {
     }
     if (prev === null) {
       if (i < period - 1) continue;
+      let count = 0;
       let s = 0;
-      for (let j = 0; j < period; j++) s += values[i - j]!;
-      prev = s / period;
+      for (let j = 0; j < period; j++) {
+        const x = values[i - j]!;
+        if (!Number.isFinite(x)) continue;
+        s += x;
+        count++;
+      }
+      if (count === 0) continue;
+      prev = s / count;
       out[i] = prev;
     } else {
       prev = v * k + prev * (1 - k);
@@ -127,28 +139,38 @@ function emaFromSeriesPine(values: number[], period: number): number[] {
 }
 
 function qvar2FromQx(qxNum: number, qxDen: number): number {
-  if (!Number.isFinite(qxNum) || !Number.isFinite(qxDen)) return NaN;
-  if (qxDen === 0) return NaN;
+  if (!Number.isFinite(qxNum)) return NaN;
+  if (!Number.isFinite(qxDen) || qxDen === 0) return NaN;
   return (qxNum / qxDen) * 100;
 }
 
-function lowestLow(low: number[], len: number): number[] {
-  const out = new Array(low.length).fill(NaN);
-  for (let i = 0; i < low.length; i++) {
+/** Pine `ta.lowest`: na в окне игнорируются. */
+function lowestLow(values: number[], len: number): number[] {
+  const out = new Array(values.length).fill(NaN);
+  for (let i = 0; i < values.length; i++) {
     if (i < len - 1) continue;
-    let mn = low[i - len + 1]!;
-    for (let k = i - len + 2; k <= i; k++) mn = Math.min(mn, low[k]!);
+    let mn = NaN;
+    for (let k = i - len + 1; k <= i; k++) {
+      const v = values[k]!;
+      if (!Number.isFinite(v)) continue;
+      mn = Number.isFinite(mn) ? Math.min(mn, v) : v;
+    }
     out[i] = mn;
   }
   return out;
 }
 
-function highestHigh(high: number[], len: number): number[] {
-  const out = new Array(high.length).fill(NaN);
-  for (let i = 0; i < high.length; i++) {
+/** Pine `ta.highest`: na в окне игнорируются. */
+function highestHigh(values: number[], len: number): number[] {
+  const out = new Array(values.length).fill(NaN);
+  for (let i = 0; i < values.length; i++) {
     if (i < len - 1) continue;
-    let mx = high[i - len + 1]!;
-    for (let k = i - len + 2; k <= i; k++) mx = Math.max(mx, high[k]!);
+    let mx = NaN;
+    for (let k = i - len + 1; k <= i; k++) {
+      const v = values[k]!;
+      if (!Number.isFinite(v)) continue;
+      mx = Number.isFinite(mx) ? Math.max(mx, v) : v;
+    }
     out[i] = mx;
   }
   return out;
@@ -357,13 +379,18 @@ export function computePifagorSeries(
     const qv3 = qvar3Ema[i]!;
     const q4 = qvar4[i]!;
     const q5 = qvar5[i]!;
-    innerArr[i] = low[i]! <= q4 ? (qv3 + q5 * 2) / 2 : 0;
+    if (!Number.isFinite(q4) || low[i]! > q4) {
+      innerArr[i] = 0;
+      continue;
+    }
+    const blend = (pineNz(qv3) + pineNz(q5) * 2) / 2;
+    innerArr[i] = Number.isFinite(blend) ? blend : 0;
   }
   const innerEma = emaFromSeriesPine(innerArr, 3);
   const qwhalepump: number[] = new Array(n).fill(NaN);
   for (let i = 0; i < n; i++) {
     const l1 = lowest1[i]!;
-    const q6 = l1 > 0 ? 1 : 0;
+    const q6 = Number.isFinite(l1) && l1 > 0 ? 1 : 0;
     const em = innerEma[i]!;
     qwhalepump[i] = Number.isFinite(em) ? (em / 999) * q6 : NaN;
   }

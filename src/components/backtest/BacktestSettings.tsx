@@ -1,22 +1,12 @@
 "use client";
 
 import {
+  applyPifagorTvDefaults,
   DEFAULT_CHAIK,
   DEFAULT_PIFAGOR_ALTS,
   DEFAULT_PIFAGOR_DCA,
 } from "@/lib/backtest/backtestDefaults";
 import type { BacktestSettings } from "@/lib/backtest/types";
-
-function msToDatetimeLocalValue(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function parseDatetimeLocalToMs(s: string): number {
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? t : Date.now();
-}
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -39,9 +29,6 @@ export function BacktestSettingsForm({
     onChange({ ...settings, indicator: { ...settings.indicator, ...partial } });
   const patchDca = (partial: Partial<BacktestSettings["dca"]>) =>
     onChange({ ...settings, dca: { ...settings.dca, ...partial } });
-  const patchPif = (partial: Partial<BacktestSettings["pifagorAlts"]>) =>
-    onChange({ ...settings, pifagorAlts: { ...settings.pifagorAlts, ...partial } });
-
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
@@ -57,22 +44,15 @@ export function BacktestSettingsForm({
               onChange={(e) => {
                 const strategyKind = e.target.value as BacktestSettings["strategyKind"];
                 if (strategyKind === "pifagor_alts") {
-                  onChange({
-                    ...settings,
-                    strategyKind,
-                    pifagorAlts: {
-                      ...DEFAULT_PIFAGOR_ALTS,
-                      ...settings.pifagorAlts,
-                    },
-                    dca: {
-                      ...settings.dca,
-                      allowLong: true,
-                      allowShort: false,
-                      mode: "long",
-                      leverage: 1,
-                      feePctPerSide: 0,
-                    },
-                  });
+                  onChange(
+                    applyPifagorTvDefaults(
+                      { ...settings, strategyKind },
+                      {
+                        startDepositUsdt: DEFAULT_PIFAGOR_DCA.startDepositUsdt,
+                        entryNotionalUsdt: DEFAULT_PIFAGOR_ALTS.entryNotionalUsdt,
+                      },
+                    ),
+                  );
                 } else {
                   onChange({ ...settings, strategyKind });
                 }
@@ -84,115 +64,12 @@ export function BacktestSettingsForm({
           </label>
           {settings.strategyKind === "pifagor_alts" ? (
             <p className="max-w-2xl text-xs leading-relaxed text-[#787b86]">
-              Вход: close &lt; ALTS-линия, окно по времени, whale-pump &gt; 2, daily mult &lt; 0.7. Каждый бар с
-              сигналом — ещё один cash-вход на фикс. USDT (pyramiding до 200). Выход по умолчанию как в Pine:
-              daily mult &gt; 3.5 или diff &gt; 90. Опционально — закрытие при +100% (2× средней). Для сверки с TV:
-              депозит 1 000 000, вход 5000, fee 0, leverage 1 — кнопка «Дефолты как в Pine».
+              Логика и параметры как в Pine Pifagor_ALTS 3.7 (pyramiding 200, fee 0, выход mult/diff). В UI — только
+              депозит и размер входа; остальное применяется автоматически для совпадения с TradingView.
             </p>
           ) : null}
         </div>
       </section>
-
-      {settings.strategyKind === "pifagor_alts" ? (
-        <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
-              Pifagor ALTS
-            </h3>
-            <button
-              type="button"
-              className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
-              onClick={() =>
-                onChange({
-                  ...settings,
-                  pifagorAlts: { ...DEFAULT_PIFAGOR_ALTS },
-                  dca: { ...settings.dca, ...DEFAULT_PIFAGOR_DCA },
-                })
-              }
-            >
-              Дефолты как в Pine
-            </button>
-          </div>
-          <div className="grid gap-4 text-sm md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-[#787b86]">Степень риска (ветка ALTS)</span>
-              <select
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
-                value={settings.pifagorAlts.lineRisk}
-                onChange={(e) =>
-                  patchPif({
-                    lineRisk: e.target.value as "less" | "more",
-                  })
-                }
-              >
-                <option value="less">меньше (VWMA×0.5 для альтов)</option>
-                <option value="more">больше (дневной перцентиль для альтов)</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 pt-6 md:col-span-2">
-              <input
-                type="checkbox"
-                className="rounded border-[#2e3241]"
-                checked={settings.pifagorAlts.usePineExitRules}
-                onChange={(e) => patchPif({ usePineExitRules: e.target.checked })}
-              />
-              <span className="text-[#787b86]">Выход по правилам Pine (daily mult &gt; 3.5 / diff &gt; 90)</span>
-            </label>
-            <label className="flex items-center gap-2 md:col-span-2">
-              <input
-                type="checkbox"
-                className="rounded border-[#2e3241]"
-                checked={settings.pifagorAlts.closewhen100}
-                onChange={(e) => patchPif({ closewhen100: e.target.checked })}
-              />
-              <span className="text-[#787b86]">Закрывать при +100% от средней (closewhen100)</span>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[#787b86]">
-                Макс. входов в позиции (pyramiding)
-                <Tip>
-                  Как в Pine `pyramiding`: пока сигнал входа true на каждой свече, на 1D это десятки подряд — без
-                  лимита кластер «buy» неограничен. По умолчанию 200.
-                </Tip>
-              </span>
-              <input
-                type="number"
-                min={1}
-                max={500}
-                step={1}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
-                value={settings.pifagorAlts.maxPyramidingEntries}
-                onChange={(e) =>
-                  patchPif({
-                    maxPyramidingEntries: Math.max(
-                      1,
-                      Math.min(500, Math.floor(Number(e.target.value) || 200)),
-                    ),
-                  })
-                }
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[#787b86]">Начало окна DCA (локальное время браузера)</span>
-              <input
-                type="datetime-local"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
-                value={msToDatetimeLocalValue(settings.pifagorAlts.dcaStartMs)}
-                onChange={(e) => patchPif({ dcaStartMs: parseDatetimeLocalToMs(e.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[#787b86]">Конец окна DCA</span>
-              <input
-                type="datetime-local"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
-                value={msToDatetimeLocalValue(settings.pifagorAlts.dcaEndMs)}
-                onChange={(e) => patchPif({ dcaEndMs: parseDatetimeLocalToMs(e.target.value) })}
-              />
-            </label>
-          </div>
-        </section>
-      ) : null}
 
       {settings.strategyKind === "chaik_dca" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
@@ -815,153 +692,47 @@ export function BacktestSettingsForm({
           ) : (
             <>
               <p className="text-xs leading-relaxed text-[#787b86] lg:col-span-2">
-                Каждый сигнал — cash-покупка на фикс. USDT (как `default_qty_type=strategy.cash` в Pine). Доливы
-                повторяются, пока хватает свободного equity и не достигнут pyramiding.
+                Остальные параметры (pyramiding 200, fee 0, риск «меньше», выход mult/diff, окно DCA 2017–2035)
+                применяются автоматически — как в Pine TradingView.
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid max-w-lg grid-cols-2 gap-4">
                 <label className="flex flex-col gap-1">
                   <span>
                     Торговый депозит USDT
-                    <Tip>Начальный капитал стратегии в бэктесте (equity).</Tip>
+                    <Tip>Как `initial_capital` в Pine.</Tip>
                   </span>
                   <input
                     type="number"
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    min={1}
+                    step={1}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
                     value={settings.dca.startDepositUsdt}
                     onChange={(e) =>
-                      patchDca({ startDepositUsdt: Number(e.target.value) })
+                      onChange(
+                        applyPifagorTvDefaults(settings, {
+                          startDepositUsdt: Number(e.target.value),
+                        }),
+                      )
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span>
                     Размер одного входа USDT
-                    <Tip>Одинаковая сумма на каждый сигнал покупки.</Tip>
+                    <Tip>Как `default_qty_value` в Pine (strategy.cash).</Tip>
                   </span>
                   <input
                     type="number"
                     min={1}
                     step={1}
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
                     value={settings.pifagorAlts.entryNotionalUsdt}
                     onChange={(e) =>
-                      patchPif({
-                        entryNotionalUsdt: Math.max(1, Number(e.target.value) || 0),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
-                  <span>
-                    Тип маржи
-                    <Tip>
-                      Кросс — лимит маржи по полному балансу кошелька; изолированная — по equity стратегии.
-                    </Tip>
-                  </span>
-                  <select
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
-                    value={settings.dca.marginMode}
-                    onChange={(e) =>
-                      patchDca({
-                        marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
-                      })
-                    }
-                  >
-                    <option value="isolated">Изолированная</option>
-                    <option value="cross">Кросс</option>
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span>
-                    Баланс кошелька USDT
-                    <Tip>При кросс-марже — верхняя граница для проверки доливов.</Tip>
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                    value={settings.dca.walletBalanceUsdt}
-                    onChange={(e) => patchDca({ walletBalanceUsdt: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-              <label className="flex flex-col gap-1 max-w-xs">
-                <span>Плечо</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.dca.leverage}
-                  onChange={(e) => patchDca({ leverage: Number(e.target.value) })}
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
-                  <span>
-                    Take profit %
-                    <Tip>От текущей средней после всех доливов.</Tip>
-                  </span>
-                  <input
-                    type="number"
-                    step={0.01}
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                    value={settings.dca.takeProfitPct}
-                    onChange={(e) => patchDca({ takeProfitPct: Number(e.target.value) })}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span>Stop loss % (optional)</span>
-                  <input
-                    type="number"
-                    step={0.1}
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                    value={settings.dca.stopLossPct ?? ""}
-                    placeholder="—"
-                    onChange={(e) =>
-                      patchDca({
-                        stopLossPct:
-                          e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="rounded border-[#2e3241]"
-                  checked={settings.dca.takeProfitOnClose}
-                  onChange={(e) => patchDca({ takeProfitOnClose: e.target.checked })}
-                />
-                <span className="text-[#787b86]">
-                  TP по close бара (как Pine)
-                  <Tip>
-                    Включено: выход по TP, если close достиг цели. Выключено: достаточно касания high intrabar.
-                  </Tip>
-                </span>
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
-                  <span>Комиссия % за сторону</span>
-                  <input
-                    type="number"
-                    step={0.001}
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                    value={settings.dca.feePctPerSide}
-                    onChange={(e) => patchDca({ feePctPerSide: Number(e.target.value) })}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span>Funding % / 8ч</span>
-                  <input
-                    type="number"
-                    step={0.001}
-                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                    value={settings.dca.fundingPctPer8h}
-                    onChange={(e) =>
-                      patchDca({ fundingPctPer8h: Number(e.target.value) })
+                      onChange(
+                        applyPifagorTvDefaults(settings, {
+                          entryNotionalUsdt: Math.max(1, Number(e.target.value) || 0),
+                        }),
+                      )
                     }
                   />
                 </label>
@@ -971,11 +742,11 @@ export function BacktestSettingsForm({
         </div>
       </section>
 
+      {settings.strategyKind === "chaik_dca" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
           Исполнение
         </h3>
-        {settings.strategyKind === "chaik_dca" ? (
         <div className="flex flex-wrap gap-6 text-sm">
           <label className="flex flex-col gap-1">
             <span>
@@ -1017,14 +788,8 @@ export function BacktestSettingsForm({
             </select>
           </label>
         </div>
-        ) : (
-          <p className="text-sm text-[#787b86]">
-            Вход Pifagor: сигнал на close бара → покупка по <strong className="text-[#d1d4dc]">open</strong> следующей
-            свечи. Порядок TP / сигнал выхода Pine — как в движке (сначала SL при заданном стопе, затем TP, затем
-            сигнал).
-          </p>
-        )}
       </section>
+      ) : null}
     </div>
   );
 }

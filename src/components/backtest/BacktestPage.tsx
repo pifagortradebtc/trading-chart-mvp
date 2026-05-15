@@ -416,7 +416,8 @@ export function BacktestPage() {
       });
     }, 220);
     try {
-      const res = await runBacktestOffMainThread(candles, effectiveSymbol, settings, startMs);
+      const runSettings = migrateBacktestSettings(settings);
+      const res = await runBacktestOffMainThread(candles, effectiveSymbol, runSettings, startMs);
       window.clearInterval(progressTimer);
       setRunProgress(96);
       const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
@@ -785,7 +786,10 @@ export function BacktestPage() {
             </div>
 
             <div className="lg:sticky lg:top-[5.5rem] lg:z-10 lg:-mx-2 lg:rounded-2xl lg:border lg:border-white/[0.06] lg:bg-[var(--rex-bg)]/95 lg:p-4 lg:backdrop-blur-md">
-              <BacktestSettingsForm settings={settings} onChange={setSettings} />
+              <BacktestSettingsForm
+                settings={settings}
+                onChange={(s) => setSettings(migrateBacktestSettings(s))}
+              />
             </div>
           </div>
         )}
