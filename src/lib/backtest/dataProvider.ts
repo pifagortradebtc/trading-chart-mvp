@@ -9,8 +9,11 @@ import {
   binanceRowToCandle,
   filterCandlesToRange,
   mergeCandlesSorted,
+  ohlcvCacheNeedsExtension,
   trimCandlesOlderThan,
 } from "./ohlcvUtils";
+
+export type OhlcvLoadSource = "idb" | "server-disk" | "server-binance" | "binance";
 
 export { binanceRowToCandle, mergeCandlesSorted } from "./ohlcvUtils";
 
@@ -395,6 +398,7 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
   warning?: string;
+  source: "server-disk" | "server-binance";
 } | null> {
   if (typeof window === "undefined") return null;
   if (process.env.NEXT_PUBLIC_SERVER_DISK_CACHE === "0") return null;
@@ -433,6 +437,7 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
     candles: data.candles,
     oldestAvailableMs: data.oldestAvailableMs ?? null,
     warning: data.warning,
+    source: data.source === "disk" ? "server-disk" : "server-binance",
   };
 }
 
@@ -441,6 +446,7 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
   warning?: string;
+  source: OhlcvLoadSource;
 }> {
   const sym = opts.symbol.replace("/", "").toUpperCase();
   const {
@@ -459,23 +465,21 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
       let merged = trimCandlesOlderThan(row.candles, endMs, yearsBack, iv);
       merged = mergeCandlesSorted([], merged);
       if (merged.length) {
-        const firstMs = merged[0]!.time * 1000;
-        const lastMs = merged[merged.length - 1]!.time * 1000;
-        const needBack = firstMs > startMs + iv;
-        const needFwd = lastMs < endMs - iv;
+        const { needBack, needFwd } = ohlcvCacheNeedsExtension(merged, startMs, endMs, iv);
         if (!needBack && !needFwd) {
           let out = filterCandlesToRange(merged, startMs, endMs);
           if (!out.length) out = merged;
           onProgress?.({
             loadedBars: out.length,
             phase: "cache",
-            message: "Из локального кеша браузера (IndexedDB)",
+            message: "Из кеша браузера (IndexedDB)",
           });
           onProgress?.({ loadedBars: out.length, phase: "done", message: "Готово" });
           return {
             candles: out,
             oldestAvailableMs: row.oldestAvailableMs ?? null,
             warning: row.warning,
+            source: "idb",
           };
         }
       }
@@ -506,7 +510,7 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
         phase: "done",
         message: "Готово",
       });
-      return fromServer;
+      return { ...fromServer, source: fromServer.source };
     }
   } catch {
     /** fallback ниже */
@@ -534,6 +538,7 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
         candles: trimmed.length ? trimmed : extended.candles,
         oldestAvailableMs: extended.oldestAvailableMs ?? null,
         warning: extended.warning,
+        source: "binance",
       };
     }
   }
@@ -553,5 +558,5 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
       warning: direct.warning,
     });
   }
-  return direct;
+  return { ...direct, source: "binance" as const };
 }

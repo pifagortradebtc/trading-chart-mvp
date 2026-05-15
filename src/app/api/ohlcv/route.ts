@@ -9,6 +9,7 @@ import {
   binanceIntervalToMs,
   filterCandlesToRange,
   mergeCandlesSorted,
+  ohlcvCacheNeedsExtension,
   trimCandlesOlderThan,
 } from "@/lib/backtest/ohlcvUtils";
 import {
@@ -209,10 +210,11 @@ async function handleStableV2(
     warning = r.warning;
   } else {
     merged = mergeCandlesSorted([], merged);
-    const firstMs = merged[0]!.time * 1000;
+    const { needBack, needFwd } = ohlcvCacheNeedsExtension(merged, startMs, endMs, iv);
 
-    if (firstMs > startMs + iv) {
+    if (needBack) {
       touchedBinance = true;
+      const firstMs = merged[0]!.time * 1000;
       const back = await fetchBinanceKlinesServer({
         symbol,
         interval,
@@ -226,10 +228,10 @@ async function handleStableV2(
     }
 
     merged = mergeCandlesSorted([], merged);
-    const lastAfter = merged[merged.length - 1]!.time * 1000;
 
-    if (lastAfter < endMs - iv) {
+    if (needFwd) {
       touchedBinance = true;
+      const lastAfter = merged[merged.length - 1]!.time * 1000;
       const fwd = await fetchBinanceKlinesForward({
         symbol,
         interval,

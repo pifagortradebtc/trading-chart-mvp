@@ -36,6 +36,13 @@ export interface PortfolioSymbolResult {
   finalEquityUsdt: number;
 }
 
+export interface PortfolioOhlcvLoadStats {
+  fromIdb: number;
+  fromServerDisk: number;
+  fromServerBinance: number;
+  fromBinance: number;
+}
+
 export interface PortfolioBacktestSummary {
   /** Суммарный капитал = депозит × число успешно прогнанных монет. */
   totalDepositUsdt: number;
@@ -60,6 +67,7 @@ export interface PortfolioBacktestSummary {
   interval: string;
   yearsBack: number;
   closewhen100: boolean;
+  ohlcvLoads: PortfolioOhlcvLoadStats;
 }
 
 export interface PortfolioBacktestResult {

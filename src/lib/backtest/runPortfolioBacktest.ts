@@ -2,14 +2,18 @@
  * Клиентский оркестратор портфельного бэктеста Pifagor ALTS.
  */
 
-import { loadOhlcvBinance } from "./dataProvider";
+import { loadOhlcvBinance, type OhlcvLoadSource } from "./dataProvider";
 import { applyPifagorTvDefaults } from "./backtestDefaults";
 import {
   buildPortfolioBacktestResult,
   buildSymbolResultFromRun,
 } from "./portfolioAltsAggregate";
 import { PORTFOLIO_ALTS_SYMBOLS } from "./portfolioAltsSymbols";
-import type { PortfolioBacktestResult, PortfolioRunProgress } from "./portfolioAltsTypes";
+import type {
+  PortfolioBacktestResult,
+  PortfolioOhlcvLoadStats,
+  PortfolioRunProgress,
+} from "./portfolioAltsTypes";
 import { runBacktestOffMainThread } from "./runBacktestClient";
 import type { BacktestSettings } from "./types";
 
@@ -55,6 +59,29 @@ export async function runPortfolioAltsBacktest(opts: {
   const startMs = endMs - yearsBack * 365.25 * 24 * 3600 * 1000;
 
   const rows: ReturnType<typeof buildSymbolResultFromRun>[] = [];
+  const ohlcvLoads: PortfolioOhlcvLoadStats = {
+    fromIdb: 0,
+    fromServerDisk: 0,
+    fromServerBinance: 0,
+    fromBinance: 0,
+  };
+
+  const bumpOhlcv = (source: OhlcvLoadSource) => {
+    switch (source) {
+      case "idb":
+        ohlcvLoads.fromIdb++;
+        break;
+      case "server-disk":
+        ohlcvLoads.fromServerDisk++;
+        break;
+      case "server-binance":
+        ohlcvLoads.fromServerBinance++;
+        break;
+      case "binance":
+        ohlcvLoads.fromBinance++;
+        break;
+    }
+  };
 
   for (let i = 0; i < symbols.length; i++) {
     if (signal?.aborted) {
@@ -92,6 +119,22 @@ export async function runPortfolioAltsBacktest(opts: {
       });
       candles = loaded.candles;
       loadWarning = loaded.warning;
+      bumpOhlcv(loaded.source);
+      const srcLabel =
+        loaded.source === "idb"
+          ? "кеш браузера"
+          : loaded.source === "server-disk"
+            ? "диск сервера"
+            : loaded.source === "server-binance"
+              ? "Binance→диск"
+              : "Binance";
+      onProgress?.({
+        phase: "load",
+        current: i + 1,
+        total: symbols.length,
+        symbol,
+        message: `${label}: ${srcLabel} · ${candles.length} баров`,
+      });
     } catch (e) {
       rows.push(
         buildSymbolResultFromRun({
@@ -198,5 +241,6 @@ export async function runPortfolioAltsBacktest(opts: {
     depositPerSymbolUsdt: depositPerSymbol,
     entryNotionalPerSymbolUsdt: settings.pifagorAlts.entryNotionalUsdt,
     rows,
+    ohlcvLoads,
   });
 }

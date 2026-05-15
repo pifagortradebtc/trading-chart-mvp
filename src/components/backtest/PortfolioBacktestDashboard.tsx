@@ -81,8 +81,10 @@ export function PortfolioBacktestDashboard({ result }: { result: PortfolioBackte
         <span className="font-mono">{summary.entryNotionalPerSymbolUsdt.toLocaleString("ru-RU")} USDT</span> (
         суммарный капитал{" "}
         <span className="font-mono">{summary.totalDepositUsdt.toLocaleString("ru-RU")} USDT</span> по{" "}
-        {summary.symbolsOk} монетам). Закрытие +100%:{" "}
-        {summary.closewhen100 ? "включено" : "выключено"}.
+        {summary.symbolsOk} монетам). OHLCV из кеша:{" "}
+        {summary.ohlcvLoads.fromIdb + summary.ohlcvLoads.fromServerDisk} / {summary.symbolsOk}{" "}
+        (браузер {summary.ohlcvLoads.fromIdb}, диск сервера {summary.ohlcvLoads.fromServerDisk}).
+        Закрытие +100%: {summary.closewhen100 ? "включено" : "выключено"}.
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">

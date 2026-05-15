@@ -45,6 +45,33 @@ export function binanceIntervalToMs(interval: string): number {
   return table[interval] ?? 60_000;
 }
 
+/**
+ * Допустимый «хвост» без докачки: дневные TF — до 7 дней; intraday — 2 суток или 10 баров.
+ * Иначе каждый новый день endMs=Date.now() ломает кеш и тянет Binance заново.
+ */
+export function ohlcvForwardGapToleranceMs(barMs: number): number {
+  const week = 7 * 24 * 3600 * 1000;
+  const twoDays = 2 * 24 * 3600 * 1000;
+  if (barMs >= 24 * 3600_000) return week;
+  return Math.max(twoDays, barMs * 10);
+}
+
+export function ohlcvCacheNeedsExtension(
+  merged: Candle[],
+  startMs: number,
+  endMs: number,
+  barMs: number,
+): { needBack: boolean; needFwd: boolean } {
+  if (!merged.length) return { needBack: true, needFwd: true };
+  const firstMs = merged[0]!.time * 1000;
+  const lastMs = merged[merged.length - 1]!.time * 1000;
+  const fwdTol = ohlcvForwardGapToleranceMs(barMs);
+  return {
+    needBack: firstMs > startMs + barMs,
+    needFwd: lastMs < endMs - fwdTol,
+  };
+}
+
 export function filterCandlesToRange(candles: Candle[], startMs: number, endMs: number): Candle[] {
   return candles.filter((c) => {
     const t = c.time * 1000;

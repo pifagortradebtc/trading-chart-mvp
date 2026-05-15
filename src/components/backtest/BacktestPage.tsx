@@ -57,7 +57,16 @@ const PAIRS = [
   "TONUSDT",
 ];
 
-const INTERVALS = ["15m", "1h", "4h", "1d", "3d"] as const;
+const INTERVALS = ["15m", "1h", "4h", "1d", "3d", "1w"] as const;
+
+const INTERVAL_LABELS: Record<(typeof INTERVALS)[number], string> = {
+  "15m": "15m",
+  "1h": "1h",
+  "4h": "4h",
+  "1d": "1d",
+  "3d": "3d",
+  "1w": "1w (неделя)",
+};
 
 /** Информационное сообщение dataProvider/API — не показываем как глобальный алерт на всех вкладках. */
 const OHLCV_PARTIAL_HISTORY_PREFIX = "Биржа отдала данные только с";
@@ -726,9 +735,10 @@ export function BacktestPage() {
             )}
             {isPortfolioMode ? (
               <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
-                Портфельный режим: OHLCV для {PORTFOLIO_ALTS_SYMBOL_COUNT} монет загружается автоматически при
-                запуске. Депозит и размер входа — <strong>на каждый актив</strong> (не делятся между монетами).
-                Выберите таймфрейм и глубину истории ниже.
+                Портфельный режим: OHLCV для {PORTFOLIO_ALTS_SYMBOL_COUNT} монет загружается при запуске и
+                сохраняется в кеш браузера (IndexedDB) и на диск сервера — повторный прогон берёт данные оттуда,
+                без полной перезагрузки с Binance. Депозит и вход — на каждый актив. Таймфрейм и глубину задайте
+                ниже; «Полная перезагрузка» игнорирует кеш.
               </div>
             ) : null}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
@@ -777,7 +787,7 @@ export function BacktestPage() {
                     >
                       {INTERVALS.map((iv) => (
                         <option key={iv} value={iv}>
-                          {iv}
+                          {INTERVAL_LABELS[iv]}
                         </option>
                       ))}
                     </select>

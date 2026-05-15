@@ -1,6 +1,7 @@
-/** Примерное число баров на календарный день для Binance-строк интервала (`15m`, `1h`, `4h`, `1d`). */
+/** Примерное число баров на календарный день для Binance-строк интервала. */
 export function barsPerDayFromInterval(interval: string): number {
   const s = interval.trim().toLowerCase();
+  if (s === "1w") return 1 / 7;
   const m = s.match(/^(\d+)(m|h|d)$/);
   if (!m) return 96;
   const n = Number(m[1]);

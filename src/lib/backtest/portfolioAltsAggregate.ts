@@ -6,6 +6,7 @@ import { computeMetrics } from "./metrics";
 import type {
   PortfolioBacktestResult,
   PortfolioBacktestSummary,
+  PortfolioOhlcvLoadStats,
   PortfolioSingleRun,
   PortfolioSymbolMetrics,
   PortfolioSymbolResult,
@@ -81,8 +82,9 @@ export function buildPortfolioBacktestResult(opts: {
   depositPerSymbolUsdt: number;
   entryNotionalPerSymbolUsdt: number;
   rows: PortfolioSymbolResult[];
+  ohlcvLoads: PortfolioOhlcvLoadStats;
 }): PortfolioBacktestResult {
-  const { settings, interval, yearsBack, depositPerSymbolUsdt, entryNotionalPerSymbolUsdt, rows } =
+  const { settings, interval, yearsBack, depositPerSymbolUsdt, entryNotionalPerSymbolUsdt, rows, ohlcvLoads } =
     opts;
   const okRows = rows.filter((r) => r.status === "ok");
   const totalDepositUsdt = depositPerSymbolUsdt * okRows.length;
@@ -129,6 +131,7 @@ export function buildPortfolioBacktestResult(opts: {
     interval,
     yearsBack,
     closewhen100: settings.pifagorAlts.closewhen100,
+    ohlcvLoads,
   };
 
   return {
