@@ -2,7 +2,12 @@
  * Клиентский оркестратор портфельного бэктеста Pifagor ALTS.
  */
 
-import { loadOhlcvBinance, type OhlcvLoadSource } from "./dataProvider";
+import {
+  loadOhlcvBinance,
+  loadPifagorDailyCandles,
+  type OhlcvLoadSource,
+} from "./dataProvider";
+import { binanceIntervalToMs } from "./ohlcvUtils";
 import { applyPifagorTvDefaults } from "./backtestDefaults";
 import {
   buildPortfolioBacktestResult,
@@ -108,6 +113,7 @@ export async function runPortfolioAltsBacktest(opts: {
         yearsBack,
         forceRefresh,
         useCache: true,
+        preferServerCache: true,
         onProgress: (p) =>
           onProgress?.({
             phase: "load",
@@ -182,6 +188,39 @@ export async function runPortfolioAltsBacktest(opts: {
 
     const runSettings = perSymbolSettings(settings, depositPerSymbol);
     const barStartMs = candles[0]!.time * 1000;
+    const barEndMs = candles[candles.length - 1]!.time * 1000;
+
+    let dailyCandles = candles;
+    if (interval !== "1d") {
+      try {
+        dailyCandles = await loadPifagorDailyCandles({
+          chartInterval: interval,
+          chartCandles: candles,
+          symbol,
+          startMs,
+          endMs,
+          yearsBack,
+          forceRefresh,
+          useCache: true,
+          preferServerCache: true,
+        });
+      } catch (e) {
+        rows.push(
+          buildSymbolResultFromRun({
+            symbol,
+            label,
+            status: "error",
+            error: e instanceof Error ? e.message : String(e),
+            candleCount: candles.length,
+            dataFromMs: barStartMs,
+            dataToMs: barEndMs,
+            allocatedDepositUsdt: depositPerSymbol,
+            run: null,
+          }),
+        );
+        continue;
+      }
+    }
 
     try {
       const result = await runBacktestOffMainThread(
@@ -189,6 +228,8 @@ export async function runPortfolioAltsBacktest(opts: {
         symbol,
         runSettings,
         barStartMs,
+        dailyCandles,
+        binanceIntervalToMs(interval),
       );
       rows.push(
         buildSymbolResultFromRun({

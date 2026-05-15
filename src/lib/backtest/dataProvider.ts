@@ -35,6 +35,11 @@ export interface LoadOptions {
   forceRefresh?: boolean;
   onProgress?: (p: FetchProgress) => void;
   useCache?: boolean;
+  /**
+   * Сначала `/api/ohlcv` (persistent disk на сервере), затем IndexedDB.
+   * Для портфельного прогона: свечи не привязаны к браузеру и переиспользуются между сессиями.
+   */
+  preferServerCache?: boolean;
 }
 
 interface StableCacheRow {
@@ -441,7 +446,7 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
   };
 }
 
-/** Унифицированная загрузка: стабильный IndexedDB → серверный диск (v2, инкремент) → Binance REST; после успеха — слияние в v2-кеш. */
+/** Унифицированная загрузка: IndexedDB → серверный диск (v2) → Binance REST; при `preferServerCache` — сначала сервер. */
 export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
   candles: Candle[];
   oldestAvailableMs: number | null;
@@ -456,8 +461,55 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
     useCache = true,
     forceRefresh = false,
     onProgress,
+    preferServerCache = false,
   } = opts;
   const iv = binanceIntervalToMs(opts.interval);
+
+  let serverApiAlreadyAttempted = false;
+
+  const persistServerResponseAndReturn = async (
+    fromServer: NonNullable<Awaited<ReturnType<typeof loadOhlcvViaServerApi>>>,
+  ): Promise<{
+    candles: Candle[];
+    oldestAvailableMs: number | null;
+    warning?: string;
+    source: OhlcvLoadSource;
+  }> => {
+    if (yearsBack != null) {
+      const prevRow = forceRefresh
+        ? null
+        : await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
+      const combined = trimCandlesOlderThan(
+        mergeCandlesSorted(prevRow?.candles ?? [], fromServer.candles),
+        endMs,
+        yearsBack,
+        iv,
+      );
+      await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
+        candles: combined,
+        oldestAvailableMs: fromServer.oldestAvailableMs ?? null,
+        warning: fromServer.warning,
+      });
+    }
+    onProgress?.({
+      loadedBars: fromServer.candles.length,
+      phase: "done",
+      message: "Готово",
+    });
+    return { ...fromServer, source: fromServer.source };
+  };
+
+  if (preferServerCache && !forceRefresh && useCache && yearsBack != null) {
+    try {
+      const fromServer = await loadOhlcvViaServerApi(opts);
+      serverApiAlreadyAttempted = true;
+      if (fromServer?.candles?.length) {
+        return await persistServerResponseAndReturn(fromServer);
+      }
+    } catch {
+      /** ниже — IndexedDB / Binance в браузере */
+    }
+  }
 
   if (!forceRefresh && useCache && yearsBack != null) {
     const row = await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
@@ -486,34 +538,15 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
     }
   }
 
-  try {
-    const fromServer = await loadOhlcvViaServerApi(opts);
-    if (fromServer?.candles?.length) {
-      if (yearsBack != null) {
-        const prevRow = forceRefresh
-          ? null
-          : await readStableBrowserCacheRow(sym, opts.interval, yearsBack);
-        const combined = trimCandlesOlderThan(
-          mergeCandlesSorted(prevRow?.candles ?? [], fromServer.candles),
-          endMs,
-          yearsBack,
-          iv,
-        );
-        await saveOhlcvBrowserCache(sym, opts.interval, yearsBack, {
-          candles: combined,
-          oldestAvailableMs: fromServer.oldestAvailableMs ?? null,
-          warning: fromServer.warning,
-        });
+  if (!serverApiAlreadyAttempted) {
+    try {
+      const fromServer = await loadOhlcvViaServerApi(opts);
+      if (fromServer?.candles?.length) {
+        return await persistServerResponseAndReturn(fromServer);
       }
-      onProgress?.({
-        loadedBars: fromServer.candles.length,
-        phase: "done",
-        message: "Готово",
-      });
-      return { ...fromServer, source: fromServer.source };
+    } catch {
+      /** fallback ниже */
     }
-  } catch {
-    /** fallback ниже */
   }
 
   if (!forceRefresh && useCache && yearsBack != null) {
@@ -559,4 +592,32 @@ export async function loadOhlcvBinance(opts: LoadOptions): Promise<{
     });
   }
   return { ...direct, source: "binance" as const };
+}
+
+/** Дневной ряд для Pifagor daily_multiple; при ТF 1d совпадает с графиком. */
+export async function loadPifagorDailyCandles(opts: {
+  chartInterval: string;
+  chartCandles: Candle[];
+  symbol: string;
+  startMs: number;
+  endMs: number;
+  yearsBack?: number;
+  forceRefresh?: boolean;
+  useCache?: boolean;
+  preferServerCache?: boolean;
+  onProgress?: LoadOptions["onProgress"];
+}): Promise<Candle[]> {
+  if (opts.chartInterval === "1d") return opts.chartCandles;
+  const loaded = await loadOhlcvBinance({
+    symbol: opts.symbol,
+    interval: "1d",
+    startMs: opts.startMs,
+    endMs: opts.endMs,
+    yearsBack: opts.yearsBack,
+    forceRefresh: opts.forceRefresh,
+    useCache: opts.useCache ?? true,
+    preferServerCache: opts.preferServerCache,
+    onProgress: opts.onProgress,
+  });
+  return loaded.candles;
 }

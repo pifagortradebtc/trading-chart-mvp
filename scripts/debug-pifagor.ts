@@ -3,6 +3,7 @@ import {
   computePifagorSeries,
 } from "../src/lib/backtest/pifagorAltsIndicators";
 import { DEFAULT_PIFAGOR_ALTS } from "../src/lib/backtest/backtestDefaults";
+import { binanceIntervalToMs } from "../src/lib/backtest/ohlcvUtils";
 import type { Candle } from "../src/types/candle";
 
 async function fetchCandles(symbol: string, interval: string): Promise<Candle[]> {
@@ -27,8 +28,9 @@ async function fetchCandles(symbol: string, interval: string): Promise<Candle[]>
   return candles;
 }
 
-const candles = await fetchCandles("ETHUSDT", "1d");
-const daily = buildPifagorDailyContext(candles);
+const interval = "1d";
+const candles = await fetchCandles("ETHUSDT", interval);
+const daily = buildPifagorDailyContext(candles, candles, binanceIntervalToMs(interval));
 const series = computePifagorSeries(candles, "ETHUSDT", DEFAULT_PIFAGOR_ALTS, daily);
 
 const n = candles.length;

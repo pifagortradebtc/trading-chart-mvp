@@ -13,6 +13,8 @@ export function runBacktestOffMainThread(
   symbol: string,
   settings: BacktestSettings,
   startMs: number,
+  dailyCandles?: Candle[],
+  chartIntervalMs?: number,
 ): Promise<BacktestResult> {
   if (typeof Worker === "undefined") {
     return Promise.reject(new Error("Web Workers недоступны в этой среде"));
@@ -42,6 +44,13 @@ export function runBacktestOffMainThread(
       fail(new Error(e.message || "Worker error"));
     };
 
-    worker.postMessage({ candles, symbol, settings, startMs });
+    worker.postMessage({
+      candles,
+      dailyCandles,
+      chartIntervalMs,
+      symbol,
+      settings,
+      startMs,
+    });
   });
 }

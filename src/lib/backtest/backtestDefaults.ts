@@ -41,9 +41,9 @@ export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
   lineRisk: "less",
   entryNotionalUsdt: 5000,
   dcaStartMs: Date.UTC(2017, 11, 31, 0, 0, 0, 0),
-  dcaEndMs: Date.UTC(2034, 11, 31, 0, 0, 0, 0),
+  dcaEndMs: Date.UTC(2035, 0, 1, 0, 0, 0, 0),
   usePineExitRules: true,
-  closewhen100: true,
+  closewhen100: false,
   maxPyramidingEntries: 200,
 };
 

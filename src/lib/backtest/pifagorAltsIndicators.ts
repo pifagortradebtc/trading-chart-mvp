@@ -4,6 +4,7 @@
 
 import type { Candle } from "@/types/candle";
 import { emaFromSeries } from "./indicators";
+import { binanceIntervalToMs } from "./ohlcvUtils";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
 
 export interface PifagorDailyContext {
@@ -181,23 +182,20 @@ export function isExcludedBtcEthSymbol(symbol: string): boolean {
   return u === "BLX" || u.startsWith("BTC") || u.startsWith("ETH");
 }
 
-export function buildPifagorDailyContext(candles: Candle[]): PifagorDailyContext {
-  const n = candles.length;
-  const dayIndex = new Array(n).fill(0);
-  const dayCloseAsOf = new Array(n).fill(NaN);
+/** `multiple` на дневном ряду, как в Pine на ТF D (до request.security). */
+export function computeDailyMultipleOnDailyBars(dailyCandles: Candle[]): {
+  dayStartSec: number[];
+  dayClose: number[];
+  dailyMultiple: number[];
+} {
+  const n = dailyCandles.length;
+  const closes = dailyCandles.map((c) => c.close);
+  const dayStartSec = dailyCandles.map((c) => utcDayStartSec(c.time));
   const dailyMultiple = new Array(n).fill(NaN);
-
-  const firstDay = utcDayStartSec(candles[0]!.time);
-  const startMs = candles[0]!.time * 1000;
-  const closes = candles.map((c) => c.close);
+  const startMs = dailyCandles[0]!.time * 1000;
 
   for (let i = 0; i < n; i++) {
-    const c = candles[i]!;
-    const dayStart = utcDayStartSec(c.time);
-    dayIndex[i] = Math.round((dayStart - firstDay) / 86400);
-    dayCloseAsOf[i] = c.close;
-
-    /** Как Pine: startbar = time[0], lll = days_enough > 200 ? 200 : round(days)+1 */
+    const c = dailyCandles[i]!;
     const daysEnough = (c.time * 1000 - startMs) / 86400000;
     const leghtn = Math.round(daysEnough) + 1;
     const lll = daysEnough > 200 ? 200 : leghtn;
@@ -206,7 +204,106 @@ export function buildPifagorDailyContext(candles: Candle[]): PifagorDailyContext
       Number.isFinite(smaD) && smaD !== 0 ? c.close / smaD : NaN;
   }
 
+  return { dayStartSec, dayClose: closes, dailyMultiple };
+}
+
+/**
+ * Pine `request.security(D, daily_multiple)` на графике: значение дня закрытия бара
+ * (без lookahead — только подтверждённый дневной бар).
+ */
+export function mapDailyContextToChartBars(
+  chartCandles: Candle[],
+  chartIntervalMs: number,
+  dailyCandles: Candle[],
+): PifagorDailyContext {
+  const { dayStartSec, dayClose, dailyMultiple: dmByDay } =
+    computeDailyMultipleOnDailyBars(dailyCandles);
+
+  const dayStartToClose = new Map<number, number>();
+  const dayStartToMultiple = new Map<number, number>();
+  for (let d = 0; d < dailyCandles.length; d++) {
+    const ds = dayStartSec[d]!;
+    dayStartToClose.set(ds, dayClose[d]!);
+    dayStartToMultiple.set(ds, dmByDay[d]!);
+  }
+
+  const barSec = Math.max(1, Math.floor(chartIntervalMs / 1000));
+  const n = chartCandles.length;
+  const firstDay = utcDayStartSec(chartCandles[0]!.time);
+  const dayIndex = new Array(n).fill(0);
+  const dayCloseAsOf = new Array(n).fill(NaN);
+  const dailyMultiple = new Array(n).fill(NaN);
+
+  const lookupDaily = (dayStart: number): { close: number; mult: number } | null => {
+    let probe = dayStart;
+    for (let k = 0; k < 14; k++) {
+      const mult = dayStartToMultiple.get(probe);
+      const close = dayStartToClose.get(probe);
+      if (Number.isFinite(mult) && Number.isFinite(close)) {
+        return { close: close!, mult: mult! };
+      }
+      probe -= 86400;
+    }
+    return null;
+  };
+
+  for (let i = 0; i < n; i++) {
+    const c = chartCandles[i]!;
+    const dayStart = utcDayStartSec(c.time);
+    dayIndex[i] = Math.round((dayStart - firstDay) / 86400);
+
+    const barCloseSec = c.time + barSec - 1;
+    const dayAtClose = utcDayStartSec(barCloseSec);
+    const hit = lookupDaily(dayAtClose);
+    if (hit) {
+      dayCloseAsOf[i] = hit.close;
+      dailyMultiple[i] = hit.mult;
+    }
+  }
+
   return { dayIndex, dayCloseAsOf, dailyMultiple };
+}
+
+/** Дневной контекст для Pifagor: обязательно дневные свечи (1d), не ТF графика. */
+export function buildPifagorDailyContext(
+  chartCandles: Candle[],
+  dailyCandles: Candle[],
+  chartIntervalMs: number,
+): PifagorDailyContext {
+  if (!dailyCandles.length) {
+    throw new Error("Pifagor: нужны дневные свечи (1d) для daily_multiple");
+  }
+  return mapDailyContextToChartBars(chartCandles, chartIntervalMs, dailyCandles);
+}
+
+/** Если ТF графика уже 1d — дневной ряд совпадает с OHLCV графика. */
+export function resolvePifagorDailyCandles(
+  chartCandles: Candle[],
+  chartInterval: string,
+  explicitDaily?: Candle[],
+): Candle[] {
+  if (explicitDaily?.length) return explicitDaily;
+  if (chartInterval === "1d") return chartCandles;
+  throw new Error(
+    `Pifagor: для ТF ${chartInterval} загрузите параллельно OHLCV 1d (как request.security D в Pine)`,
+  );
+}
+
+export function chartIntervalToMs(interval: string): number {
+  return binanceIntervalToMs(interval);
+}
+
+/** Только dayIndex для оверлея ALTS-канала (aaa1 при «меньше» не использует daily_multiple). */
+export function buildOverlayDayIndexContext(chartCandles: Candle[]): PifagorDailyContext {
+  const firstDay = utcDayStartSec(chartCandles[0]!.time);
+  const dayIndex = chartCandles.map((c) =>
+    Math.round((utcDayStartSec(c.time) - firstDay) / 86400),
+  );
+  return {
+    dayIndex,
+    dayCloseAsOf: chartCandles.map((c) => c.close),
+    dailyMultiple: chartCandles.map(() => NaN),
+  };
 }
 
 const SMA_LEN = 10;

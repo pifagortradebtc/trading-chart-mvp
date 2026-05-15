@@ -8,15 +8,24 @@ import type { BacktestResult, BacktestSettings } from "../lib/backtest/types";
 
 type BacktestWorkerPayload = {
   candles: Candle[];
+  dailyCandles?: Candle[];
+  chartIntervalMs?: number;
   symbol: string;
   settings: BacktestSettings;
   startMs: number;
 };
 
 self.onmessage = (ev: MessageEvent<BacktestWorkerPayload>) => {
-  const { candles, symbol, settings, startMs } = ev.data;
+  const { candles, dailyCandles, chartIntervalMs, symbol, settings, startMs } = ev.data;
   try {
-    const full = runBacktest(candles, symbol, settings, startMs);
+    const full = runBacktest(
+      candles,
+      symbol,
+      settings,
+      startMs,
+      dailyCandles,
+      chartIntervalMs,
+    );
     const { candles: candlesOut, ...rest } = full;
     void candlesOut;
     const msg:

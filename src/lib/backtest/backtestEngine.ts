@@ -445,9 +445,23 @@ export function runBacktest(
   symbol: string,
   settings: BacktestSettings,
   requestedFromMs: number,
+  dailyCandles?: Candle[],
+  chartIntervalMs?: number,
 ): BacktestResult {
   if (settings.strategyKind === "pifagor_alts") {
-    return runPifagorAltsBacktest(candles, symbol, settings, requestedFromMs);
+    if (!dailyCandles?.length || chartIntervalMs == null) {
+      throw new Error(
+        "Pifagor ALTS: передайте dailyCandles (1d) и chartIntervalMs — daily_multiple считается на дневном ТF, как в Pine.",
+      );
+    }
+    return runPifagorAltsBacktest(
+      candles,
+      symbol,
+      settings,
+      requestedFromMs,
+      dailyCandles,
+      chartIntervalMs,
+    );
   }
 
   const n = candles.length;

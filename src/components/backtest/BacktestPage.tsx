@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Candle } from "@/types/candle";
 import {
   loadOhlcvBinance,
+  loadPifagorDailyCandles,
   parseOhlcvCsv,
   tryLoadOhlcvBrowserCache,
 } from "@/lib/backtest/dataProvider";
+import { binanceIntervalToMs } from "@/lib/backtest/ohlcvUtils";
 import { runBacktestOffMainThread } from "@/lib/backtest/runBacktestClient";
 import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
 import type { BacktestResult, BacktestSettings, TradeRecord } from "@/lib/backtest/types";
@@ -500,7 +502,28 @@ export function BacktestPage() {
     }, 220);
     try {
       const runSettings = migrateBacktestSettings(settings);
-      const res = await runBacktestOffMainThread(candles, effectiveSymbol, runSettings, startMs);
+      const endMs = candles[candles.length - 1]!.time * 1000;
+      let dailyCandles = candles;
+      if (runSettings.strategyKind === "pifagor_alts" && interval !== "1d") {
+        setLoadMsg("Загрузка дневных свечей (daily_multiple как в Pine)…");
+        dailyCandles = await loadPifagorDailyCandles({
+          chartInterval: interval,
+          chartCandles: candles,
+          symbol: effectiveSymbol,
+          startMs,
+          endMs,
+          yearsBack,
+          useCache: true,
+        });
+      }
+      const res = await runBacktestOffMainThread(
+        candles,
+        effectiveSymbol,
+        runSettings,
+        startMs,
+        dailyCandles,
+        binanceIntervalToMs(interval),
+      );
       window.clearInterval(progressTimer);
       setRunProgress(96);
       const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
@@ -735,10 +758,10 @@ export function BacktestPage() {
             )}
             {isPortfolioMode ? (
               <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
-                Портфельный режим: OHLCV для {PORTFOLIO_ALTS_SYMBOL_COUNT} монет загружается при запуске и
-                сохраняется в кеш браузера (IndexedDB) и на диск сервера — повторный прогон берёт данные оттуда,
-                без полной перезагрузки с Binance. Депозит и вход — на каждый актив. Таймфрейм и глубину задайте
-                ниже; «Полная перезагрузка» игнорирует кеш.
+                Портфельный режим: для каждой из {PORTFOLIO_ALTS_SYMBOL_COUNT} монет сначала берётся кеш{" "}
+                <code className="rounded bg-black/25 px-1">/api/ohlcv</code> на диске сервера (если он смонтирован),
+                затем IndexedDB; прямой Binance из браузера — только если кеша нет или включена «Полная перезагрузка».
+                На каждый актив — свой депозит и размер входа. Таймфрейм и глубину задайте ниже.
               </div>
             ) : null}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
@@ -848,15 +871,23 @@ export function BacktestPage() {
                   </div>
                 )}
 
-                <label className="mt-5 flex cursor-pointer items-center gap-2 text-sm text-[var(--rex-muted)]">
+                <label className="mt-5 flex cursor-pointer items-start gap-2 text-sm text-[var(--rex-muted)]">
                   <input
                     type="checkbox"
                     checked={persistSnapshots}
                     onChange={(e) => setPersistSnapshots(e.target.checked)}
-                    className="rounded border-white/20 bg-transparent"
+                    className="mt-0.5 rounded border-white/20 bg-transparent"
                   />
-                  Сохранять снимок на сервер (persistent disk)
+                  <span>
+                    Сохранять на сервер результат бэктеста (сделки, equity, настройки) — не сами свечи OHLCV
+                  </span>
                 </label>
+                <p className="mt-2 text-[11px] leading-relaxed text-[var(--rex-muted)]">
+                  OHLCV кешируется отдельно: при Binance запрос идёт через{" "}
+                  <code className="rounded bg-white/5 px-1">/api/ohlcv</code> на persistent disk (если диск смонтирован
+                  на Render и не задано <code className="rounded bg-white/5 px-1">NEXT_PUBLIC_SERVER_DISK_CACHE=0</code>
+                  ).
+                </p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <button
                     type="button"

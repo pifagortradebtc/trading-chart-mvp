@@ -6,7 +6,7 @@ import type { Time } from "lightweight-charts";
 import type { Candle } from "@/types/candle";
 import { DEFAULT_PIFAGOR_ALTS } from "./backtestDefaults";
 import {
-  buildPifagorDailyContext,
+  buildOverlayDayIndexContext,
   computePifagorSeries,
 } from "./pifagorAltsIndicators";
 
@@ -31,7 +31,7 @@ export function buildAltsChartLineData(
   const lower: AltsChartLinePoint[] = [];
   if (candles.length < 100) return { upper, lower };
 
-  const daily = buildPifagorDailyContext(candles);
+  const daily = buildOverlayDayIndexContext(candles);
   const series = computePifagorSeries(candles, symbol, DEFAULT_PIFAGOR_ALTS, daily);
 
   for (let i = 0; i < candles.length; i++) {

@@ -80,12 +80,14 @@ export function runPifagorAltsBacktest(
   candles: Candle[],
   symbol: string,
   settings: BacktestSettings,
-  _requestedFromMs: number,
+  requestedFromMs: number,
+  dailyCandles: Candle[],
+  chartIntervalMs: number,
 ): BacktestResult {
   const n = candles.length;
   const pif = settings.pifagorAlts;
   const dca = settings.dca;
-  const daily = buildPifagorDailyContext(candles);
+  const daily = buildPifagorDailyContext(candles, dailyCandles, chartIntervalMs);
   const series = computePifagorSeries(candles, symbol, pif, daily);
 
   const signalsOut: (boolean | null)[] = new Array(n).fill(null);
@@ -330,7 +332,7 @@ export function runPifagorAltsBacktest(
     signalMeta: metaOut,
     trades,
     equity: equityCurve,
-    dataRange: { fromMs, toMs, requestedFromMs: _requestedFromMs },
+    dataRange: { fromMs, toMs, requestedFromMs },
     lastBarAtrKelt: undefined,
     openPositionAtDataEnd,
     warning: buildPifagorWarning(series.diagnostics),

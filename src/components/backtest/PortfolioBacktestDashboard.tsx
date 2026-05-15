@@ -47,10 +47,19 @@ function Kpi({
 }
 
 type SortKey = "pnl" | "trades" | "dd" | "duration";
+type OpenSortKey =
+  | "unrealized"
+  | "dd"
+  | "duration"
+  | "entries"
+  | "avgEntry"
+  | "mark"
+  | "coin";
 
 export function PortfolioBacktestDashboard({ result }: { result: PortfolioBacktestResult }) {
   const { summary, symbols, combinedEquity } = result;
   const [sortKey, setSortKey] = useState<SortKey>("pnl");
+  const [openSortKey, setOpenSortKey] = useState<OpenSortKey>("unrealized");
   const [showSkipped, setShowSkipped] = useState(false);
 
   const sorted = useMemo(() => {
@@ -71,7 +80,29 @@ export function PortfolioBacktestDashboard({ result }: { result: PortfolioBackte
     });
   }, [symbols, sortKey, showSkipped]);
 
-  const openRows = symbols.filter((s) => s.openPositionAtDataEnd);
+  const openRows = useMemo(() => {
+    const list = symbols.filter((s) => s.openPositionAtDataEnd);
+    return [...list].sort((a, b) => {
+      const pa = a.openPositionAtDataEnd!;
+      const pb = b.openPositionAtDataEnd!;
+      switch (openSortKey) {
+        case "coin":
+          return a.label.localeCompare(b.label);
+        case "avgEntry":
+          return pb.avgEntryPrice - pa.avgEntryPrice;
+        case "mark":
+          return pb.markPrice - pa.markPrice;
+        case "dd":
+          return pb.maxDrawdownPct - pa.maxDrawdownPct;
+        case "duration":
+          return pb.durationMs - pa.durationMs;
+        case "entries":
+          return pb.filledLevels - pa.filledLevels;
+        default:
+          return pb.unrealizedPnlPctOnMargin - pa.unrealizedPnlPctOnMargin;
+      }
+    });
+  }, [symbols, openSortKey]);
 
   return (
     <div className="space-y-6">
@@ -124,9 +155,24 @@ export function PortfolioBacktestDashboard({ result }: { result: PortfolioBackte
 
       {openRows.length > 0 ? (
         <section className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
-            Открытые позиции на конец данных ({openRows.length})
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+              Открытые позиции на конец данных ({openRows.length})
+            </h3>
+            <select
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 text-sm text-[#d1d4dc]"
+              value={openSortKey}
+              onChange={(e) => setOpenSortKey(e.target.value as OpenSortKey)}
+            >
+              <option value="unrealized">Сортировка: unrealized PnL</option>
+              <option value="dd">Сортировка: DD позиции</option>
+              <option value="duration">Сортировка: длительность</option>
+              <option value="entries">Сортировка: входов</option>
+              <option value="avgEntry">Сортировка: средняя входа</option>
+              <option value="mark">Сортировка: mark</option>
+              <option value="coin">Сортировка: монета (A→Z)</option>
+            </select>
+          </div>
           <div className="overflow-x-auto rounded-xl border border-[#2e3241]">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-[#0c0e14] text-[11px] uppercase tracking-wide text-[#787b86]">

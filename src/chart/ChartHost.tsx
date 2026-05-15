@@ -24,6 +24,7 @@ import {
   ALTS_CHART_COLORS,
   buildAltsChartLineData,
 } from "@/lib/backtest/chartAltsOverlay";
+import { ChartScaleToggle } from "@/components/chart/ChartScaleToggle";
 
 /** Core candlestick + volume + MA overlays. RSI lives in `RsiPane`. Series refs cleaned on unmount. */
 export function ChartHost({ children }: { children?: React.ReactNode }) {
@@ -437,6 +438,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
         className="relative h-full min-h-[320px] w-full flex-1"
       >
         <div ref={chartMountRef} className="absolute inset-0" />
+        <ChartScaleToggle />
         {children}
       </div>
     </ChartRuntimeContext.Provider>
