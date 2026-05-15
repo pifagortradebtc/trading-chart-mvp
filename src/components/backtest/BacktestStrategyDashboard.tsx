@@ -71,6 +71,8 @@ export function BacktestStrategyDashboard({
 }) {
   const ind = settings.indicator;
   const dca = settings.dca;
+  const pif = settings.pifagorAlts;
+  const isPifagor = settings.strategyKind === "pifagor_alts";
   const gridNotional = dca.gridTotalNotionalUsdt ?? dca.startDepositUsdt;
   const atrLast = result.lastBarAtrKelt;
   const pos = result.openPositionAtDataEnd;
@@ -123,33 +125,60 @@ export function BacktestStrategyDashboard({
       </h3>
       <div className="grid gap-3 xl:grid-cols-5">
         <Panel title="Настройки">
-          <Row k="Ордеров" v={dca.ordersCount} />
-          <Row k="Перекрытие" v={`${dca.priceOverlapPct.toFixed(1)}%`} />
-          <Row k="Коэф. цены" v={dca.priceFactor.toFixed(2)} />
-          <Row k="Мартингейл" v={dca.volumeFactor.toFixed(2)} />
-          <Row k="TP" v={`${dca.takeProfitPct.toFixed(2)}%`} />
-          <Row
-            k="Вход боковик"
-            v={
-              ind.useLimitRange
-                ? `${ind.limitRangeAtr.toFixed(2)} ATR`
-                : "market"
-            }
-          />
-          <Row
-            k="Вход тренд"
-            v={
-              ind.useLimitTrend
-                ? `${ind.limitTrendAtr.toFixed(2)} ATR`
-                : "market"
-            }
-          />
-          <Row
-            k="ATR (посл. бар)"
-            v={atrLast != null && Number.isFinite(atrLast) ? atrLast.toFixed(1) : "—"}
-          />
-          <Row k="Покрытие сетки" v={`${dca.priceOverlapPct.toFixed(2)}%`} vClass="text-emerald-400" />
-          <Row k="Σ USDT сетки" v={gridNotional.toFixed(1)} vClass="text-emerald-400" />
+          {isPifagor ? (
+            <>
+              <Row k="Модель" v="Pifagor ALTS 3.7" />
+              <Row
+                k="Риск ALTS"
+                v={pif.lineRisk === "less" ? "меньше" : "больше"}
+              />
+              <Row k="Вход USDT" v={pif.entryNotionalUsdt.toFixed(0)} />
+              <Row k="Pyramiding" v={pif.maxPyramidingEntries} />
+              <Row
+                k="Выход +100%"
+                v={pif.closewhen100 ? "2× средней" : "выкл"}
+              />
+              <Row k="Плечо" v={dca.leverage} />
+              <Row k="Депозит" v={`${dca.startDepositUsdt.toFixed(0)} USDT`} />
+              <Row
+                k="Выход Pine"
+                v={pif.usePineExitRules ? "mult/diff" : "выкл"}
+              />
+              {result.warning ? (
+                <p className="mt-2 text-[10px] leading-snug text-amber-200/90">{result.warning}</p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Row k="Ордеров" v={dca.ordersCount} />
+              <Row k="Перекрытие" v={`${dca.priceOverlapPct.toFixed(1)}%`} />
+              <Row k="Коэф. цены" v={dca.priceFactor.toFixed(2)} />
+              <Row k="Мартингейл" v={dca.volumeFactor.toFixed(2)} />
+              <Row k="TP" v={`${dca.takeProfitPct.toFixed(2)}%`} />
+              <Row
+                k="Вход боковик"
+                v={
+                  ind.useLimitRange
+                    ? `${ind.limitRangeAtr.toFixed(2)} ATR`
+                    : "market"
+                }
+              />
+              <Row
+                k="Вход тренд"
+                v={
+                  ind.useLimitTrend
+                    ? `${ind.limitTrendAtr.toFixed(2)} ATR`
+                    : "market"
+                }
+              />
+              <Row
+                k="ATR (посл. бар)"
+                v={atrLast != null && Number.isFinite(atrLast) ? atrLast.toFixed(1) : "—"}
+              />
+              <Row k="Покрытие сетки" v={`${dca.priceOverlapPct.toFixed(2)}%`} vClass="text-emerald-400" />
+              <Row k="Σ USDT сетки" v={gridNotional.toFixed(1)} vClass="text-emerald-400" />
+            </>
+          )}
         </Panel>
 
         <Panel title="Последние сделки">
@@ -161,7 +190,7 @@ export function BacktestStrategyDashboard({
                   <th className="px-1 py-0.5">Вход</th>
                   <th className="px-1 py-0.5">Выход</th>
                   <th className="px-1 py-0.5">PnL%</th>
-                  <th className="px-1 py-0.5">Сетка</th>
+                  <th className="px-1 py-0.5">{isPifagor ? "Входов" : "Сетка"}</th>
                   <th className="pl-1 py-0.5">Дни</th>
                   <th className="pl-1 py-0.5">DD%</th>
                 </tr>

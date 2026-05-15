@@ -82,6 +82,7 @@ function qxrfAt(low: number[], idx: number, qlength: number): number {
   return qrVal;
 }
 
+/** Pine `qxsa`: nz(qsumf[1]) − nz(qsrc[qlen]) + qsrc; qma только когда qsrc[qlen] не na. */
 function qxsaSeries(qsrc: number[], qlen: number, qwei: number): number[] {
   const out = new Array(qsrc.length).fill(NaN);
   let qsumfPrev = 0;
@@ -89,10 +90,7 @@ function qxsaSeries(qsrc: number[], qlen: number, qwei: number): number[] {
   for (let i = 0; i < qsrc.length; i++) {
     const qsrcNow = qsrc[i]!;
     const qsrcOld = i >= qlen ? qsrc[i - qlen]! : NaN;
-    const qsumf =
-      (Number.isFinite(qsumfPrev) ? qsumfPrev : 0) -
-      (Number.isFinite(qsrcOld) ? qsrcOld : 0) +
-      qsrcNow;
+    const qsumf = qsumfPrev - (Number.isFinite(qsrcOld) ? qsrcOld : 0) + qsrcNow;
     const qma = Number.isFinite(qsrcOld) ? qsumf / qlen : NaN;
     const qout = Number.isNaN(qoutPrev) ? qma : (qsrcNow * qwei + qoutPrev * (qlen - qwei)) / qlen;
     out[i] = qout;
@@ -100,6 +98,38 @@ function qxsaSeries(qsrc: number[], qlen: number, qwei: number): number[] {
     qoutPrev = qout;
   }
   return out;
+}
+
+/** Pine `ta.ema`: при na на входе удерживает предыдущее значение. */
+function emaFromSeriesPine(values: number[], period: number): number[] {
+  const out = new Array(values.length).fill(NaN);
+  if (period <= 0 || values.length === 0) return out;
+  const k = 2 / (period + 1);
+  let prev: number | null = null;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (!Number.isFinite(v)) {
+      out[i] = prev ?? NaN;
+      continue;
+    }
+    if (prev === null) {
+      if (i < period - 1) continue;
+      let s = 0;
+      for (let j = 0; j < period; j++) s += values[i - j]!;
+      prev = s / period;
+      out[i] = prev;
+    } else {
+      prev = v * k + prev * (1 - k);
+      out[i] = prev;
+    }
+  }
+  return out;
+}
+
+function qvar2FromQx(qxNum: number, qxDen: number): number {
+  if (!Number.isFinite(qxNum) || !Number.isFinite(qxDen)) return NaN;
+  if (qxDen === 0) return NaN;
+  return (qxNum / qxDen) * 100;
 }
 
 function lowestLow(low: number[], len: number): number[] {
@@ -136,22 +166,22 @@ export function buildPifagorDailyContext(candles: Candle[]): PifagorDailyContext
   const dailyMultiple = new Array(n).fill(NaN);
 
   const firstDay = utcDayStartSec(candles[0]!.time);
-  const dailyCloseByDayIdx: number[] = [];
+  const startMs = candles[0]!.time * 1000;
+  const closes = candles.map((c) => c.close);
 
   for (let i = 0; i < n; i++) {
-    const dayStart = utcDayStartSec(candles[i]!.time);
-    dayIndex[i] = Math.round((dayStart - firstDay) / 86400);
-
     const c = candles[i]!;
-    const di = dayIndex[i]!;
-    while (dailyCloseByDayIdx.length <= di) dailyCloseByDayIdx.push(NaN);
-    dailyCloseByDayIdx[di] = c.close;
-    dayCloseAsOf[i] = dailyCloseByDayIdx[di]!;
+    const dayStart = utcDayStartSec(c.time);
+    dayIndex[i] = Math.round((dayStart - firstDay) / 86400);
+    dayCloseAsOf[i] = c.close;
 
-    const leghtn = Math.min(200, dayIndex[i]! + 1);
-    const smaD = smaAt(dailyCloseByDayIdx, di, leghtn);
-    const bdc = dayCloseAsOf[i]!;
-    dailyMultiple[i] = Number.isFinite(smaD) && smaD !== 0 ? bdc / smaD : NaN;
+    /** Как Pine: startbar = time[0], lll = days_enough > 200 ? 200 : round(days)+1 */
+    const daysEnough = (c.time * 1000 - startMs) / 86400000;
+    const leghtn = Math.round(daysEnough) + 1;
+    const lll = daysEnough > 200 ? 200 : leghtn;
+    const smaD = smaAt(closes, i, lll);
+    dailyMultiple[i] =
+      Number.isFinite(smaD) && smaD !== 0 ? c.close / smaD : NaN;
   }
 
   return { dayIndex, dayCloseAsOf, dailyMultiple };
@@ -231,6 +261,15 @@ function buildDailyPercSmaClosedDays(candles: Candle[], dayIndex: number[]): num
   return out;
 }
 
+export interface PifagorSignalDiagnostics {
+  closeBelowAaa1: number;
+  goodTime: number;
+  whalePump: number;
+  dailyMultLow: number;
+  enterAll: number;
+  maxWhalePump: number;
+}
+
 export interface PifagorComputedSeries {
   aaa1: number[];
   price: number[];
@@ -239,6 +278,7 @@ export interface PifagorComputedSeries {
   enterRaw: boolean[];
   exitRuleRaw: boolean[];
   goodTime: boolean[];
+  diagnostics: PifagorSignalDiagnostics;
 }
 
 export function computePifagorSeries(
@@ -302,15 +342,12 @@ export function computePifagorSeries(
   const maxLowMinus = low.map((v, i) => Math.max(v - (qvar1[i] ?? NaN), 0));
   const qx1 = qxsaSeries(absLowMinus, 3, 1);
   const qx2 = qxsaSeries(maxLowMinus, 3, 1);
-  const qvar2 = qx1.map((v, i) => {
-    const den = qx2[i]!;
-    return Number.isFinite(v) && Number.isFinite(den) && den !== 0 ? (v / den) * 100 : NaN;
-  });
+  const qvar2 = qx1.map((v, i) => qvar2FromQx(v, qx2[i]!));
   const qvar3 = qvar2.map((v, i) => {
     const cl = close[i]!;
     return cl * 1.2 > 0 ? v * 10 : v / 10;
   });
-  const qvar3Ema = emaFromSeries(qvar3, 3);
+  const qvar3Ema = emaFromSeriesPine(qvar3, 3);
   const qvar4 = lowestLow(low, 38);
   const qvar5 = highestHigh(qvar3Ema, 38);
   const lowest1 = lowestLow(low, 90);
@@ -322,7 +359,7 @@ export function computePifagorSeries(
     const q5 = qvar5[i]!;
     innerArr[i] = low[i]! <= q4 ? (qv3 + q5 * 2) / 2 : 0;
   }
-  const innerEma = emaFromSeries(innerArr, 3);
+  const innerEma = emaFromSeriesPine(innerArr, 3);
   const qwhalepump: number[] = new Array(n).fill(NaN);
   for (let i = 0; i < n; i++) {
     const l1 = lowest1[i]!;
@@ -337,20 +374,31 @@ export function computePifagorSeries(
 
   const enterRaw: boolean[] = new Array(n).fill(false);
   const exitRuleRaw: boolean[] = new Array(n).fill(false);
+  let closeBelowAaa1 = 0;
+  let goodTimeCount = 0;
+  let whalePumpCount = 0;
+  let dailyMultLowCount = 0;
+  let enterAll = 0;
+  let maxWhalePump = 0;
+
   for (let i = 0; i < n; i++) {
     const dm = daily.dailyMultiple[i]!;
     const qw = qwhalepump[i]!;
     const cl = close[i]!;
     const a = aaa1[i]!;
     const d = diffPct[i]!;
-    enterRaw[i] =
-      Number.isFinite(a) &&
-      cl < a &&
-      goodTime[i]! &&
-      Number.isFinite(qw) &&
-      qw > 2 &&
-      Number.isFinite(dm) &&
-      dm < 0.7;
+    const c1 = Number.isFinite(a) && cl < a;
+    const c2 = goodTime[i]!;
+    const c3 = Number.isFinite(qw) && qw > 2;
+    const c4 = Number.isFinite(dm) && dm < 0.7;
+    if (c1) closeBelowAaa1++;
+    if (c2) goodTimeCount++;
+    if (c3) whalePumpCount++;
+    if (c4) dailyMultLowCount++;
+    if (Number.isFinite(qw) && qw > maxWhalePump) maxWhalePump = qw;
+
+    enterRaw[i] = c1 && c2 && c3 && c4;
+    if (enterRaw[i]) enterAll++;
     exitRuleRaw[i] =
       (Number.isFinite(dm) && dm > 3.5) || (Number.isFinite(d) && d > 90);
   }
@@ -363,5 +411,13 @@ export function computePifagorSeries(
     enterRaw,
     exitRuleRaw,
     goodTime,
+    diagnostics: {
+      closeBelowAaa1,
+      goodTime: goodTimeCount,
+      whalePump: whalePumpCount,
+      dailyMultLow: dailyMultLowCount,
+      enterAll,
+      maxWhalePump,
+    },
   };
 }

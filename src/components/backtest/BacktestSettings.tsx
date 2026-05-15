@@ -1,6 +1,10 @@
 "use client";
 
-import { DEFAULT_CHAIK, DEFAULT_PIFAGOR_ALTS } from "@/lib/backtest/backtestDefaults";
+import {
+  DEFAULT_CHAIK,
+  DEFAULT_PIFAGOR_ALTS,
+  DEFAULT_PIFAGOR_DCA,
+} from "@/lib/backtest/backtestDefaults";
 import type { BacktestSettings } from "@/lib/backtest/types";
 
 function msToDatetimeLocalValue(ms: number): string {
@@ -56,13 +60,17 @@ export function BacktestSettingsForm({
                   onChange({
                     ...settings,
                     strategyKind,
+                    pifagorAlts: {
+                      ...DEFAULT_PIFAGOR_ALTS,
+                      ...settings.pifagorAlts,
+                    },
                     dca: {
                       ...settings.dca,
                       allowLong: true,
                       allowShort: false,
                       mode: "long",
-                      takeProfitPct:
-                        settings.dca.takeProfitPct < 50 ? 100 : settings.dca.takeProfitPct,
+                      leverage: 1,
+                      feePctPerSide: 0,
                     },
                   });
                 } else {
@@ -76,11 +84,10 @@ export function BacktestSettingsForm({
           </label>
           {settings.strategyKind === "pifagor_alts" ? (
             <p className="max-w-2xl text-xs leading-relaxed text-[#787b86]">
-              Вход: close &lt; ALTS-линия, окно по времени, whale-pump &gt; 2, daily mult &lt; 0.7. Каждый бар, где
-              условие истинно на close, — ещё один вход на фиксированную сумму USDT на open следующей свечи (на 1D это
-              даёт плотные столбы «buy», как в TradingView). Доливы ограничены маржей и полем «Макс. входов в позиции»
-              (аналог Pine pyramiding, по умолчанию 200). TP % — от текущей средней. Опционально — выход по правилам
-              Pine (mult / diff).
+              Вход: close &lt; ALTS-линия, окно по времени, whale-pump &gt; 2, daily mult &lt; 0.7. Каждый бар с
+              сигналом — ещё один cash-вход на фикс. USDT (pyramiding до 200). Выход по умолчанию как в Pine:
+              daily mult &gt; 3.5 или diff &gt; 90. Опционально — закрытие при +100% (2× средней). Для сверки с TV:
+              депозит 1 000 000, вход 5000, fee 0, leverage 1 — кнопка «Дефолты как в Pine».
             </p>
           ) : null}
         </div>
@@ -95,7 +102,13 @@ export function BacktestSettingsForm({
             <button
               type="button"
               className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
-              onClick={() => patchPif({ ...DEFAULT_PIFAGOR_ALTS })}
+              onClick={() =>
+                onChange({
+                  ...settings,
+                  pifagorAlts: { ...DEFAULT_PIFAGOR_ALTS },
+                  dca: { ...settings.dca, ...DEFAULT_PIFAGOR_DCA },
+                })
+              }
             >
               Дефолты как в Pine
             </button>
@@ -116,14 +129,23 @@ export function BacktestSettingsForm({
                 <option value="more">больше (дневной перцентиль для альтов)</option>
               </select>
             </label>
-            <label className="flex items-center gap-2 pt-6 md:pt-8">
+            <label className="flex items-center gap-2 pt-6 md:col-span-2">
               <input
                 type="checkbox"
                 className="rounded border-[#2e3241]"
                 checked={settings.pifagorAlts.usePineExitRules}
                 onChange={(e) => patchPif({ usePineExitRules: e.target.checked })}
               />
-              <span className="text-[#787b86]">Выход по правилам Pine (daily mult / diff)</span>
+              <span className="text-[#787b86]">Выход по правилам Pine (daily mult &gt; 3.5 / diff &gt; 90)</span>
+            </label>
+            <label className="flex items-center gap-2 md:col-span-2">
+              <input
+                type="checkbox"
+                className="rounded border-[#2e3241]"
+                checked={settings.pifagorAlts.closewhen100}
+                onChange={(e) => patchPif({ closewhen100: e.target.checked })}
+              />
+              <span className="text-[#787b86]">Закрывать при +100% от средней (closewhen100)</span>
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[#787b86]">
@@ -793,9 +815,8 @@ export function BacktestSettingsForm({
           ) : (
             <>
               <p className="text-xs leading-relaxed text-[#787b86] lg:col-span-2">
-                Каждый сигнал индикатора — покупка на одну и ту же сумму USDT. Доливы повторяются на каждом баре с
-                условием входа, пока хватает маржи и не достигнут лимит «Макс. входов в позиции» (как pyramiding в
-                Pine).
+                Каждый сигнал — cash-покупка на фикс. USDT (как `default_qty_type=strategy.cash` в Pine). Доливы
+                повторяются, пока хватает свободного equity и не достигнут pyramiding.
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex flex-col gap-1">

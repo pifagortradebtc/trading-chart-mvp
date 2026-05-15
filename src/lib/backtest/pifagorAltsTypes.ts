@@ -15,6 +15,8 @@ export interface PifagorAltsSettings {
   dcaEndMs: number;
   /** Выход по правилам Pine: daily_multiple > 3.5 или diff > 90. */
   usePineExitRules: boolean;
+  /** Закрывать при +100% от средней (limit 2× avg), как `closewhen100` в Pine. */
+  closewhen100: boolean;
   /**
    * Максимум отдельных входов в одной открытой позиции (аналог Pine `pyramiding`).
    * Пока условие входа истинно подряд, каждый новый бар может добавить ещё один слой — без лимита их сотни.

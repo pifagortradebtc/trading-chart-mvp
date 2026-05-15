@@ -4,12 +4,12 @@
  */
 
 import type { Candle } from "@/types/candle";
+import { approxLiquidationPrice, effectiveLiquidationLeverage } from "./risk";
 import {
-  approxLiquidationPrice,
-  effectiveLiquidationLeverage,
-  maxMarginAvailableUsdt,
-} from "./risk";
-import { buildPifagorDailyContext, computePifagorSeries } from "./pifagorAltsIndicators";
+  buildPifagorDailyContext,
+  computePifagorSeries,
+  type PifagorSignalDiagnostics,
+} from "./pifagorAltsIndicators";
 import type {
   BacktestResult,
   BacktestSettings,
@@ -212,13 +212,13 @@ export function runPifagorAltsBacktest(
     if (i > 0 && series.enterRaw[i - 1]) {
       const fillPx = c.open;
       if (Number.isFinite(fillPx) && fillPx > 0) {
-        const marginNeed = entryNotional / dca.leverage;
-        const usedMargin = open ? open.cumNotional / dca.leverage : 0;
-        const cap = maxMarginAvailableUsdt(dca, equity);
+        /** Pine `default_qty_type=strategy.cash`: каждый вход списывает фикс. USDT из equity. */
+        const committed = open?.cumNotional ?? 0;
+        const freeCash = equity - committed;
         const pyramidCap = Math.max(1, Math.floor(pif.maxPyramidingEntries));
         const underPyramidCap = !open || open.fills.length < pyramidCap;
-        const marginOk = usedMargin + marginNeed <= cap + 1e-9;
-        if (marginOk && underPyramidCap) {
+        const cashOk = freeCash >= entryNotional - 1e-9;
+        if (cashOk && underPyramidCap) {
           const feeIn = (entryNotional * dca.feePctPerSide) / 100;
           const addQty = entryNotional / fillPx;
           if (!open) {
@@ -267,20 +267,19 @@ export function runPifagorAltsBacktest(
       const uHigh = (open.firstPrice - low) / open.firstPrice;
       open.maxDrawdownPct = Math.max(open.maxDrawdownPct, uHigh * 100);
 
-      const tpP = tpPriceFromAvg(open.avgPrice, dca.takeProfitPct);
-      const tpHit = dca.takeProfitOnClose ? close >= tpP : high >= tpP;
       const pineExit = pif.usePineExitRules && series.exitRuleRaw[i];
+      const tp100Price = open.avgPrice * 2;
+      const tp100Hit = pif.closewhen100 && high >= tp100Price;
       const slP =
         dca.stopLossPct != null ? slPriceLong(open.avgPrice, dca.stopLossPct) : null;
       const slHit = slP != null && low <= slP;
 
       if (slHit) {
         finalizeTrade(open, "sl", slP, tMs, i);
-      } else if (tpHit) {
-        const exitPx = dca.takeProfitOnClose ? close : tpP;
-        finalizeTrade(open, "tp", exitPx, tMs, i);
       } else if (pineExit) {
         finalizeTrade(open, "signal", close, tMs, i);
+      } else if (tp100Hit) {
+        finalizeTrade(open, "tp", tp100Price, tMs, i);
       }
     }
 
@@ -293,12 +292,12 @@ export function runPifagorAltsBacktest(
     const tMsEnd = cLast.time * 1000;
     const barIdx = n - 1;
     const openedAtMs = (candles[open.firstEntryBar]?.time ?? 0) * 1000;
-    const tpTarget = tpPriceFromAvg(open.avgPrice, dca.takeProfitPct);
+    const tpTarget = pif.closewhen100 ? open.avgPrice * 2 : NaN;
     const marginUsed = open.cumNotional / dca.leverage;
     const gross = open.qty * (cLast.close - open.avgPrice);
     const unrealizedPnlPctOnMargin = marginUsed > 0 ? (gross / marginUsed) * 100 : 0;
     let distanceToTpPct = 0;
-    if (cLast.close > 0) {
+    if (cLast.close > 0 && Number.isFinite(tpTarget)) {
       distanceToTpPct = ((tpTarget - cLast.close) / cLast.close) * 100;
     }
     openPositionAtDataEnd = {
@@ -336,7 +335,19 @@ export function runPifagorAltsBacktest(
     dataRange: { fromMs, toMs, requestedFromMs: _requestedFromMs },
     lastBarAtrKelt: undefined,
     openPositionAtDataEnd,
-    warning:
-      "Режим Pifagor ALTS: дневная ветка aaa1 при «больше» считается по закрытым UTC-дням (приближение к Pine). Каждый сигнал — долив фиксированного номинала, пока хватает маржи по модели кошелька/депозита.",
+    warning: buildPifagorWarning(series.diagnostics),
   };
+}
+
+function buildPifagorWarning(d: PifagorSignalDiagnostics): string {
+  const parts = [
+    `Pifagor ALTS · сигналов входа: ${d.enterAll} баров`,
+    `close<ALTS: ${d.closeBelowAaa1}`,
+    `whale>2: ${d.whalePump} (max ${d.maxWhalePump.toFixed(2)})`,
+    `dailyMult<0.7: ${d.dailyMultLow}`,
+  ];
+  if (d.enterAll === 0 && d.whalePump === 0) {
+    parts.push("узкое место: qwhalepump — проверьте совпадение с TV");
+  }
+  return parts.join(" · ");
 }

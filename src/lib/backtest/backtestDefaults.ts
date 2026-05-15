@@ -42,7 +42,8 @@ export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
   entryNotionalUsdt: 5000,
   dcaStartMs: Date.UTC(2017, 11, 31, 0, 0, 0, 0),
   dcaEndMs: Date.UTC(2034, 11, 31, 0, 0, 0, 0),
-  usePineExitRules: false,
+  usePineExitRules: true,
+  closewhen100: false,
   maxPyramidingEntries: 200,
 };
 
@@ -67,6 +68,19 @@ export const DEFAULT_DCA: DcaBotSettings = {
   allowShort: false,
   mode: "long",
   takeProfitOnClose: true,
+};
+
+/** DCA-поля бэктеста, совпадающие с `strategy(...)` Pine Pifagor ALTS 3.7. */
+export const DEFAULT_PIFAGOR_DCA: DcaBotSettings = {
+  ...DEFAULT_DCA,
+  startDepositUsdt: 1_000_000,
+  walletBalanceUsdt: 1_000_000,
+  leverage: 1,
+  feePctPerSide: 0,
+  takeProfitPct: 100,
+  stopLossPct: null,
+  takeProfitOnClose: true,
+  marginMode: "isolated",
 };
 
 /** Совместимость со старыми JSON/снимками с полем `firstOrderUsdt`. */
