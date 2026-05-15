@@ -3,6 +3,9 @@
  */
 
 import type { Candle } from "@/types/candle";
+import type { PifagorAltsSettings } from "./pifagorAltsTypes";
+
+export type BacktestStrategyKind = "chaik_dca" | "pifagor_alts";
 
 export type TradeDirection = "long" | "short";
 export type DirectionMode = "long" | "short" | "auto";
@@ -91,10 +94,14 @@ export interface DcaBotSettings {
 }
 
 export interface BacktestSettings {
+  /** Какой движок бэктеста запускать. */
+  strategyKind: BacktestStrategyKind;
   entryTiming: EntryTiming;
   executionOrder: ExecutionOrder;
   indicator: ChaikKeltSettings;
   dca: DcaBotSettings;
+  /** Учитывается при strategyKind === "pifagor_alts". */
+  pifagorAlts: PifagorAltsSettings;
 }
 
 export interface DcaGridRow {
@@ -156,7 +163,7 @@ export interface TradeRecord {
   feesUsdt: number;
   /** Тип первого входа (для статистики Lim/Mkt). У старых снимков — неизвестно. */
   firstEntryKind?: FirstEntryKind;
-  exitReason: "tp" | "sl" | "liquidation" | "end_of_test";
+  exitReason: "tp" | "sl" | "liquidation" | "end_of_test" | "signal";
   durationMs: number;
   comment: string;
   /**

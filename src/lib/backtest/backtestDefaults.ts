@@ -1,4 +1,5 @@
 import type { BacktestSettings, ChaikKeltSettings, DcaBotSettings } from "./types";
+import type { PifagorAltsSettings } from "./pifagorAltsTypes";
 
 /**
  * Стандартные input Pine `V2_ЧайкКельт` (значения по умолчанию в скрипте).
@@ -33,6 +34,14 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
   limitRangeAtr: 0.3,
   useLimitTrend: false,
   limitTrendAtr: 0.15,
+};
+
+/** Как в Pine input.time для окна DCA. */
+export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
+  lineRisk: "less",
+  dcaStartMs: Date.UTC(2017, 11, 31, 0, 0, 0, 0),
+  dcaEndMs: Date.UTC(2034, 11, 31, 0, 0, 0, 0),
+  usePineExitRules: false,
 };
 
 export const DEFAULT_DCA: DcaBotSettings = {
@@ -88,8 +97,26 @@ export function migrateDcaSettings(
 }
 
 export const DEFAULT_BACKTEST: BacktestSettings = {
+  strategyKind: "chaik_dca",
   entryTiming: "next_open",
   executionOrder: "conservative",
   indicator: DEFAULT_CHAIK,
   dca: DEFAULT_DCA,
+  pifagorAlts: DEFAULT_PIFAGOR_ALTS,
 };
+
+/** Слияние снимка / частичного JSON с актуальными дефолтами (новые поля стратегии Pifagor). */
+export function migrateBacktestSettings(raw: Partial<BacktestSettings>): BacktestSettings {
+  const sk = raw.strategyKind === "pifagor_alts" ? "pifagor_alts" : "chaik_dca";
+  return {
+    ...DEFAULT_BACKTEST,
+    ...raw,
+    strategyKind: sk,
+    entryTiming: raw.entryTiming === "signal_close" ? "signal_close" : "next_open",
+    executionOrder:
+      raw.executionOrder === "optimistic" ? "optimistic" : "conservative",
+    indicator: { ...DEFAULT_CHAIK, ...raw.indicator },
+    dca: migrateDcaSettings({ ...DEFAULT_DCA, ...raw.dca }),
+    pifagorAlts: { ...DEFAULT_PIFAGOR_ALTS, ...raw.pifagorAlts },
+  };
+}

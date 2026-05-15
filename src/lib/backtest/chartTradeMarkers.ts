@@ -10,6 +10,7 @@ function exitMarkerText(t: TradeRecord): string {
   if (t.exitReason === "tp") return `#${t.id} TP ${pnlStr} USDT`;
   if (t.exitReason === "liquidation") return `#${t.id} ликв. ${pnlStr} USDT`;
   if (t.exitReason === "sl") return `#${t.id} SL ${pnlStr} USDT`;
+  if (t.exitReason === "signal") return `#${t.id} сигнал ${pnlStr} USDT`;
   return `#${t.id} конец ${pnlStr} USDT`;
 }
 
@@ -53,7 +54,7 @@ export function buildBacktestChartMarkers(trades: TradeRecord[]): SeriesMarker<T
       }
     }
 
-    if (t.exitReason === "tp" || showNonTpExit) {
+    if (t.exitReason === "tp" || t.exitReason === "signal" || showNonTpExit) {
       const tEx = Math.floor(t.exitTime / 1000) as Time;
       out.push({
         time: tEx,

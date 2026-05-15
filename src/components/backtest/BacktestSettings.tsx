@@ -1,7 +1,18 @@
 "use client";
 
-import { DEFAULT_CHAIK } from "@/lib/backtest/backtestDefaults";
+import { DEFAULT_CHAIK, DEFAULT_PIFAGOR_ALTS } from "@/lib/backtest/backtestDefaults";
 import type { BacktestSettings } from "@/lib/backtest/types";
+
+function msToDatetimeLocalValue(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseDatetimeLocalToMs(s: string): number {
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : Date.now();
+}
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -24,9 +35,118 @@ export function BacktestSettingsForm({
     onChange({ ...settings, indicator: { ...settings.indicator, ...partial } });
   const patchDca = (partial: Partial<BacktestSettings["dca"]>) =>
     onChange({ ...settings, dca: { ...settings.dca, ...partial } });
+  const patchPif = (partial: Partial<BacktestSettings["pifagorAlts"]>) =>
+    onChange({ ...settings, pifagorAlts: { ...settings.pifagorAlts, ...partial } });
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+          Модель бэктеста
+        </h3>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <label className="flex flex-col gap-1">
+            <span className="text-[#787b86]">Стратегия</span>
+            <select
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+              value={settings.strategyKind}
+              onChange={(e) => {
+                const strategyKind = e.target.value as BacktestSettings["strategyKind"];
+                if (strategyKind === "pifagor_alts") {
+                  onChange({
+                    ...settings,
+                    strategyKind,
+                    dca: {
+                      ...settings.dca,
+                      allowLong: true,
+                      allowShort: false,
+                      mode: "long",
+                      takeProfitPct:
+                        settings.dca.takeProfitPct < 50 ? 100 : settings.dca.takeProfitPct,
+                    },
+                  });
+                } else {
+                  onChange({ ...settings, strategyKind });
+                }
+              }}
+            >
+              <option value="chaik_dca">V2_ЧайкКельт + DCA-сетка</option>
+              <option value="pifagor_alts">Pifagor ALTS 3.7 (лонг, без сетки)</option>
+            </select>
+          </label>
+          {settings.strategyKind === "pifagor_alts" ? (
+            <p className="max-w-2xl text-xs leading-relaxed text-[#787b86]">
+              Вход: close &lt; ALTS-линия, окно DCA по времени, whale-pump &gt; 2, daily mult &lt; 0.7.
+              Размер позиции — «Сумма сетки» или первый ордер % от депозита (один ордер). TP % — цель
+              от средней (для +100% задайте 100). Опционально — выход по правилам Pine (mult &gt; 3.5
+              или diff &gt; 90).
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      {settings.strategyKind === "pifagor_alts" ? (
+        <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+              Pifagor ALTS
+            </h3>
+            <button
+              type="button"
+              className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
+              onClick={() => patchPif({ ...DEFAULT_PIFAGOR_ALTS })}
+            >
+              Дефолты как в Pine
+            </button>
+          </div>
+          <div className="grid gap-4 text-sm md:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[#787b86]">Степень риска (ветка ALTS)</span>
+              <select
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                value={settings.pifagorAlts.lineRisk}
+                onChange={(e) =>
+                  patchPif({
+                    lineRisk: e.target.value as "less" | "more",
+                  })
+                }
+              >
+                <option value="less">меньше (VWMA×0.5 для альтов)</option>
+                <option value="more">больше (дневной перцентиль для альтов)</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-2 pt-6 md:pt-8">
+              <input
+                type="checkbox"
+                className="rounded border-[#2e3241]"
+                checked={settings.pifagorAlts.usePineExitRules}
+                onChange={(e) => patchPif({ usePineExitRules: e.target.checked })}
+              />
+              <span className="text-[#787b86]">Выход по правилам Pine (daily mult / diff)</span>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[#787b86]">Начало окна DCA (локальное время браузера)</span>
+              <input
+                type="datetime-local"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
+                value={msToDatetimeLocalValue(settings.pifagorAlts.dcaStartMs)}
+                onChange={(e) => patchPif({ dcaStartMs: parseDatetimeLocalToMs(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[#787b86]">Конец окна DCA</span>
+              <input
+                type="datetime-local"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
+                value={msToDatetimeLocalValue(settings.pifagorAlts.dcaEndMs)}
+                onChange={(e) => patchPif({ dcaEndMs: parseDatetimeLocalToMs(e.target.value) })}
+              />
+            </label>
+          </div>
+        </section>
+      ) : null}
+
+      {settings.strategyKind === "chaik_dca" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
@@ -344,10 +464,15 @@ export function BacktestSettingsForm({
           </details>
         </div>
       </section>
+      ) : null}
 
-      <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
+      <section
+        className={`rounded-xl border border-[#2e3241] bg-[#131722] p-5 ${
+          settings.strategyKind === "pifagor_alts" ? "lg:col-span-2" : ""
+        }`}
+      >
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
-          DCA-бот
+          {settings.strategyKind === "pifagor_alts" ? "Размер сделки и риск" : "DCA-бот"}
         </h3>
         <div className="grid gap-3 text-sm">
           <div className="grid grid-cols-2 gap-2">

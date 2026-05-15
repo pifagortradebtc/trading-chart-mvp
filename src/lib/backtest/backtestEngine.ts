@@ -9,6 +9,7 @@
 import type { Candle } from "@/types/candle";
 import { computeChaikSignals } from "./chaikKeltSignal";
 import { buildDcaGrid } from "./dcaGrid";
+import { runPifagorAltsBacktest } from "./pifagorAltsEngine";
 import type {
   BacktestResult,
   BacktestSettings,
@@ -445,6 +446,10 @@ export function runBacktest(
   settings: BacktestSettings,
   requestedFromMs: number,
 ): BacktestResult {
+  if (settings.strategyKind === "pifagor_alts") {
+    return runPifagorAltsBacktest(candles, symbol, settings, requestedFromMs);
+  }
+
   const n = candles.length;
   const signalsOut: (boolean | null)[] = new Array(n).fill(null);
   const metaOut: (SignalBarState | null)[] = new Array(n).fill(null);

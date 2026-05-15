@@ -15,6 +15,8 @@ export function exitReasonLabelRu(r: TradeRecord["exitReason"]): string {
       return "ликвидация";
     case "end_of_test":
       return "конец диапазона данных (принудительное закрытие)";
+    case "signal":
+      return "сигнал стратегии (правила выхода Pine)";
     default:
       return String(r);
   }
@@ -31,6 +33,10 @@ export function worstTradeDetailRu(reason: TradeRecord["exitReason"]): string {
       return "В настройках задан Stop loss % — срабатывание стопа от средней.";
     case "liquidation":
       return "Ветка ликвидации только при изолированной марже; при кросс-марже в бэктесте она отключена.";
+    case "signal":
+      return "Выход по условиям индикатора (например daily mult / diff), а не по TP.";
+    default:
+      return "";
   }
 }
 
