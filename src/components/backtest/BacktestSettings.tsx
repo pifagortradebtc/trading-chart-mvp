@@ -80,8 +80,9 @@ export function BacktestSettingsForm({
                 <span>
                   Портфельный режим ({PORTFOLIO_ALTS_SYMBOL_COUNT} монет CMC top)
                   <Tip>
-                    Одновременный бэктест по списку альтов: PnL по каждой монете, max DD на весь депозит, открытые
-                    позиции. Депозит делится поровну между монетами. OHLCV грузится с Binance автоматически.
+                    Одновременный бэктест по списку альтов: PnL по каждой монете, max DD на суммарный капитал,
+                    открытые позиции. Депозит и размер входа — на каждый актив отдельно (как отдельный график в TV).
+                    OHLCV грузится с Binance автоматически.
                   </Tip>
                 </span>
               </label>
@@ -722,7 +723,11 @@ export function BacktestSettingsForm({
                 <label className="flex flex-col gap-1">
                   <span>
                     Торговый депозит USDT
-                    <Tip>Как `initial_capital` в Pine.</Tip>
+                    <Tip>
+                      {settings.portfolioAltsMode
+                        ? "На каждую монету в портфеле — отдельный счёт с этим депозитом (как initial_capital в Pine на каждом графике)."
+                        : "Как `initial_capital` в Pine."}
+                    </Tip>
                   </span>
                   <input
                     type="number"
@@ -742,7 +747,11 @@ export function BacktestSettingsForm({
                 <label className="flex flex-col gap-1">
                   <span>
                     Размер одного входа USDT
-                    <Tip>Как `default_qty_value` в Pine (strategy.cash).</Tip>
+                    <Tip>
+                      {settings.portfolioAltsMode
+                        ? "На каждый сигнал enter — фикс. USDT (strategy.cash), доливки без DCA-сетки."
+                        : "Как `default_qty_value` в Pine (strategy.cash)."}
+                    </Tip>
                   </span>
                   <input
                     type="number"

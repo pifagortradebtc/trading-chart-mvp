@@ -48,9 +48,9 @@ export async function runPortfolioAltsBacktest(opts: {
   signal?: AbortSignal;
 }): Promise<PortfolioBacktestResult> {
   const { settings, interval, yearsBack, forceRefresh = false, onProgress, signal } = opts;
-  const totalDeposit = settings.dca.startDepositUsdt;
   const symbols = PORTFOLIO_ALTS_SYMBOLS;
-  const depositPerSymbol = symbols.length > 0 ? totalDeposit / symbols.length : totalDeposit;
+  /** Полный депозит на каждый актив — как отдельный бэктест в TradingView. */
+  const depositPerSymbol = settings.dca.startDepositUsdt;
   const endMs = Date.now();
   const startMs = endMs - yearsBack * 365.25 * 24 * 3600 * 1000;
 
@@ -195,7 +195,8 @@ export async function runPortfolioAltsBacktest(opts: {
     settings,
     interval,
     yearsBack,
-    totalDepositUsdt: totalDeposit,
+    depositPerSymbolUsdt: depositPerSymbol,
+    entryNotionalPerSymbolUsdt: settings.pifagorAlts.entryNotionalUsdt,
     rows,
   });
 }

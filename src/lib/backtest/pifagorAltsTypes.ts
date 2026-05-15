@@ -17,9 +17,6 @@ export interface PifagorAltsSettings {
   usePineExitRules: boolean;
   /** Закрывать при +100% от средней (limit 2× avg), как `closewhen100` в Pine. */
   closewhen100: boolean;
-  /**
-   * Максимум отдельных входов в одной открытой позиции (аналог Pine `pyramiding`).
-   * Пока условие входа истинно подряд, каждый новый бар может добавить ещё один слой — без лимита их сотни.
-   */
+  /** Не используется: вход на каждый бар enter без лимита, ограничение — только cash. */
   maxPyramidingEntries: number;
 }

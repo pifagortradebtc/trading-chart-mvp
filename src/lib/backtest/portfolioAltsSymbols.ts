@@ -1,5 +1,5 @@
 /**
- * Top CMC альты (rank ~2–100), без BTC, стейблкоинов и золотых токенов.
+ * Top CMC альты (rank ~2–147), без BTC, стейблкоинов и золотых токенов.
  * Пары Binance Spot USDT; отсутствующие на бирже помечаются как skipped в прогоне.
  */
 
@@ -29,7 +29,7 @@ const STABLE_OR_EXCLUDED = new Set([
   "U",
 ]);
 
-/** Порядок как на скриншотах CMC (rank 2–100, без #1 BTC). */
+/** Порядок как на скриншотах CMC (rank 2–147, без #1 BTC). */
 const RAW_TICKERS: string[] = [
   "ETH",
   "BNB",
@@ -114,6 +114,53 @@ const RAW_TICKERS: string[] = [
   "AERO",
   "XTZ",
   "TIA",
+  "SIREN",
+  "IMX",
+  "CRV",
+  "SUN",
+  "KITE",
+  "SPX",
+  "CFX",
+  "ETHFI",
+  "ZBCN",
+  "PENDLE",
+  "MON",
+  "SKYAI",
+  "GNO",
+  "ZZ",
+  "TEL",
+  "BTT",
+  "BSV",
+  "DCR",
+  "FLOKI",
+  "LDO",
+  "JASMY",
+  "OP",
+  "GRT",
+  "KAIA",
+  "NFT",
+  "ENS",
+  "GWEI",
+  "SYRUP",
+  "PYTH",
+  "STRK",
+  "IOTA",
+  "PIEVERSE",
+  "COMP",
+  "LIT",
+  "SAND",
+  "JTO",
+  "AKT",
+  "THETA",
+  "NEO",
+  "TWT",
+  "FF",
+  "AXS",
+  "WIF",
+  "FARTCOIN",
+  "RAY",
+  "XCN",
+  "RUNE",
 ];
 
 export const PORTFOLIO_ALTS_SYMBOLS: PortfolioAltsSymbol[] = RAW_TICKERS.filter(

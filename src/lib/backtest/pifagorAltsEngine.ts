@@ -1,6 +1,6 @@
 /**
- * Бэктест «Pifagor ALTS»: лонг с доливами фиксированного номинала на каждый сигнал Pine
- * (без сетки DCA из модели ЧайкКельт), выход по TP % и/или правилам Pine.
+ * Бэктест «Pifagor ALTS»: каждый бар с сигналом enter — вход strategy.cash (без DCA-сетки),
+ * выход: closewhen100 → +100% от средней; иначе — сигналы Pine (mult/diff).
  */
 
 import type { Candle } from "@/types/candle";
@@ -212,13 +212,10 @@ export function runPifagorAltsBacktest(
     if (i > 0 && series.enterRaw[i - 1]) {
       const fillPx = c.open;
       if (Number.isFinite(fillPx) && fillPx > 0) {
-        /** Pine `default_qty_type=strategy.cash`: каждый вход списывает фикс. USDT из equity. */
+        /** Каждый сигнал enter → +entryNotional USDT (pyramiding), пока хватает cash. */
         const committed = open?.cumNotional ?? 0;
         const freeCash = equity - committed;
-        const pyramidCap = Math.max(1, Math.floor(pif.maxPyramidingEntries));
-        const underPyramidCap = !open || open.fills.length < pyramidCap;
-        const cashOk = freeCash >= entryNotional - 1e-9;
-        if (cashOk && underPyramidCap) {
+        if (freeCash >= entryNotional - 1e-9) {
           const feeIn = (entryNotional * dca.feePctPerSide) / 100;
           const addQty = entryNotional / fillPx;
           if (!open) {
@@ -267,19 +264,20 @@ export function runPifagorAltsBacktest(
       const uHigh = (open.firstPrice - low) / open.firstPrice;
       open.maxDrawdownPct = Math.max(open.maxDrawdownPct, uHigh * 100);
 
-      const pineExit = pif.usePineExitRules && series.exitRuleRaw[i];
       const tp100Price = open.avgPrice * 2;
       const tp100Hit = pif.closewhen100 && high >= tp100Price;
+      const pineExit =
+        !pif.closewhen100 && pif.usePineExitRules && series.exitRuleRaw[i];
       const slP =
         dca.stopLossPct != null ? slPriceLong(open.avgPrice, dca.stopLossPct) : null;
       const slHit = slP != null && low <= slP;
 
       if (slHit) {
         finalizeTrade(open, "sl", slP, tMs, i);
-      } else if (pineExit) {
-        finalizeTrade(open, "signal", close, tMs, i);
       } else if (tp100Hit) {
         finalizeTrade(open, "tp", tp100Price, tMs, i);
+      } else if (pineExit) {
+        finalizeTrade(open, "signal", close, tMs, i);
       }
     }
 
@@ -308,7 +306,7 @@ export function runPifagorAltsBacktest(
       takeProfitPrice: tpTarget,
       markPrice: cLast.close,
       filledLevels: open.fills.length,
-      totalGridOrders: open.fills.length,
+      totalGridOrders: 0,
       unrealizedPnlPctOnMargin,
       distanceToTpPct,
       openedAtMs,

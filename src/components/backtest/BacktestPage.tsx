@@ -727,7 +727,8 @@ export function BacktestPage() {
             {isPortfolioMode ? (
               <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
                 Портфельный режим: OHLCV для {PORTFOLIO_ALTS_SYMBOL_COUNT} монет загружается автоматически при
-                запуске. Выберите таймфрейм и глубину истории ниже — пара из списка не используется.
+                запуске. Депозит и размер входа — <strong>на каждый актив</strong> (не делятся между монетами).
+                Выберите таймфрейм и глубину истории ниже.
               </div>
             ) : null}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">

@@ -37,8 +37,12 @@ export interface PortfolioSymbolResult {
 }
 
 export interface PortfolioBacktestSummary {
+  /** Суммарный капитал = депозит × число успешно прогнанных монет. */
   totalDepositUsdt: number;
+  /** Торговый депозит на каждый актив (из UI). */
   depositPerSymbolUsdt: number;
+  /** Размер одного входа на каждый актив (из UI). */
+  entryNotionalPerSymbolUsdt: number;
   symbolCount: number;
   symbolsOk: number;
   symbolsSkipped: number;

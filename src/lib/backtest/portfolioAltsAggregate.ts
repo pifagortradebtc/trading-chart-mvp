@@ -78,12 +78,14 @@ export function buildPortfolioBacktestResult(opts: {
   settings: BacktestSettings;
   interval: string;
   yearsBack: number;
-  totalDepositUsdt: number;
+  depositPerSymbolUsdt: number;
+  entryNotionalPerSymbolUsdt: number;
   rows: PortfolioSymbolResult[];
 }): PortfolioBacktestResult {
-  const { settings, interval, yearsBack, totalDepositUsdt, rows } = opts;
+  const { settings, interval, yearsBack, depositPerSymbolUsdt, entryNotionalPerSymbolUsdt, rows } =
+    opts;
   const okRows = rows.filter((r) => r.status === "ok");
-  const depositPer = okRows.length > 0 ? totalDepositUsdt / okRows.length : 0;
+  const totalDepositUsdt = depositPerSymbolUsdt * okRows.length;
 
   const combinedEquity = mergePortfolioEquityCurves(
     okRows.map((r) => ({ deposit: r.allocatedDepositUsdt, points: r.equity })),
@@ -106,7 +108,8 @@ export function buildPortfolioBacktestResult(opts: {
 
   const summary: PortfolioBacktestSummary = {
     totalDepositUsdt,
-    depositPerSymbolUsdt: depositPer,
+    depositPerSymbolUsdt,
+    entryNotionalPerSymbolUsdt,
     symbolCount: rows.length,
     symbolsOk: okRows.length,
     symbolsSkipped: rows.filter((r) => r.status === "skipped").length,

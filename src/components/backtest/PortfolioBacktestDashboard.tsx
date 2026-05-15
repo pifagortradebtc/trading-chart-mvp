@@ -76,11 +76,12 @@ export function PortfolioBacktestDashboard({ result }: { result: PortfolioBackte
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
-        Портфельный режим: депозит{" "}
-        <span className="font-mono">{summary.totalDepositUsdt.toLocaleString("ru-RU")} USDT</span> делится поровну
-        между {summary.symbolCount} монетами (
-        <span className="font-mono">≈{Math.round(summary.depositPerSymbolUsdt).toLocaleString("ru-RU")}</span> на
-        монету). Успешно прогнано: {summary.symbolsOk}. Закрытие +100%:{" "}
+        Портфельный режим: на <strong>каждую</strong> монету депозит{" "}
+        <span className="font-mono">{summary.depositPerSymbolUsdt.toLocaleString("ru-RU")} USDT</span> и вход{" "}
+        <span className="font-mono">{summary.entryNotionalPerSymbolUsdt.toLocaleString("ru-RU")} USDT</span> (
+        суммарный капитал{" "}
+        <span className="font-mono">{summary.totalDepositUsdt.toLocaleString("ru-RU")} USDT</span> по{" "}
+        {summary.symbolsOk} монетам). Закрытие +100%:{" "}
         {summary.closewhen100 ? "включено" : "выключено"}.
       </div>
 
@@ -134,7 +135,9 @@ export function PortfolioBacktestDashboard({ result }: { result: PortfolioBackte
                   <th className="px-3 py-2">Unrealized</th>
                   <th className="px-3 py-2">DD позиции</th>
                   <th className="px-3 py-2">Длительность</th>
-                  <th className="px-3 py-2">Уровней</th>
+                  <th className="px-3 py-2" title="Сколько раз сработал сигнал enter (по $5k каждый)">
+                    Входов
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2e3241]">
@@ -152,9 +155,7 @@ export function PortfolioBacktestDashboard({ result }: { result: PortfolioBackte
                         {pos.maxDrawdownPct.toFixed(2)}%
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{fmtDays(pos.durationMs)}</td>
-                      <td className="px-3 py-2 font-mono text-xs">
-                        {pos.filledLevels}/{pos.totalGridOrders}
-                      </td>
+                      <td className="px-3 py-2 font-mono text-xs">{pos.filledLevels}</td>
                     </tr>
                   );
                 })}

@@ -207,7 +207,7 @@ export function BacktestStrategyDashboard({
                       {t.pnlPctOnMargin.toFixed(2)}%
                     </td>
                     <td className="px-1 py-0.5">
-                      {t.maxDcaIndex}/{t.totalGridOrders}
+                      {isPifagor ? t.maxDcaIndex : `${t.maxDcaIndex}/${t.totalGridOrders}`}
                     </td>
                     <td className="pl-1 py-0.5">{fmtDays(t.durationMs)}</td>
                     <td className={`pl-1 py-0.5 ${t.maxDrawdownPct < 0 ? "text-red-400" : ""}`}>
@@ -229,7 +229,10 @@ export function BacktestStrategyDashboard({
               <Row k="Средняя" v={pos.avgEntryPrice.toFixed(1)} />
               <Row k="TP" v={pos.takeProfitPrice.toFixed(1)} />
               <Row k="Mark (close)" v={pos.markPrice.toFixed(1)} />
-              <Row k="Ордеров" v={`${pos.filledLevels}/${pos.totalGridOrders}`} />
+              <Row
+                k={isPifagor ? "Входов" : "Ордеров"}
+                v={isPifagor ? String(pos.filledLevels) : `${pos.filledLevels}/${pos.totalGridOrders}`}
+              />
               <Row
                 k="PnL % маржи"
                 v={`${pos.unrealizedPnlPctOnMargin.toFixed(2)}%`}
