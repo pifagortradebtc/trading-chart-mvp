@@ -6,6 +6,7 @@ import { TopBar } from "@/components/panels/TopBar";
 import { LeftToolbar } from "@/components/panels/LeftToolbar";
 import { RightSidebar } from "@/components/panels/RightSidebar";
 import { ChartWorkspace } from "@/components/chart/ChartWorkspace";
+import { BacktestChartHandoffBootstrap } from "@/components/chart/BacktestChartHandoffBootstrap";
 import { ChartOverlaySync } from "@/components/chart/ChartOverlaySync";
 import { IndicatorSettingsModal } from "@/components/modals/IndicatorSettingsModal";
 import { useIndicatorStore } from "@/store/useIndicatorStore";
@@ -23,6 +24,7 @@ export function TradingShell() {
 
   return (
     <div className="flex h-screen min-h-[480px] flex-col bg-tv-bg text-tv-text">
+      <BacktestChartHandoffBootstrap />
       <ChartOverlaySync />
       <TopBar />
       {metaTitle ? (
@@ -31,7 +33,7 @@ export function TradingShell() {
           <span className="flex shrink-0 items-center gap-2">
             <span className="hidden text-sky-300/90 sm:inline">
               {minimalChrome
-                ? "Стрелка — сигнал; оранжевые точки — исполнение лимитов усреднения (DCA 2…); горизонтали — вся запланированная сетка до выхода; при одной сделке на графике виден любой выход (TP / ликв. / SL)."
+                ? "Жёлто-зелёный канал — ALTS (aaa1); стрелки — вход/выход; оранжевые отрезки — уровни DCA."
                 : "Зелёный — вход, оранжевый — DCA, зелёный TP, красный — ликвидация"}
             </span>
             <button

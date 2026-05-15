@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Candle } from "@/types/candle";
 import {
@@ -15,13 +14,19 @@ import { DEFAULT_BACKTEST, migrateBacktestSettings } from "@/lib/backtest/backte
 import { BacktestSettingsForm } from "./BacktestSettings";
 import { BacktestResults } from "./BacktestResults";
 import { BacktestStrategyDashboard } from "./BacktestStrategyDashboard";
+import { PortfolioBacktestDashboard } from "./PortfolioBacktestDashboard";
+import type { PortfolioBacktestResult } from "@/lib/backtest/portfolioAltsTypes";
+import { runPortfolioAltsBacktest } from "@/lib/backtest/runPortfolioBacktest";
+import { PORTFOLIO_ALTS_SYMBOL_COUNT } from "@/lib/backtest/portfolioAltsSymbols";
 import { TradeDetailsModal } from "./TradeDetailsModal";
 import { EquityCurve } from "./charts/EquityCurve";
 import { PriceChart } from "./charts/PriceChart";
 import type { BacktestSnapshotFile } from "@/lib/backtest/snapshotTypes";
-import { intervalToChartTimeframe } from "@/lib/chart/intervalToChartTimeframe";
-import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
-import { useMarketStore } from "@/store/useMarketStore";
+import {
+  buildSessionChartHandoff,
+  buildTradeChartHandoff,
+  openBacktestChartInNewTab,
+} from "@/lib/chart/openBacktestChart";
 import { useBacktestLastRunStore } from "@/store/useBacktestLastRunStore";
 import { computeAdvancedResearchMetrics } from "@/lib/research/advancedMetrics";
 import { analyzeDataQuality } from "@/lib/research/dataQuality";
@@ -61,7 +66,6 @@ const inp =
   "rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-sm text-[var(--rex-text)] outline-none ring-cyan-500/0 transition-shadow focus:border-cyan-500/40 focus:ring-2 focus:ring-cyan-500/20";
 
 export function BacktestPage() {
-  const router = useRouter();
   const [researchTab, setResearchTab] = useState<ResearchTabId>("strategy");
   const [settings, setSettings] = useState<BacktestSettings>(DEFAULT_BACKTEST);
   const [symbol, setSymbol] = useState("ETHUSDT");
@@ -90,8 +94,14 @@ export function BacktestPage() {
   const [selected, setSelected] = useState<TradeRecord | null>(null);
   const [persistSnapshots, setPersistSnapshots] = useState(true);
   const [runProgress, setRunProgress] = useState<number | null>(null);
+  const [portfolioResult, setPortfolioResult] = useState<PortfolioBacktestResult | null>(null);
+  const [portfolioProgressMsg, setPortfolioProgressMsg] = useState("");
   /** Сбрасывает незавершённое восстановление OHLCV из IndexedDB, если пользователь нажал «Загрузить». */
   const ohlcvRestoreGeneration = useRef(0);
+  const portfolioAbortRef = useRef<AbortController | null>(null);
+
+  const isPortfolioMode =
+    settings.strategyKind === "pifagor_alts" && settings.portfolioAltsMode;
 
   const [optRows, setOptRows] = useState<OptimizationRow[] | null>(null);
   const [optLoading, setOptLoading] = useState(false);
@@ -133,6 +143,19 @@ export function BacktestPage() {
   );
 
   const heroStats = useMemo(() => {
+    if (isPortfolioMode && portfolioResult) {
+      const s = portfolioResult.summary;
+      return {
+        pair: `Portfolio ${s.symbolsOk}/${s.symbolCount}`,
+        interval: s.interval,
+        bars: portfolioResult.symbols.reduce((n, r) => n + r.candleCount, 0),
+        deposit: s.totalDepositUsdt,
+        equity: s.finalEquityUsdt,
+        retPct: s.totalReturnPct,
+        maxDdPct: s.maxEquityDrawdownPct,
+        trades: s.totalTrades,
+      };
+    }
     const eq =
       metrics != null ? settings.dca.startDepositUsdt + metrics.totalPnlUsdt : undefined;
     return {
@@ -145,7 +168,15 @@ export function BacktestPage() {
       maxDdPct: metrics?.maxEquityDrawdownPct,
       trades: metrics?.trades,
     };
-  }, [effectiveSymbol, interval, candles.length, settings.dca.startDepositUsdt, metrics]);
+  }, [
+    isPortfolioMode,
+    portfolioResult,
+    effectiveSymbol,
+    interval,
+    candles.length,
+    settings.dca.startDepositUsdt,
+    metrics,
+  ]);
 
   /** Только служебное «неполная история» → локальная подсказка; остальное — глобальный warning. */
   const applyOhlcvWarning = useCallback((w: string | undefined) => {
@@ -264,31 +295,31 @@ export function BacktestPage() {
 
   const openTradeOnChart = useCallback(
     (t: TradeRecord) => {
-      const tf = intervalToChartTimeframe(interval);
-      if (result?.candles?.length) {
-        useMarketStore.getState().hydrateFromBacktest(result.candles, effectiveSymbol, tf);
-      }
-      useBacktestOverlayStore.getState().openTradeOnChart(t, effectiveSymbol, interval);
-      router.push("/chart");
+      openBacktestChartInNewTab(
+        buildTradeChartHandoff(
+          t,
+          effectiveSymbol,
+          interval,
+          result?.candles ?? [],
+        ),
+      );
     },
-    [effectiveSymbol, interval, router, result],
+    [effectiveSymbol, interval, result],
   );
 
   const openSessionOnChart = useCallback(() => {
     if (!result?.trades.length) return;
-    const tf = intervalToChartTimeframe(interval);
-    if (result.candles?.length) {
-      useMarketStore.getState().hydrateFromBacktest(result.candles, effectiveSymbol, tf);
-    }
-    useBacktestOverlayStore.getState().openSessionOnChart(
-      result.trades,
-      effectiveSymbol,
-      interval,
-      result.dataRange.fromMs,
-      result.dataRange.toMs,
+    openBacktestChartInNewTab(
+      buildSessionChartHandoff(
+        result.trades,
+        effectiveSymbol,
+        interval,
+        result.dataRange.fromMs,
+        result.dataRange.toMs,
+        result.candles ?? [],
+      ),
     );
-    router.push("/chart");
-  }, [result, effectiveSymbol, interval, router]);
+  }, [result, effectiveSymbol, interval]);
 
   const mergeImportedSettings = useCallback((s: BacktestSettings) => {
     setSettings(migrateBacktestSettings(s));
@@ -402,7 +433,50 @@ export function BacktestPage() {
     }
   };
 
+  const runPortfolio = async () => {
+    setWarning(undefined);
+    setPortfolioProgressMsg("");
+    setRunProgress(2);
+    portfolioAbortRef.current?.abort();
+    portfolioAbortRef.current = new AbortController();
+    const signal = portfolioAbortRef.current.signal;
+
+    try {
+      const runSettings = migrateBacktestSettings(settings);
+      const res = await runPortfolioAltsBacktest({
+        settings: runSettings,
+        interval,
+        yearsBack,
+        forceRefresh: forceOhlcvRefresh,
+        signal,
+        onProgress: (p) => {
+          const pct = Math.round((p.current / p.total) * 94) + 2;
+          setRunProgress(Math.min(96, pct));
+          setPortfolioProgressMsg(`${p.current}/${p.total} · ${p.message}`);
+        },
+      });
+      setPortfolioResult(res);
+      setResult(null);
+      setMetrics(null);
+      useBacktestLastRunStore.getState().clearLastRun();
+      setRunProgress(100);
+      setResearchTab("results");
+      await new Promise((r) => setTimeout(r, 200));
+    } catch (e) {
+      setWarning(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTimeout(() => {
+        setRunProgress(null);
+        setPortfolioProgressMsg("");
+      }, 350);
+    }
+  };
+
   const run = async () => {
+    if (isPortfolioMode) {
+      await runPortfolio();
+      return;
+    }
     if (!candles.length) {
       setWarning("Сначала загрузите исторические данные.");
       return;
@@ -421,6 +495,7 @@ export function BacktestPage() {
       window.clearInterval(progressTimer);
       setRunProgress(96);
       const m = computeMetrics(res.trades, res.equity, settings.dca.startDepositUsdt);
+      setPortfolioResult(null);
       setResult(res);
       setMetrics(m);
       useBacktestLastRunStore.getState().setLastRun(res, m);
@@ -586,17 +661,24 @@ export function BacktestPage() {
     <>
       <button
         type="button"
-        disabled={busy || autoOhlcvBusy || !candles.length || runProgress != null}
+        disabled={
+          busy ||
+          autoOhlcvBusy ||
+          runProgress != null ||
+          (!isPortfolioMode && !candles.length)
+        }
         onClick={() => void run()}
         className="rounded-xl bg-gradient-to-r from-cyan-500 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 disabled:opacity-40"
       >
-        Запустить бэктест
+        {isPortfolioMode
+          ? `Портфельный бэктест (${PORTFOLIO_ALTS_SYMBOL_COUNT})`
+          : "Запустить бэктест"}
       </button>
       <button
         type="button"
         disabled={!result?.trades.length}
         onClick={() => openSessionOnChart()}
-        title="Открыть график той же пары и ТФ со всеми сделками прогона"
+        title="Открыть график той же пары и ТФ со всеми сделками в новой вкладке"
         className="rounded-xl border border-emerald-500/45 bg-emerald-500/15 px-4 py-2.5 text-sm font-medium text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-40"
       >
         График со сделками
@@ -642,10 +724,18 @@ export function BacktestPage() {
                 </button>
               </div>
             )}
+            {isPortfolioMode ? (
+              <div className="rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-sm text-violet-100">
+                Портфельный режим: OHLCV для {PORTFOLIO_ALTS_SYMBOL_COUNT} монет загружается автоматически при
+                запуске. Выберите таймфрейм и глубину истории ниже — пара из списка не используется.
+              </div>
+            ) : null}
             <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start lg:gap-8">
               <GlassCard glow="cyan" className="p-6">
                 <div className="flex flex-wrap items-end gap-4">
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label
+                    className={`flex flex-col gap-1 text-sm ${isPortfolioMode ? "pointer-events-none opacity-40" : ""}`}
+                  >
                     <span className="text-[var(--rex-muted)]">Пара</span>
                     <select
                       value={symbol}
@@ -663,7 +753,9 @@ export function BacktestPage() {
                       ))}
                     </select>
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">
+                  <label
+                    className={`flex flex-col gap-1 text-sm ${isPortfolioMode ? "pointer-events-none opacity-40" : ""}`}
+                  >
                     <span className="text-[var(--rex-muted)]">Другая пара</span>
                     <input
                       placeholder="LINKUSDT"
@@ -725,7 +817,7 @@ export function BacktestPage() {
                   </label>
                   <button
                     type="button"
-                    disabled={busy || autoOhlcvBusy || source !== "binance"}
+                    disabled={busy || autoOhlcvBusy || source !== "binance" || isPortfolioMode}
                     onClick={() => void loadData()}
                     className="rounded-xl bg-emerald-600/90 px-5 py-2 font-medium text-white shadow-lg shadow-emerald-900/30 hover:bg-emerald-500 disabled:opacity-40"
                   >
@@ -772,6 +864,9 @@ export function BacktestPage() {
                     <SkeletonBlock className="h-3 w-2/3" />
                   </div>
                 )}
+                {portfolioProgressMsg && (
+                  <p className="mt-3 text-xs text-violet-300">{portfolioProgressMsg}</p>
+                )}
                 {loadMsg && <p className="mt-3 text-xs text-cyan-400">{loadMsg}</p>}
                 {dataNote && <p className="mt-2 text-sm text-[var(--rex-muted)]">{dataNote}</p>}
               </GlassCard>
@@ -796,21 +891,35 @@ export function BacktestPage() {
 
         {researchTab === "results" && (
           <div className="space-y-6">
+            {portfolioResult ? (
+              <PortfolioBacktestDashboard result={portfolioResult} />
+            ) : (
+              <>
             <BacktestResults m={metrics} />
             {result && metrics ? (
               <BacktestStrategyDashboard result={result} settings={settings} interval={interval} />
             ) : null}
-            <InterpretationPanel items={interpretation} />
-            {metrics && advancedMetrics && (
-              <ExtendedKpiGrid m={metrics} adv={advancedMetrics} />
+              </>
             )}
-            {!result && (
+            {!portfolioResult ? (
+              <>
+                <InterpretationPanel items={interpretation} />
+                {metrics && advancedMetrics ? (
+                  <ExtendedKpiGrid m={metrics} adv={advancedMetrics} />
+                ) : null}
+              </>
+            ) : null}
+            {!result && !portfolioResult && (
               <EmptyState
                 title="Нет результатов"
-                hint="Загрузите OHLCV во вкладке Strategy Setup и запустите бэктест."
+                hint={
+                  isPortfolioMode
+                    ? "Включите портфельный режим и нажмите «Портфельный бэктест» во вкладке Strategy Setup."
+                    : "Загрузите OHLCV во вкладке Strategy Setup и запустите бэктест."
+                }
               />
             )}
-            {result && (
+            {result && !portfolioResult && (
               <>
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--rex-muted)]">
                   Equity & цена

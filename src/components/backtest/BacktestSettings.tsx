@@ -6,6 +6,7 @@ import {
   DEFAULT_PIFAGOR_ALTS,
   DEFAULT_PIFAGOR_DCA,
 } from "@/lib/backtest/backtestDefaults";
+import { PORTFOLIO_ALTS_SYMBOL_COUNT } from "@/lib/backtest/portfolioAltsSymbols";
 import type { BacktestSettings } from "@/lib/backtest/types";
 
 function Tip({ children }: { children: React.ReactNode }) {
@@ -29,6 +30,11 @@ export function BacktestSettingsForm({
     onChange({ ...settings, indicator: { ...settings.indicator, ...partial } });
   const patchDca = (partial: Partial<BacktestSettings["dca"]>) =>
     onChange({ ...settings, dca: { ...settings.dca, ...partial } });
+  const patchPif = (partial: Partial<BacktestSettings["pifagorAlts"]>) =>
+    onChange({
+      ...settings,
+      pifagorAlts: { ...settings.pifagorAlts, ...partial },
+    });
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
@@ -63,10 +69,27 @@ export function BacktestSettingsForm({
             </select>
           </label>
           {settings.strategyKind === "pifagor_alts" ? (
-            <p className="max-w-2xl text-xs leading-relaxed text-[#787b86]">
-              Логика и параметры как в Pine Pifagor_ALTS 3.7 (pyramiding 200, fee 0, выход mult/diff). В UI — только
-              депозит и размер входа; остальное применяется автоматически для совпадения с TradingView.
-            </p>
+            <>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm text-violet-100">
+                <input
+                  type="checkbox"
+                  className="rounded border-violet-400/40"
+                  checked={settings.portfolioAltsMode}
+                  onChange={(e) => patch({ portfolioAltsMode: e.target.checked })}
+                />
+                <span>
+                  Портфельный режим ({PORTFOLIO_ALTS_SYMBOL_COUNT} монет CMC top)
+                  <Tip>
+                    Одновременный бэктест по списку альтов: PnL по каждой монете, max DD на весь депозит, открытые
+                    позиции. Депозит делится поровну между монетами. OHLCV грузится с Binance автоматически.
+                  </Tip>
+                </span>
+              </label>
+              <p className="max-w-2xl text-xs leading-relaxed text-[#787b86]">
+                Логика как в Pine Pifagor_ALTS 3.7 (pyramiding 200, fee 0, выход mult/diff). В UI — депозит, размер
+                входа и опции ниже; остальное — автоматически для совпадения с TradingView.
+              </p>
+            </>
           ) : null}
         </div>
       </section>
@@ -737,6 +760,21 @@ export function BacktestSettingsForm({
                   />
                 </label>
               </div>
+              <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="rounded border-[#2e3241]"
+                  checked={settings.pifagorAlts.closewhen100}
+                  onChange={(e) => patchPif({ closewhen100: e.target.checked })}
+                />
+                <span className="text-[#d1d4dc]">
+                  Закрывать при +100% прибыли
+                  <Tip>
+                    Как `closewhen100` в Pine: лимитный выход на 2× средней цены. Если выключено — только сигналы
+                    стратегии (daily mult / diff).
+                  </Tip>
+                </span>
+              </label>
             </>
           )}
         </div>

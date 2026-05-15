@@ -20,6 +20,10 @@ import {
   buildDcaSegmentSpecs,
   MAX_TRADES_FOR_DCA_SEGMENTS,
 } from "@/lib/backtest/chartDcaSegments";
+import {
+  ALTS_CHART_COLORS,
+  buildAltsChartLineData,
+} from "@/lib/backtest/chartAltsOverlay";
 
 /** Core candlestick + volume + MA overlays. RSI lives in `RsiPane`. Series refs cleaned on unmount. */
 export function ChartHost({ children }: { children?: React.ReactNode }) {
@@ -32,6 +36,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const candles = useMarketStore((s) => s.candles);
+  const symbol = useMarketStore((s) => s.symbol);
   const logScale = useMarketStore((s) => s.logScale);
   const instances = useIndicatorStore((s) => s.instances);
   const pathname = usePathname();
@@ -50,6 +55,22 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   const dcaPriceLinesRef = useRef<IPriceLine[]>([]);
   /** Отрезки уровней DCA (сигнал → выход по TP), без бесконечных горизонталей. */
   const dcaGridSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const altsLineSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+
+  const showAltsChannel = useMemo(
+    () =>
+      minimalChartMode &&
+      sessionTrades.length > 0 &&
+      sessionTrades.some((t) => (t.comment ?? "").includes("Pifagor")),
+    [minimalChartMode, sessionTrades],
+  );
+
+  const altsLineData = useMemo(() => {
+    if (!showAltsChannel || candles.length === 0) {
+      return { upper: [], lower: [] };
+    }
+    return buildAltsChartLineData(candles, symbol);
+  }, [showAltsChannel, candles, symbol]);
 
   const tradeMarkers = useMemo(
     () =>
@@ -182,6 +203,14 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
         }
       });
       dcaGridSeriesRef.current = [];
+      altsLineSeriesRef.current.forEach((s) => {
+        try {
+          chart.removeSeries(s);
+        } catch {
+          /* ignore */
+        }
+      });
+      altsLineSeriesRef.current = [];
       chart.remove();
       chartRef.current = null;
       candleRef.current = null;
@@ -285,6 +314,53 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       indicatorSeriesRef.current.set(inst.id, line);
     });
   }, [candles, instances, minimalChartMode]);
+
+  /** ALTS-канал Pifagor (aaa1 + line_aaa1), как в TradingView. */
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    altsLineSeriesRef.current.forEach((s) => {
+      try {
+        chart.removeSeries(s);
+      } catch {
+        /* ignore */
+      }
+    });
+    altsLineSeriesRef.current = [];
+
+    if (!showAltsChannel || altsLineData.upper.length === 0) return;
+
+    const baseOpts = {
+      priceScaleId: "right" as const,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+    };
+
+    const upper = chart.addLineSeries({
+      ...baseOpts,
+      color: ALTS_CHART_COLORS.upper,
+      lineWidth: 1,
+    });
+    upper.setData(altsLineData.upper);
+
+    const lowerGlow = chart.addLineSeries({
+      ...baseOpts,
+      color: ALTS_CHART_COLORS.lowerGlow,
+      lineWidth: 4,
+    });
+    lowerGlow.setData(altsLineData.lower);
+
+    const lowerCore = chart.addLineSeries({
+      ...baseOpts,
+      color: ALTS_CHART_COLORS.lowerCore,
+      lineWidth: 2,
+    });
+    lowerCore.setData(altsLineData.lower);
+
+    altsLineSeriesRef.current.push(upper, lowerGlow, lowerCore);
+  }, [showAltsChannel, altsLineData]);
 
   /** Входы и выходы сделок (бэктест). */
   useEffect(() => {

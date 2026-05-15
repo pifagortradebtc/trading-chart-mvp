@@ -96,6 +96,11 @@ export interface DcaBotSettings {
 export interface BacktestSettings {
   /** Какой движок бэктеста запускать. */
   strategyKind: BacktestStrategyKind;
+  /**
+   * Портфельный бэктест top-альтов (Pifagor ALTS): один прогон по списку CMC,
+   * общая статистика на весь депозит. Только при strategyKind === "pifagor_alts".
+   */
+  portfolioAltsMode: boolean;
   entryTiming: EntryTiming;
   executionOrder: ExecutionOrder;
   indicator: ChaikKeltSettings;

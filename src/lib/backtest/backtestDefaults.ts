@@ -106,6 +106,7 @@ export function applyPifagorTvDefaults(
     strategyKind: "pifagor_alts",
     pifagorAlts: {
       ...DEFAULT_PIFAGOR_ALTS,
+      ...settings.pifagorAlts,
       entryNotionalUsdt: Math.max(1, entry),
     },
     dca: {
@@ -148,6 +149,7 @@ export function migrateDcaSettings(
 
 export const DEFAULT_BACKTEST: BacktestSettings = {
   strategyKind: "chaik_dca",
+  portfolioAltsMode: false,
   entryTiming: "next_open",
   executionOrder: "conservative",
   indicator: DEFAULT_CHAIK,
@@ -162,6 +164,7 @@ export function migrateBacktestSettings(raw: Partial<BacktestSettings>): Backtes
     ...DEFAULT_BACKTEST,
     ...raw,
     strategyKind: sk,
+    portfolioAltsMode: raw.portfolioAltsMode === true,
     entryTiming: raw.entryTiming === "signal_close" ? "signal_close" : "next_open",
     executionOrder:
       raw.executionOrder === "optimistic" ? "optimistic" : "conservative",
