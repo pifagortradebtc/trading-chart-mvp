@@ -39,9 +39,11 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
 /** Как в Pine input.time для окна DCA. */
 export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
   lineRisk: "less",
+  entryNotionalUsdt: 5000,
   dcaStartMs: Date.UTC(2017, 11, 31, 0, 0, 0, 0),
   dcaEndMs: Date.UTC(2034, 11, 31, 0, 0, 0, 0),
   usePineExitRules: false,
+  maxPyramidingEntries: 200,
 };
 
 export const DEFAULT_DCA: DcaBotSettings = {

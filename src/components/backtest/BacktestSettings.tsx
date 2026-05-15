@@ -76,10 +76,11 @@ export function BacktestSettingsForm({
           </label>
           {settings.strategyKind === "pifagor_alts" ? (
             <p className="max-w-2xl text-xs leading-relaxed text-[#787b86]">
-              Вход: close &lt; ALTS-линия, окно DCA по времени, whale-pump &gt; 2, daily mult &lt; 0.7.
-              Размер позиции — «Сумма сетки» или первый ордер % от депозита (один ордер). TP % — цель
-              от средней (для +100% задайте 100). Опционально — выход по правилам Pine (mult &gt; 3.5
-              или diff &gt; 90).
+              Вход: close &lt; ALTS-линия, окно по времени, whale-pump &gt; 2, daily mult &lt; 0.7. Каждый бар, где
+              условие истинно на close, — ещё один вход на фиксированную сумму USDT на open следующей свечи (на 1D это
+              даёт плотные столбы «buy», как в TradingView). Доливы ограничены маржей и полем «Макс. входов в позиции»
+              (аналог Pine pyramiding, по умолчанию 200). TP % — от текущей средней. Опционально — выход по правилам
+              Pine (mult / diff).
             </p>
           ) : null}
         </div>
@@ -123,6 +124,31 @@ export function BacktestSettingsForm({
                 onChange={(e) => patchPif({ usePineExitRules: e.target.checked })}
               />
               <span className="text-[#787b86]">Выход по правилам Pine (daily mult / diff)</span>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[#787b86]">
+                Макс. входов в позиции (pyramiding)
+                <Tip>
+                  Как в Pine `pyramiding`: пока сигнал входа true на каждой свече, на 1D это десятки подряд — без
+                  лимита кластер «buy» неограничен. По умолчанию 200.
+                </Tip>
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                step={1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
+                value={settings.pifagorAlts.maxPyramidingEntries}
+                onChange={(e) =>
+                  patchPif({
+                    maxPyramidingEntries: Math.max(
+                      1,
+                      Math.min(500, Math.floor(Number(e.target.value) || 200)),
+                    ),
+                  })
+                }
+              />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[#787b86]">Начало окна DCA (локальное время браузера)</span>
@@ -472,9 +498,11 @@ export function BacktestSettingsForm({
         }`}
       >
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
-          {settings.strategyKind === "pifagor_alts" ? "Размер сделки и риск" : "DCA-бот"}
+          {settings.strategyKind === "pifagor_alts" ? "Капитал и размер входа" : "DCA-бот"}
         </h3>
         <div className="grid gap-3 text-sm">
+          {settings.strategyKind === "chaik_dca" ? (
+            <>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>
@@ -761,6 +789,164 @@ export function BacktestSettingsForm({
               </select>
             </label>
           </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs leading-relaxed text-[#787b86] lg:col-span-2">
+                Каждый сигнал индикатора — покупка на одну и ту же сумму USDT. Доливы повторяются на каждом баре с
+                условием входа, пока хватает маржи и не достигнут лимит «Макс. входов в позиции» (как pyramiding в
+                Pine).
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  <span>
+                    Торговый депозит USDT
+                    <Tip>Начальный капитал стратегии в бэктесте (equity).</Tip>
+                  </span>
+                  <input
+                    type="number"
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.dca.startDepositUsdt}
+                    onChange={(e) =>
+                      patchDca({ startDepositUsdt: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span>
+                    Размер одного входа USDT
+                    <Tip>Одинаковая сумма на каждый сигнал покупки.</Tip>
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.pifagorAlts.entryNotionalUsdt}
+                    onChange={(e) =>
+                      patchPif({
+                        entryNotionalUsdt: Math.max(1, Number(e.target.value) || 0),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  <span>
+                    Тип маржи
+                    <Tip>
+                      Кросс — лимит маржи по полному балансу кошелька; изолированная — по equity стратегии.
+                    </Tip>
+                  </span>
+                  <select
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                    value={settings.dca.marginMode}
+                    onChange={(e) =>
+                      patchDca({
+                        marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
+                      })
+                    }
+                  >
+                    <option value="isolated">Изолированная</option>
+                    <option value="cross">Кросс</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span>
+                    Баланс кошелька USDT
+                    <Tip>При кросс-марже — верхняя граница для проверки доливов.</Tip>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.dca.walletBalanceUsdt}
+                    onChange={(e) => patchDca({ walletBalanceUsdt: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+              <label className="flex flex-col gap-1 max-w-xs">
+                <span>Плечо</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.dca.leverage}
+                  onChange={(e) => patchDca({ leverage: Number(e.target.value) })}
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  <span>
+                    Take profit %
+                    <Tip>От текущей средней после всех доливов.</Tip>
+                  </span>
+                  <input
+                    type="number"
+                    step={0.01}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.dca.takeProfitPct}
+                    onChange={(e) => patchDca({ takeProfitPct: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span>Stop loss % (optional)</span>
+                  <input
+                    type="number"
+                    step={0.1}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.dca.stopLossPct ?? ""}
+                    placeholder="—"
+                    onChange={(e) =>
+                      patchDca({
+                        stopLossPct:
+                          e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="rounded border-[#2e3241]"
+                  checked={settings.dca.takeProfitOnClose}
+                  onChange={(e) => patchDca({ takeProfitOnClose: e.target.checked })}
+                />
+                <span className="text-[#787b86]">
+                  TP по close бара (как Pine)
+                  <Tip>
+                    Включено: выход по TP, если close достиг цели. Выключено: достаточно касания high intrabar.
+                  </Tip>
+                </span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  <span>Комиссия % за сторону</span>
+                  <input
+                    type="number"
+                    step={0.001}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.dca.feePctPerSide}
+                    onChange={(e) => patchDca({ feePctPerSide: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span>Funding % / 8ч</span>
+                  <input
+                    type="number"
+                    step={0.001}
+                    className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                    value={settings.dca.fundingPctPer8h}
+                    onChange={(e) =>
+                      patchDca({ fundingPctPer8h: Number(e.target.value) })
+                    }
+                  />
+                </label>
+              </div>
+            </>
+          )}
         </div>
       </section>
 
@@ -768,6 +954,7 @@ export function BacktestSettingsForm({
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
           Исполнение
         </h3>
+        {settings.strategyKind === "chaik_dca" ? (
         <div className="flex flex-wrap gap-6 text-sm">
           <label className="flex flex-col gap-1">
             <span>
@@ -809,6 +996,13 @@ export function BacktestSettingsForm({
             </select>
           </label>
         </div>
+        ) : (
+          <p className="text-sm text-[#787b86]">
+            Вход Pifagor: сигнал на close бара → покупка по <strong className="text-[#d1d4dc]">open</strong> следующей
+            свечи. Порядок TP / сигнал выхода Pine — как в движке (сначала SL при заданном стопе, затем TP, затем
+            сигнал).
+          </p>
+        )}
       </section>
     </div>
   );

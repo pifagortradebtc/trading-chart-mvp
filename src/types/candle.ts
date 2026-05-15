@@ -8,7 +8,7 @@ export interface Candle {
   volume: number;
 }
 
-export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1D" | "1W";
+export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1D" | "3D" | "1W";
 
 export const TIMEFRAMES: { id: Timeframe; label: string }[] = [
   { id: "1m", label: "1m" },
@@ -17,5 +17,6 @@ export const TIMEFRAMES: { id: Timeframe; label: string }[] = [
   { id: "1h", label: "1h" },
   { id: "4h", label: "4h" },
   { id: "1D", label: "1D" },
+  { id: "3D", label: "3D" },
   { id: "1W", label: "1W" },
 ];

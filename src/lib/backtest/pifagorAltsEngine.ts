@@ -1,16 +1,21 @@
 /**
- * Бэктест «Pifagor ALTS»: один лонг без DCA-сетки, вход по сигналу Pine, выход TP % и/или правила Pine.
+ * Бэктест «Pifagor ALTS»: лонг с доливами фиксированного номинала на каждый сигнал Pine
+ * (без сетки DCA из модели ЧайкКельт), выход по TP % и/или правилам Pine.
  */
 
 import type { Candle } from "@/types/candle";
-import { buildDcaGrid } from "./dcaGrid";
-import { maxMarginAvailableUsdt } from "./risk";
+import {
+  approxLiquidationPrice,
+  effectiveLiquidationLeverage,
+  maxMarginAvailableUsdt,
+} from "./risk";
 import { buildPifagorDailyContext, computePifagorSeries } from "./pifagorAltsIndicators";
 import type {
   BacktestResult,
   BacktestSettings,
-  EquityPoint,
   DcaGridResult,
+  DcaGridRow,
+  EquityPoint,
   MarketRegime,
   OpenPositionSnapshot,
   SignalBarState,
@@ -21,28 +26,65 @@ function tpPriceFromAvg(avg: number, tpPct: number): number {
   return avg * (1 + tpPct / 100);
 }
 
-function buildSingleLongGrid(entryPrice: number, settings: BacktestSettings): DcaGridResult {
-  const { dca } = settings;
-  const notional =
-    dca.gridTotalNotionalUsdt ??
-    (dca.startDepositUsdt * dca.firstOrderDepositPct) / 100;
-  const patched = {
-    ...dca,
-    ordersCount: 1,
-    priceOverlapPct: Math.max(dca.priceOverlapPct, 0.01),
-    gridTotalNotionalUsdt: Math.max(notional, 1e-9),
-  };
-  return buildDcaGrid("long", entryPrice, patched);
+function slPriceLong(avg: number, slPct: number): number {
+  return avg * (1 - slPct / 100);
+}
+
+interface FillLeg {
+  barIndex: number;
+  timeMs: number;
+  price: number;
+  notionalUsdt: number;
+}
+
+function buildGridFromFills(
+  fills: FillLeg[],
+  firstEntryPrice: number,
+  settings: BacktestSettings,
+): DcaGridResult {
+  const dca = settings.dca;
+  const liqLev = effectiveLiquidationLeverage(dca);
+  const tpPct = dca.takeProfitPct;
+  const rows: DcaGridRow[] = [];
+  let cumQty = 0;
+  let cumNotional = 0;
+  for (let k = 0; k < fills.length; k++) {
+    const f = fills[k]!;
+    const orderUsdt = f.notionalUsdt;
+    const price = f.price;
+    const qtyCoin = orderUsdt / price;
+    cumQty += qtyCoin;
+    cumNotional += orderUsdt;
+    const avgPrice = cumNotional / cumQty;
+    const takeProfitPrice = tpPriceFromAvg(avgPrice, tpPct);
+    const liq = approxLiquidationPrice("long", avgPrice, liqLev);
+    const drawdownFromFirstPct = ((firstEntryPrice - avgPrice) / firstEntryPrice) * 100;
+    const marginUsed = cumNotional / dca.leverage;
+    rows.push({
+      orderIndex: k + 1,
+      price,
+      orderUsdt,
+      qtyCoin,
+      cumNotionalUsdt: cumNotional,
+      avgPrice,
+      takeProfitPrice,
+      approxLiquidationPrice: liq,
+      drawdownFromFirstPct,
+      marginUsedUsdt: marginUsed,
+    });
+  }
+  return { side: "long", firstEntryPrice, rows };
 }
 
 export function runPifagorAltsBacktest(
   candles: Candle[],
   symbol: string,
   settings: BacktestSettings,
-  requestedFromMs: number,
+  _requestedFromMs: number,
 ): BacktestResult {
   const n = candles.length;
   const pif = settings.pifagorAlts;
+  const dca = settings.dca;
   const daily = buildPifagorDailyContext(candles);
   const series = computePifagorSeries(candles, symbol, pif, daily);
 
@@ -66,7 +108,7 @@ export function runPifagorAltsBacktest(
     }
   }
 
-  let equity = settings.dca.startDepositUsdt;
+  let equity = dca.startDepositUsdt;
   const equityCurve: EquityPoint[] = [];
   let peak = equity;
   const trades: TradeRecord[] = [];
@@ -74,19 +116,18 @@ export function runPifagorAltsBacktest(
   let tradeSeq = 1;
   let open: {
     id: number;
-    signalBar: number;
-    entryBar: number;
+    firstSignalBar: number;
+    firstEntryBar: number;
+    firstPrice: number;
     qty: number;
     avgPrice: number;
     cumNotional: number;
     feesUsdt: number;
     fundingUsdt: number;
-    grid: DcaGridResult;
     maxDrawdownPct: number;
-    firstPrice: number;
+    fills: FillLeg[];
   } | null = null;
 
-  let pendingSignalBar: number | null = null;
   let openPositionAtDataEnd: OpenPositionSnapshot | null = null;
 
   const pushEquity = (tMs: number) => {
@@ -103,34 +144,37 @@ export function runPifagorAltsBacktest(
   ) => {
     const gross = tr.qty * (exitPrice - tr.avgPrice);
     const exitNotional = exitPrice * tr.qty;
-    const exitFee = (exitNotional * settings.dca.feePctPerSide) / 100;
+    const exitFee = (exitNotional * dca.feePctPerSide) / 100;
     tr.feesUsdt += exitFee;
     const pnl = gross - tr.feesUsdt - tr.fundingUsdt;
     equity += pnl;
     if (equity > peak) peak = equity;
     pushEquity(tMs);
 
-    const entryT = candles[tr.entryBar]?.time ?? candles[tr.signalBar]?.time ?? 0;
+    const entryT = candles[tr.firstEntryBar]?.time ?? candles[tr.firstSignalBar]?.time ?? 0;
+    const grid = buildGridFromFills(tr.fills, tr.firstPrice, settings);
+    const dcaFillTimesMs = tr.fills.map((f) => f.timeMs);
+
     trades.push({
       id: tr.id,
       symbol,
       side: "long",
-      marginMode: settings.dca.marginMode,
+      marginMode: dca.marginMode,
       regime: "range" as MarketRegime,
-      entrySignalTime: (candles[tr.signalBar]?.time ?? Math.floor(tMs / 1000)) * 1000,
+      entrySignalTime: (candles[tr.firstSignalBar]?.time ?? Math.floor(tMs / 1000)) * 1000,
       entryTime: entryT * 1000,
       exitTime: tMs,
-      entryBarIndex: tr.entryBar,
+      entryBarIndex: tr.firstEntryBar,
       exitBarIndex: barIndex,
       firstEntryPrice: tr.firstPrice,
       avgEntryPrice: tr.avgPrice,
       exitPrice,
-      maxDcaIndex: 1,
-      totalGridOrders: tr.grid.rows.length,
+      maxDcaIndex: tr.fills.length,
+      totalGridOrders: tr.fills.length,
       maxDrawdownPct: tr.maxDrawdownPct,
       pnlUsdt: pnl,
       pnlPctOnMargin:
-        tr.cumNotional > 0 ? (pnl / (tr.cumNotional / settings.dca.leverage)) * 100 : 0,
+        tr.cumNotional > 0 ? (pnl / (tr.cumNotional / dca.leverage)) * 100 : 0,
       feesUsdt: tr.feesUsdt,
       firstEntryKind: "market",
       exitReason: exit,
@@ -139,9 +183,9 @@ export function runPifagorAltsBacktest(
       dcaGrid: {
         side: "long",
         firstEntryPrice: tr.firstPrice,
-        rows: tr.grid.rows,
+        rows: grid.rows,
       },
-      dcaFillTimesMs: [entryT * 1000],
+      dcaFillTimesMs,
       equityAfterClose: equity,
     });
     open = null;
@@ -149,44 +193,71 @@ export function runPifagorAltsBacktest(
 
   if (n > 0) pushEquity(candles[0]!.time * 1000);
 
+  const entryNotional = Math.max(1e-9, pif.entryNotionalUsdt);
+
   for (let i = 0; i < n; i++) {
     const c = candles[i]!;
     const tMs = c.time * 1000;
 
-    if (open && settings.dca.fundingPctPer8h > 0 && i > 0) {
+    if (open && dca.fundingPctPer8h > 0 && i > 0) {
       const prev = candles[i - 1]!;
       const dtMs = (c.time - prev.time) * 1000;
       const fundingFee =
-        open.cumNotional * (settings.dca.fundingPctPer8h / 100) * (dtMs / (8 * 3600 * 1000));
+        open.cumNotional * (dca.fundingPctPer8h / 100) * (dtMs / (8 * 3600 * 1000));
       open.fundingUsdt += fundingFee;
       equity -= fundingFee;
     }
 
-    if (!open && pendingSignalBar !== null && i === pendingSignalBar + 1) {
+    /** Сигнал на close бара i−1 → исполнение market по open бара i (как раньше). */
+    if (i > 0 && series.enterRaw[i - 1]) {
       const fillPx = c.open;
-      const grid = buildSingleLongGrid(fillPx, settings);
-      const firstRow = grid.rows[0];
-      const marginOk =
-        firstRow &&
-        firstRow.orderUsdt / settings.dca.leverage <=
-          maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
-      if (marginOk && firstRow) {
-        const qty0 = firstRow.orderUsdt / fillPx;
-        open = {
-          id: tradeSeq++,
-          signalBar: pendingSignalBar,
-          entryBar: i,
-          qty: qty0,
-          avgPrice: fillPx,
-          cumNotional: firstRow.orderUsdt,
-          feesUsdt: (firstRow.orderUsdt * settings.dca.feePctPerSide) / 100,
-          fundingUsdt: 0,
-          grid,
-          maxDrawdownPct: 0,
-          firstPrice: fillPx,
-        };
+      if (Number.isFinite(fillPx) && fillPx > 0) {
+        const marginNeed = entryNotional / dca.leverage;
+        const usedMargin = open ? open.cumNotional / dca.leverage : 0;
+        const cap = maxMarginAvailableUsdt(dca, equity);
+        const pyramidCap = Math.max(1, Math.floor(pif.maxPyramidingEntries));
+        const underPyramidCap = !open || open.fills.length < pyramidCap;
+        const marginOk = usedMargin + marginNeed <= cap + 1e-9;
+        if (marginOk && underPyramidCap) {
+          const feeIn = (entryNotional * dca.feePctPerSide) / 100;
+          const addQty = entryNotional / fillPx;
+          if (!open) {
+            open = {
+              id: tradeSeq++,
+              firstSignalBar: i - 1,
+              firstEntryBar: i,
+              firstPrice: fillPx,
+              qty: addQty,
+              avgPrice: fillPx,
+              cumNotional: entryNotional,
+              feesUsdt: feeIn,
+              fundingUsdt: 0,
+              maxDrawdownPct: 0,
+              fills: [
+                {
+                  barIndex: i,
+                  timeMs: tMs,
+                  price: fillPx,
+                  notionalUsdt: entryNotional,
+                },
+              ],
+            };
+          } else {
+            const newCum = open.cumNotional + entryNotional;
+            const newQty = open.qty + addQty;
+            open.cumNotional = newCum;
+            open.qty = newQty;
+            open.avgPrice = newCum / newQty;
+            open.feesUsdt += feeIn;
+            open.fills.push({
+              barIndex: i,
+              timeMs: tMs,
+              price: fillPx,
+              notionalUsdt: entryNotional,
+            });
+          }
+        }
       }
-      pendingSignalBar = null;
     }
 
     if (open) {
@@ -196,20 +267,21 @@ export function runPifagorAltsBacktest(
       const uHigh = (open.firstPrice - low) / open.firstPrice;
       open.maxDrawdownPct = Math.max(open.maxDrawdownPct, uHigh * 100);
 
-      const tpP = tpPriceFromAvg(open.avgPrice, settings.dca.takeProfitPct);
-      const tpHit = settings.dca.takeProfitOnClose ? close >= tpP : high >= tpP;
+      const tpP = tpPriceFromAvg(open.avgPrice, dca.takeProfitPct);
+      const tpHit = dca.takeProfitOnClose ? close >= tpP : high >= tpP;
       const pineExit = pif.usePineExitRules && series.exitRuleRaw[i];
+      const slP =
+        dca.stopLossPct != null ? slPriceLong(open.avgPrice, dca.stopLossPct) : null;
+      const slHit = slP != null && low <= slP;
 
-      if (tpHit) {
-        const exitPx = settings.dca.takeProfitOnClose ? close : tpP;
+      if (slHit) {
+        finalizeTrade(open, "sl", slP, tMs, i);
+      } else if (tpHit) {
+        const exitPx = dca.takeProfitOnClose ? close : tpP;
         finalizeTrade(open, "tp", exitPx, tMs, i);
       } else if (pineExit) {
         finalizeTrade(open, "signal", close, tMs, i);
       }
-    }
-
-    if (!open && pendingSignalBar === null && series.enterRaw[i]) {
-      pendingSignalBar = i;
     }
 
     pushEquity(tMs);
@@ -220,9 +292,9 @@ export function runPifagorAltsBacktest(
     const cLast = candles[n - 1]!;
     const tMsEnd = cLast.time * 1000;
     const barIdx = n - 1;
-    const openedAtMs = (candles[open.entryBar]?.time ?? 0) * 1000;
-    const tpTarget = tpPriceFromAvg(open.avgPrice, settings.dca.takeProfitPct);
-    const marginUsed = open.cumNotional / settings.dca.leverage;
+    const openedAtMs = (candles[open.firstEntryBar]?.time ?? 0) * 1000;
+    const tpTarget = tpPriceFromAvg(open.avgPrice, dca.takeProfitPct);
+    const marginUsed = open.cumNotional / dca.leverage;
     const gross = open.qty * (cLast.close - open.avgPrice);
     const unrealizedPnlPctOnMargin = marginUsed > 0 ? (gross / marginUsed) * 100 : 0;
     let distanceToTpPct = 0;
@@ -236,8 +308,8 @@ export function runPifagorAltsBacktest(
       avgEntryPrice: open.avgPrice,
       takeProfitPrice: tpTarget,
       markPrice: cLast.close,
-      filledLevels: 1,
-      totalGridOrders: open.grid.rows.length,
+      filledLevels: open.fills.length,
+      totalGridOrders: open.fills.length,
       unrealizedPnlPctOnMargin,
       distanceToTpPct,
       openedAtMs,
@@ -246,8 +318,8 @@ export function runPifagorAltsBacktest(
       maxDrawdownPct: open.maxDrawdownPct,
       firstEntryKind: "market",
       cumNotionalUsdt: open.cumNotional,
-      leverage: settings.dca.leverage,
-      durationBars: Math.max(1, barIdx - open.entryBar + 1),
+      leverage: dca.leverage,
+      durationBars: Math.max(1, barIdx - open.firstEntryBar + 1),
     };
     finalizeTrade(open, "end_of_test", cLast.close, tMsEnd, barIdx);
   }
@@ -261,10 +333,10 @@ export function runPifagorAltsBacktest(
     signalMeta: metaOut,
     trades,
     equity: equityCurve,
-    dataRange: { fromMs, toMs, requestedFromMs },
+    dataRange: { fromMs, toMs, requestedFromMs: _requestedFromMs },
     lastBarAtrKelt: undefined,
     openPositionAtDataEnd,
     warning:
-      "Режим Pifagor ALTS: дневная ветка aaa1 при «больше» считается по закрытым UTC-дням (приближение к Pine). Сверяйте сигналы с TradingView.",
+      "Режим Pifagor ALTS: дневная ветка aaa1 при «больше» считается по закрытым UTC-дням (приближение к Pine). Каждый сигнал — долив фиксированного номинала, пока хватает маржи по модели кошелька/депозита.",
   };
 }

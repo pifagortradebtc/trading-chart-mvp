@@ -52,7 +52,7 @@ const PAIRS = [
   "TONUSDT",
 ];
 
-const INTERVALS = ["15m", "1h", "4h", "1d"] as const;
+const INTERVALS = ["15m", "1h", "4h", "1d", "3d"] as const;
 
 /** Информационное сообщение dataProvider/API — не показываем как глобальный алерт на всех вкладках. */
 const OHLCV_PARTIAL_HISTORY_PREFIX = "Биржа отдала данные только с";

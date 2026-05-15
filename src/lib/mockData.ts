@@ -8,6 +8,7 @@ const TF_SECONDS: Record<Timeframe, number> = {
   "1h": 3600,
   "4h": 14400,
   "1D": 86400,
+  "3D": 3 * 86400,
   "1W": 604800,
 };
 

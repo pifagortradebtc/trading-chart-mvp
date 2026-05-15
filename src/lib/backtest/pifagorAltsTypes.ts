@@ -7,10 +7,17 @@ export type PifagorLineRisk = "less" | "more";
 export interface PifagorAltsSettings {
   /** «меньше» / «больше» степень риска (ветка aaa1). */
   lineRisk: PifagorLineRisk;
+  /** Размер каждого входа в USDT (одинаковый на каждый сигнал; доливы до лимита маржи/баланса). */
+  entryNotionalUsdt: number;
   /** Начало окна DCA (Unix ms), как input.time в Pine. */
   dcaStartMs: number;
   /** Конец окна DCA (Unix ms). */
   dcaEndMs: number;
   /** Выход по правилам Pine: daily_multiple > 3.5 или diff > 90. */
   usePineExitRules: boolean;
+  /**
+   * Максимум отдельных входов в одной открытой позиции (аналог Pine `pyramiding`).
+   * Пока условие входа истинно подряд, каждый новый бар может добавить ещё один слой — без лимита их сотни.
+   */
+  maxPyramidingEntries: number;
 }
