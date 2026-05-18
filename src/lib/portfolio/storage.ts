@@ -86,6 +86,10 @@ export interface PolicyState {
   views: ViewInput[];
   /** Daily CVaR threshold for the defensive bump, e.g. -0.08. */
   cvarDefenseThreshold: number;
+  /** Bot strategies sleeve as a fraction of total AUM. */
+  botSleeve: number;
+  /** Manual book sleeve as a fraction of total AUM. */
+  manualSleeve: number;
 }
 
 /**

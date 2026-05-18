@@ -12,9 +12,10 @@ const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 interface Props {
   strategy: StrategyResult | null;
   symbols: string[];
-  /** Bot & manual sleeves get a fixed 10% of total fund AUM. */
   botSleeve?: number;
   manualSleeve?: number;
+  /** Daily CVaR-95 trigger from the policy editor, e.g. -0.08. */
+  cvarDefenseThreshold?: number;
 }
 
 const SPOT_PALETTE = [
@@ -41,7 +42,10 @@ export function RecommendedTab({
   symbols,
   botSleeve = 0.05,
   manualSleeve = 0.05,
+  cvarDefenseThreshold = -0.08,
 }: Props) {
+  const sleeveTotalPct = ((botSleeve + manualSleeve) * 100).toFixed(0);
+  const cvarPct = (cvarDefenseThreshold * 100).toFixed(1);
   const spotRows = useMemo(
     () =>
       !strategy
@@ -111,7 +115,7 @@ export function RecommendedTab({
           <Reason
             icon={<Layers2 size={14} />}
             title="Black-Litterman prior + tilt"
-            body="Стартуем с market-cap equilibrium и накладываем views: BTC/ETH — высокая уверенность, альты — умеренная. Получаем посмtрнее распределение, чем чистый Sharpe."
+            body="Стартуем с market-cap equilibrium и накладываем views: BTC/ETH — высокая уверенность, альты — умеренная. Получаем более сбалансированное распределение, чем чистый Sharpe."
           />
           <Reason
             icon={<ShieldCheck size={14} />}
@@ -121,12 +125,12 @@ export function RecommendedTab({
           <Reason
             icon={<ArrowRight size={14} />}
             title="CVaR-95 защита"
-            body="Если CVaR-95 хуже -8% в день, +10% веса автоматически переезжает в BTC/ETH. Это не итеративная оптимизация, но достаточно для контроля хвоста."
+            body={`Если CVaR-95 хуже ${cvarPct}% в день, +10% веса автоматически переезжает в BTC/ETH. Это не итеративная оптимизация, но достаточно для контроля хвоста.`}
           />
           <Reason
             icon={<Crown size={14} />}
             title="Sleeve диверсификация"
-            body="10% от общего портфеля резервируется под бот-стратегии и manual-управление — это снижает корреляцию книги с чистым spot."
+            body={`${sleeveTotalPct}% от общего портфеля резервируется под бот-стратегии и manual-управление — это снижает корреляцию книги с чистым spot.`}
           />
         </ul>
         {strategy.warning && (

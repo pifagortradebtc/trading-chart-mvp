@@ -137,6 +137,8 @@ export function MPTSimulator() {
   const [cvarDefenseThreshold, setCvarDefenseThreshold] = useState<number>(
     DEFAULT_CVAR_DEFENSE_THRESHOLD
   );
+  const [botSleeve, setBotSleeve] = useState<number>(0.05);
+  const [manualSleeve, setManualSleeve] = useState<number>(0.05);
   const [liveMarketCaps, setLiveMarketCaps] = useState<Record<string, number> | null>(null);
   const [policyHydrated, setPolicyHydrated] = useState(false);
 
@@ -159,6 +161,12 @@ export function MPTSimulator() {
     if (typeof stored.cvarDefenseThreshold === "number" && Number.isFinite(stored.cvarDefenseThreshold)) {
       setCvarDefenseThreshold(stored.cvarDefenseThreshold);
     }
+    if (typeof stored.botSleeve === "number" && Number.isFinite(stored.botSleeve)) {
+      setBotSleeve(stored.botSleeve);
+    }
+    if (typeof stored.manualSleeve === "number" && Number.isFinite(stored.manualSleeve)) {
+      setManualSleeve(stored.manualSleeve);
+    }
     setPolicyHydrated(true);
     // Live market caps (Фича 2) — silent best-effort
     fetchLiveMarketCaps().then((caps) => {
@@ -170,10 +178,25 @@ export function MPTSimulator() {
   useEffect(() => {
     if (!policyHydrated) return;
     const handle = setTimeout(() => {
-      savePolicy({ riskCaps, aggregateRules, views, cvarDefenseThreshold });
+      savePolicy({
+        riskCaps,
+        aggregateRules,
+        views,
+        cvarDefenseThreshold,
+        botSleeve,
+        manualSleeve,
+      });
     }, 300);
     return () => clearTimeout(handle);
-  }, [policyHydrated, riskCaps, aggregateRules, views, cvarDefenseThreshold]);
+  }, [
+    policyHydrated,
+    riskCaps,
+    aggregateRules,
+    views,
+    cvarDefenseThreshold,
+    botSleeve,
+    manualSleeve,
+  ]);
 
   const handleResetPolicy = useCallback(() => {
     resetPolicy();
@@ -181,6 +204,8 @@ export function MPTSimulator() {
     setAggregateRules({ ...DEFAULT_AGGREGATE_RULES });
     setViews(defaultViewsForSymbols(assets));
     setCvarDefenseThreshold(DEFAULT_CVAR_DEFENSE_THRESHOLD);
+    setBotSleeve(0.05);
+    setManualSleeve(0.05);
   }, [assets]);
 
   useEffect(() => {
@@ -639,11 +664,15 @@ export function MPTSimulator() {
             aggregateRules={aggregateRules}
             views={views}
             cvarDefenseThreshold={cvarDefenseThreshold}
+            botSleeve={botSleeve}
+            manualSleeve={manualSleeve}
             strategies={strategies}
             onRiskCapsChange={setRiskCaps}
             onAggregateChange={setAggregateRules}
             onViewsChange={setViews}
             onCvarDefenseThresholdChange={setCvarDefenseThreshold}
+            onBotSleeveChange={setBotSleeve}
+            onManualSleeveChange={setManualSleeve}
             onResetPolicy={handleResetPolicy}
             onApply={reapplyStrategies}
             loading={busy}
@@ -664,8 +693,9 @@ export function MPTSimulator() {
           <RecommendedTab
             strategy={finalStrategy}
             symbols={liveSymbols}
-            botSleeve={0.05}
-            manualSleeve={0.05}
+            botSleeve={botSleeve}
+            manualSleeve={manualSleeve}
+            cvarDefenseThreshold={cvarDefenseThreshold}
           />
         )}
 
