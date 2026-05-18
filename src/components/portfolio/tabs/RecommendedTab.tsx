@@ -1,8 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { ArrowRight, Crown, Layers2, ShieldCheck } from "lucide-react";
-import { useMemo } from "react";
+import {
+  ArrowRight,
+  Check,
+  ClipboardCopy,
+  Crown,
+  Layers2,
+  Printer,
+  ShieldCheck,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { formatPercent, prettySymbol } from "@/lib/portfolio/format";
 import type { Data, Layout } from "plotly.js";
 import type { StrategyResult } from "@/lib/portfolio/strategyTypes";
@@ -79,15 +87,29 @@ export function RecommendedTab({
 
   return (
     <div className="flex flex-col gap-5">
-      <header>
-        <p className="eyebrow">fund pick</p>
-        <h2 className="mt-2 font-display text-3xl font-semibold tracking-display-tight text-ink sm:text-[2.25rem]">
-          <span className="accent-serif text-brand-light">Recommended</span> Fund Allocation
-        </h2>
-        <p className="mt-2 max-w-2xl text-sm text-ink-muted">
-          Black-Litterman базовые веса → risk caps → CVaR-защита. Premium-картинка
-          с двумя срезами: spot-портфель и общий портфель фонда.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="eyebrow">fund pick</p>
+          <h2 className="mt-2 font-display text-3xl font-semibold tracking-display-tight text-ink sm:text-[2.25rem]">
+            <span className="accent-serif text-brand-light">Recommended</span> Fund Allocation
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-ink-muted">
+            Black-Litterman базовые веса → risk caps → CVaR-защита. Premium-картинка
+            с двумя срезами: spot-портфель и общий портфель фонда.
+          </p>
+        </div>
+        <div className="print:hidden flex items-center gap-2">
+          <CopyJsonButton
+            strategy={strategy}
+            symbols={symbols}
+            spotRows={spotRows}
+            totalRows={totalRows}
+            botSleeve={botSleeve}
+            manualSleeve={manualSleeve}
+            cvarDefenseThreshold={cvarDefenseThreshold}
+          />
+          <PrintButton />
+        </div>
       </header>
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
@@ -248,6 +270,110 @@ function DonutChart({
         modeBarButtonsToRemove: ["lasso2d", "select2d"],
       }}
     />
+  );
+}
+
+function CopyJsonButton({
+  strategy,
+  symbols,
+  spotRows,
+  totalRows,
+  botSleeve,
+  manualSleeve,
+  cvarDefenseThreshold,
+}: {
+  strategy: StrategyResult;
+  symbols: string[];
+  spotRows: { symbol: string; weight: number }[];
+  totalRows: { symbol: string; label: string; weight: number }[];
+  botSleeve: number;
+  manualSleeve: number;
+  cvarDefenseThreshold: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const snapshot = {
+      generatedAt: new Date().toISOString(),
+      model: strategy.name,
+      strategyId: strategy.id,
+      symbols,
+      spot: Object.fromEntries(spotRows.map((r) => [r.symbol, r.weight])),
+      totalFund: Object.fromEntries(totalRows.map((r) => [r.symbol, r.weight])),
+      metrics: {
+        expectedReturn: strategy.metrics.expectedReturn,
+        volatility: strategy.metrics.volatility,
+        sharpe: strategy.metrics.sharpe,
+        sortino: strategy.metrics.sortino,
+        maxDrawdown: strategy.metrics.maxDrawdown,
+        cvar95: strategy.metrics.cvar95,
+        cvar99: strategy.metrics.cvar99,
+        corrToBtc: strategy.metrics.corrToBtc,
+        turnover: strategy.metrics.turnover,
+      },
+      policy: {
+        cvarDefenseThreshold,
+        botSleeve,
+        manualSleeve,
+      },
+      warning: strategy.warning ?? null,
+    };
+    const text = JSON.stringify(snapshot, null, 2);
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-white/[0.04] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink"
+      title="Скопировать веса и метрики в виде JSON-snapshot для отправки/архива"
+    >
+      {copied ? (
+        <>
+          <Check size={11} className="text-emerald-300" />
+          <span className="text-emerald-200">Copied</span>
+        </>
+      ) : (
+        <>
+          <ClipboardCopy size={11} />
+          <span>Copy JSON</span>
+        </>
+      )}
+    </button>
+  );
+}
+
+function PrintButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (typeof window !== "undefined") window.print();
+      }}
+      className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-white/[0.04] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink"
+      title="Распечатать или сохранить как PDF — print-стили адаптированы под белый фон"
+    >
+      <Printer size={11} />
+      <span>Print · PDF</span>
+    </button>
   );
 }
 

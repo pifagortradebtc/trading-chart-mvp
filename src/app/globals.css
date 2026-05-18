@@ -246,3 +246,84 @@ select option {
   background: #52525b;
   cursor: not-allowed;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Print-friendly view — для «Сохранить как PDF» при показе инвесторам без
+   доступа в интернет. Glass-эффекты, золотая аурора и тёмный фон в печать
+   уходят грязно; переводим в светлую тему с тёмными чернилами.
+   Селекторы преднамеренно тяжёлые: !important нужен, чтобы перебить
+   inline-стили Plotly и Tailwind utility-классы.
+   ───────────────────────────────────────────────────────────────────────── */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    color: #0a0a0a !important;
+  }
+  .app-grain,
+  .print\:hidden {
+    display: none !important;
+  }
+  /* Глассморфизм и blur — выключаем (печатается как серая каша) */
+  [class*="backdrop-blur"],
+  [class*="bg-surface"],
+  [class*="bg-[var(--rex-bg-elevated)]"],
+  [class*="bg-[var(--bg-deep)]"],
+  [class*="from-[#"] {
+    backdrop-filter: none !important;
+    background: #ffffff !important;
+  }
+  /* Тёмные ink-цвета — на чёрные чернила */
+  [class*="text-ink"],
+  [class*="text-[var(--rex-text)]"],
+  [class*="text-[var(--rex-muted)]"] {
+    color: #1a1a1a !important;
+  }
+  [class*="text-ink-muted"],
+  [class*="text-ink-faint"] {
+    color: #555 !important;
+  }
+  /* Золотые акценты сохраняем, но в более насыщенном виде на белом */
+  [class*="text-brand"],
+  [class*="text-brand-light"],
+  .accent-serif {
+    color: #8a6f2c !important;
+  }
+  /* Карточки — тонкая чёрная рамка вместо glass-border */
+  [class*="border-surface-border"],
+  [class*="border-white"],
+  .card,
+  .card-highlight {
+    border-color: #d4d4d8 !important;
+    box-shadow: none !important;
+  }
+  /* Aurora-glow / blur'ы — убираем */
+  [class*="bg-brand-glow"],
+  [class*="bg-cyan-500"],
+  [class*="bg-violet-600"],
+  [class*="blur-3xl"],
+  [class*="blur-2xl"],
+  [class*="animate-aurora-drift"] {
+    display: none !important;
+  }
+  /* Эмеральд/розовые числа — оставляем, но темнее */
+  [class*="text-emerald"] { color: #047857 !important; }
+  [class*="text-rose"]    { color: #b91c1c !important; }
+  [class*="text-amber"]   { color: #92400e !important; }
+  /* Запретить разрыв страницы внутри карточек / таблиц */
+  section,
+  .card,
+  table,
+  tr {
+    break-inside: avoid;
+  }
+  /* Скрыть навигацию шапки, табы, кнопки действий — в PDF они мусор */
+  header nav,
+  button {
+    display: none !important;
+  }
+  /* Sticky/fixed — обычными */
+  [class*="sticky"],
+  [class*="fixed"] {
+    position: static !important;
+  }
+}
