@@ -18,6 +18,8 @@ export type WorkerRequest =
         views: ViewInput[];
         riskCaps: Record<string, { min?: number; max?: number }>;
         aggregateRules: AggregateRules;
+        cvarDefenseThreshold?: number;
+        liveMarketCaps?: Record<string, number> | null;
       };
     }
   | {
@@ -30,6 +32,8 @@ export type WorkerRequest =
         views: ViewInput[];
         riskCaps: Record<string, { min?: number; max?: number }>;
         aggregateRules: AggregateRules;
+        cvarDefenseThreshold?: number;
+        liveMarketCaps?: Record<string, number> | null;
       };
     };
 
@@ -69,7 +73,14 @@ ctx.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
     }
 
     if (type === "runWithStrategies") {
-      const { views, riskCaps, aggregateRules, ...mptOpts } = event.data.payload;
+      const {
+        views,
+        riskCaps,
+        aggregateRules,
+        cvarDefenseThreshold,
+        liveMarketCaps,
+        ...mptOpts
+      } = event.data.payload;
       const result = runMPT(mptOpts);
       const strategies = buildAllStrategies({
         priceSeries: mptOpts.priceSeries,
@@ -78,6 +89,8 @@ ctx.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         views,
         riskCaps,
         aggregateRules,
+        cvarDefenseThreshold,
+        liveMarketCaps,
       });
       ctx.postMessage({
         id,

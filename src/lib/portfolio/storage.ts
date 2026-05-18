@@ -1,7 +1,9 @@
 import type { PinnedPortfolio, Preset } from "./types";
+import type { AggregateRules, ViewInput } from "./strategyTypes";
 
 const PRESETS_KEY = "mpt-simulator:presets/v1";
 const PINNED_KEY = "mpt-simulator:pinned/v1";
+const POLICY_KEY = "mpt-simulator:policy/v1";
 
 function readJSON<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -72,4 +74,38 @@ export function removePinned(
   const updated = pinned.filter((p) => p.id !== id);
   savePinned(updated);
   return updated;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Policy persistence (risk caps + BL views + CVaR threshold)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PolicyState {
+  riskCaps: Record<string, { min?: number; max?: number }>;
+  aggregateRules: AggregateRules;
+  views: ViewInput[];
+  /** Daily CVaR threshold for the defensive bump, e.g. -0.08. */
+  cvarDefenseThreshold: number;
+}
+
+/**
+ * Returns whatever policy fields are present in localStorage, or an empty
+ * object on a fresh install / quota-exceeded / parse error. Callers should
+ * merge defensively (existing state ← stored partial).
+ */
+export function loadPolicy(): Partial<PolicyState> {
+  return readJSON<Partial<PolicyState>>(POLICY_KEY, {});
+}
+
+export function savePolicy(policy: PolicyState): void {
+  writeJSON(POLICY_KEY, policy);
+}
+
+export function resetPolicy(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(POLICY_KEY);
+  } catch {
+    // ignore
+  }
 }

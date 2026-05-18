@@ -6,12 +6,25 @@ import type {
   ViewInput,
 } from "./strategyTypes";
 import { computeStrategyMetrics, portfolioDailyReturns, conditionalValueAtRisk } from "./strategyMetrics";
-import { marketCapWeights } from "./marketCaps";
+import { marketCapWeightsWithLive } from "./marketCaps";
 import { applyRiskCaps } from "./riskCaps";
 
 const TRADING_DAYS_PER_YEAR = 365;
 const SAMPLER_SEED = 8675309;
 const SAMPLER_SIMS = 5000;
+
+/**
+ * Default daily CVaR-95 threshold for the Final Fund defensive bump.
+ * If portfolio CVaR-95 is worse than this, we shift weight into BTC/ETH.
+ */
+export const DEFAULT_CVAR_DEFENSE_THRESHOLD = -0.08;
+
+/**
+ * Fraction of total weight to shift from non-core into BTC/ETH (60/40 split)
+ * when the CVaR-defense trigger fires. Knowledge-of-system constant — keep
+ * surfaced even if currently not user-editable.
+ */
+export const CVAR_DEFENSE_SHIFT = 0.10;
 
 /**
  * Library of portfolio-construction strategies.
@@ -37,6 +50,10 @@ export interface BuildStrategiesArgs {
   views: ViewInput[];
   riskCaps: Record<string, { min?: number; max?: number }>;
   aggregateRules: AggregateRules;
+  /** Daily CVaR-95 trigger for the defensive bump. Default: -0.08. */
+  cvarDefenseThreshold?: number;
+  /** Live market caps from CoinGecko. Falls back to the static snapshot if absent. */
+  liveMarketCaps?: Record<string, number> | null;
 }
 
 /**
@@ -44,7 +61,16 @@ export interface BuildStrategiesArgs {
  * the inputs and an internal seed.
  */
 export function buildAllStrategies(args: BuildStrategiesArgs): StrategyResult[] {
-  const { priceSeries, riskFreeRate, mptResult, views, riskCaps, aggregateRules } = args;
+  const {
+    priceSeries,
+    riskFreeRate,
+    mptResult,
+    views,
+    riskCaps,
+    aggregateRules,
+    cvarDefenseThreshold = DEFAULT_CVAR_DEFENSE_THRESHOLD,
+    liveMarketCaps,
+  } = args;
   const symbols = priceSeries.map((p) => p.symbol);
   const n = symbols.length;
   const equalBaseline = new Array(n).fill(1 / n);
@@ -65,16 +91,22 @@ export function buildAllStrategies(args: BuildStrategiesArgs): StrategyResult[] 
   });
 
   const eqW = equalWeight(n);
-  const mc = marketCapWeights(symbols);
+  const mc = marketCapWeightsWithLive(symbols, liveMarketCaps ?? undefined);
   const minVolW = mptResult.minVol.weights;
   const sharpeW = mptResult.maxSharpe.weights;
   const sortinoW = mptResult.maxSortino.weights;
   const rp = inverseVolRiskParity(priceSeries);
-  const bl = blackLittermanTilt(priceSeries, views, symbols, riskFreeRate);
+  const bl = blackLittermanTilt(priceSeries, views, symbols, riskFreeRate, liveMarketCaps);
   const cv = cvarMinimizingPortfolio(priceSeries, mptResult);
 
   // Final fund = BL → riskCaps → CVaR-defense bump
-  const final = finalFundPortfolio(priceSeries, bl.weights, riskCaps, aggregateRules);
+  const final = finalFundPortfolio(
+    priceSeries,
+    bl.weights,
+    riskCaps,
+    aggregateRules,
+    cvarDefenseThreshold
+  );
 
   return [
     make(
@@ -191,11 +223,12 @@ export function blackLittermanTilt(
   priceSeries: PriceSeries[],
   views: ViewInput[],
   symbols: string[],
-  riskFreeRate: number
+  riskFreeRate: number,
+  liveMarketCaps?: Record<string, number> | null
 ): { weights: number[]; warning?: string } {
   const n = priceSeries.length;
   if (views.length === 0) {
-    const mc = marketCapWeights(symbols);
+    const mc = marketCapWeightsWithLive(symbols, liveMarketCaps ?? undefined);
     return {
       weights: mc.weights,
       warning: "Нет views — возвращён market-cap prior (BL без tilt).",
@@ -253,7 +286,7 @@ export function blackLittermanTilt(
   }
 
   if (!bestW) {
-    const mc = marketCapWeights(symbols);
+    const mc = marketCapWeightsWithLive(symbols, liveMarketCaps ?? undefined);
     return {
       weights: mc.weights,
       warning: "BL sampler не сошёлся — fallback на market-cap prior.",
@@ -317,15 +350,16 @@ function cvarFreshSweep(priceSeries: PriceSeries[]): { weights: number[] } {
  *
  *   1. Start from BL weights.
  *   2. Project onto policy box (per-asset caps + aggregate rules).
- *   3. Recompute CVaR-95. If it is worse (more negative) than -8% daily,
- *      shift +10% of total weight from non-core to BTC/ETH and re-project.
- *      This is a one-shot defensive bump, not an iterative solver.
+ *   3. Recompute CVaR-95. If it is worse than `cvarDefenseThreshold` (daily),
+ *      shift CVAR_DEFENSE_SHIFT of total weight from non-core to BTC/ETH
+ *      (60/40 split) and re-project. One-shot bump, not iterative.
  */
 export function finalFundPortfolio(
   priceSeries: PriceSeries[],
   blWeights: number[],
   riskCaps: Record<string, { min?: number; max?: number }>,
-  aggregateRules: AggregateRules
+  aggregateRules: AggregateRules,
+  cvarDefenseThreshold: number = DEFAULT_CVAR_DEFENSE_THRESHOLD
 ): { weights: number[]; warning?: string } {
   const symbols = priceSeries.map((p) => p.symbol);
   const n = symbols.length;
@@ -338,13 +372,12 @@ export function finalFundPortfolio(
   const daily = portfolioDailyReturns(w, priceSeries);
   const cvar = conditionalValueAtRisk(daily, 0.95);
 
-  // -0.08 daily ≈ -8% on a tail day. Bump if worse.
   let warning: string | undefined;
-  if (cvar < -0.08) {
-    warning = `CVaR-95 ${(cvar * 100).toFixed(1)}% → защита: +10% к BTC/ETH.`;
+  if (cvar < cvarDefenseThreshold) {
+    warning = `CVaR-95 ${(cvar * 100).toFixed(1)}% → защита: +${(CVAR_DEFENSE_SHIFT * 100).toFixed(0)}% к BTC/ETH.`;
     const btcIdx = symbols.indexOf("BTCUSDT");
     const ethIdx = symbols.indexOf("ETHUSDT");
-    const shift = 0.10;
+    const shift = CVAR_DEFENSE_SHIFT;
     // Take from non-core pro rata
     const nonCoreIdx: number[] = [];
     let nonCoreSum = 0;

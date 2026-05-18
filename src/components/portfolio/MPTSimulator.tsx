@@ -29,15 +29,20 @@ import {
   addPinned,
   deletePreset,
   loadPinned,
+  loadPolicy,
   loadPresets,
   removePinned,
+  resetPolicy,
   savePinned,
+  savePolicy,
   savePreset,
 } from "@/lib/portfolio/storage";
 import {
   DEFAULT_AGGREGATE_RULES,
   DEFAULT_RISK_CAPS,
 } from "@/lib/portfolio/riskCaps";
+import { DEFAULT_CVAR_DEFENSE_THRESHOLD } from "@/lib/portfolio/strategies";
+import { fetchLiveMarketCaps } from "@/lib/portfolio/marketCaps";
 import { defaultViewsForSymbols } from "@/lib/portfolio/defaultViews";
 import { prettySymbol } from "@/lib/portfolio/format";
 import type {
@@ -129,13 +134,54 @@ export function MPTSimulator() {
   const [views, setViews] = useState<ViewInput[]>(() =>
     defaultViewsForSymbols(DEFAULT_ASSETS)
   );
+  const [cvarDefenseThreshold, setCvarDefenseThreshold] = useState<number>(
+    DEFAULT_CVAR_DEFENSE_THRESHOLD
+  );
+  const [liveMarketCaps, setLiveMarketCaps] = useState<Record<string, number> | null>(null);
+  const [policyHydrated, setPolicyHydrated] = useState(false);
 
   const worker = useMPTWorker();
 
   useEffect(() => {
     setPresets(loadPresets());
     setPinned(loadPinned());
+    // Hydrate policy from localStorage (Фича 1)
+    const stored = loadPolicy();
+    if (stored.riskCaps && Object.keys(stored.riskCaps).length > 0) {
+      setRiskCaps(stored.riskCaps);
+    }
+    if (stored.aggregateRules) {
+      setAggregateRules(stored.aggregateRules);
+    }
+    if (stored.views && stored.views.length > 0) {
+      setViews(stored.views);
+    }
+    if (typeof stored.cvarDefenseThreshold === "number" && Number.isFinite(stored.cvarDefenseThreshold)) {
+      setCvarDefenseThreshold(stored.cvarDefenseThreshold);
+    }
+    setPolicyHydrated(true);
+    // Live market caps (Фича 2) — silent best-effort
+    fetchLiveMarketCaps().then((caps) => {
+      if (caps) setLiveMarketCaps(caps);
+    });
   }, []);
+
+  // Persist policy on change (debounced 300ms)
+  useEffect(() => {
+    if (!policyHydrated) return;
+    const handle = setTimeout(() => {
+      savePolicy({ riskCaps, aggregateRules, views, cvarDefenseThreshold });
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [policyHydrated, riskCaps, aggregateRules, views, cvarDefenseThreshold]);
+
+  const handleResetPolicy = useCallback(() => {
+    resetPolicy();
+    setRiskCaps({ ...DEFAULT_RISK_CAPS });
+    setAggregateRules({ ...DEFAULT_AGGREGATE_RULES });
+    setViews(defaultViewsForSymbols(assets));
+    setCvarDefenseThreshold(DEFAULT_CVAR_DEFENSE_THRESHOLD);
+  }, [assets]);
 
   useEffect(() => {
     setBounds((prev) => syncBounds(prev, assets));
@@ -210,6 +256,8 @@ export function MPTSimulator() {
           views: liveViews,
           riskCaps,
           aggregateRules,
+          cvarDefenseThreshold,
+          liveMarketCaps,
         });
       setPriceSeries(aligned);
       setResult(mptResult);
@@ -233,6 +281,8 @@ export function MPTSimulator() {
     views,
     riskCaps,
     aggregateRules,
+    cvarDefenseThreshold,
+    liveMarketCaps,
   ]);
 
   /**
@@ -255,6 +305,8 @@ export function MPTSimulator() {
         views: liveViews,
         riskCaps,
         aggregateRules,
+        cvarDefenseThreshold,
+        liveMarketCaps,
       });
       setStrategies(strats);
     } catch (e) {
@@ -262,7 +314,17 @@ export function MPTSimulator() {
     } finally {
       setLoading(false);
     }
-  }, [result, priceSeries, worker, riskFreeRate, views, riskCaps, aggregateRules]);
+  }, [
+    result,
+    priceSeries,
+    worker,
+    riskFreeRate,
+    views,
+    riskCaps,
+    aggregateRules,
+    cvarDefenseThreshold,
+    liveMarketCaps,
+  ]);
 
   useEffect(() => {
     recalculate();
@@ -576,10 +638,13 @@ export function MPTSimulator() {
             riskCaps={riskCaps}
             aggregateRules={aggregateRules}
             views={views}
+            cvarDefenseThreshold={cvarDefenseThreshold}
             strategies={strategies}
             onRiskCapsChange={setRiskCaps}
             onAggregateChange={setAggregateRules}
             onViewsChange={setViews}
+            onCvarDefenseThresholdChange={setCvarDefenseThreshold}
+            onResetPolicy={handleResetPolicy}
             onApply={reapplyStrategies}
             loading={busy}
           />

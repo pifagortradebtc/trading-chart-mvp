@@ -1,13 +1,9 @@
 "use client";
 
-import { CheckCircle2, Lock, RotateCcw, ShieldAlert, Sliders } from "lucide-react";
+import { CheckCircle2, Lock, RotateCcw, ShieldAlert, Sliders, TrendingDown } from "lucide-react";
 import { useMemo } from "react";
 import { prettySymbol } from "@/lib/portfolio/format";
-import {
-  applyRiskCaps,
-  DEFAULT_AGGREGATE_RULES,
-  DEFAULT_RISK_CAPS,
-} from "@/lib/portfolio/riskCaps";
+import { applyRiskCaps } from "@/lib/portfolio/riskCaps";
 import type {
   AggregateRules,
   StrategyResult,
@@ -19,10 +15,15 @@ interface Props {
   riskCaps: Record<string, { min?: number; max?: number }>;
   aggregateRules: AggregateRules;
   views: ViewInput[];
+  /** Daily CVaR-95 trigger for the Final Fund defensive bump (fraction, e.g. -0.08). */
+  cvarDefenseThreshold: number;
   strategies: StrategyResult[] | null;
   onRiskCapsChange: (next: Record<string, { min?: number; max?: number }>) => void;
   onAggregateChange: (next: AggregateRules) => void;
   onViewsChange: (next: ViewInput[]) => void;
+  onCvarDefenseThresholdChange: (next: number) => void;
+  /** Wipes localStorage policy and resets all caps/views/threshold to defaults. */
+  onResetPolicy: () => void;
   onApply: () => void;
   loading: boolean;
 }
@@ -40,10 +41,13 @@ export function RiskCapsTab({
   riskCaps,
   aggregateRules,
   views,
+  cvarDefenseThreshold,
   strategies,
   onRiskCapsChange,
   onAggregateChange,
   onViewsChange,
+  onCvarDefenseThresholdChange,
+  onResetPolicy,
   onApply,
   loading,
 }: Props) {
@@ -60,11 +64,6 @@ export function RiskCapsTab({
     return violations;
   }, [finalStrategy, symbols, riskCaps, aggregateRules]);
 
-  const resetCaps = () => {
-    onRiskCapsChange({ ...DEFAULT_RISK_CAPS });
-    onAggregateChange({ ...DEFAULT_AGGREGATE_RULES });
-  };
-
   return (
     <div className="flex flex-col gap-5">
       <header className="flex items-center justify-between">
@@ -80,10 +79,10 @@ export function RiskCapsTab({
         </div>
         <button
           type="button"
-          onClick={resetCaps}
+          onClick={onResetPolicy}
           className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-white/[0.03] px-3 py-1.5 text-xs text-ink-muted transition hover:border-brand/40 hover:text-ink"
         >
-          <RotateCcw size={12} /> Reset defaults
+          <RotateCcw size={12} /> Reset to defaults
         </button>
       </header>
 
@@ -157,6 +156,26 @@ export function RiskCapsTab({
             onChange={(v) =>
               onAggregateChange({ ...aggregateRules, smallAltsMax: v })
             }
+          />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+        <div className="flex items-center gap-2 border-b border-surface-border pb-3">
+          <TrendingDown size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            CVaR-Defense порог
+          </h3>
+        </div>
+        <div className="mt-4 flex flex-col gap-3">
+          <p className="font-mono text-[11px] leading-relaxed text-ink-muted">
+            Если CVaR-95 итогового портфеля хуже этого значения (в дневных
+            returns), система автоматически добавит +10% веса к BTC/ETH из
+            non-core активов.
+          </p>
+          <CvarThresholdInput
+            value={cvarDefenseThreshold}
+            onChange={onCvarDefenseThresholdChange}
           />
         </div>
       </section>
@@ -405,5 +424,57 @@ function ViewRow({
         />
       </td>
     </tr>
+  );
+}
+
+/**
+ * Input для CVaR-Defense порога. Внутри держим долю (например -0.08),
+ * пользователю показываем процент с минусом ("-8%"). Диапазон −15…−2,
+ * шаг 0.5%. Сохраняем тот же `.input-field`-like стиль, что и в PercentInput.
+ */
+function CvarThresholdInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  // value is a fraction (negative). UI shows percent (also negative).
+  const displayPct = (value * 100).toFixed(1);
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex items-center gap-2 rounded-md border border-surface-border bg-[rgba(8,12,20,0.6)] px-2 py-1 focus-within:border-brand/40 sm:w-40">
+        <input
+          type="number"
+          min={-15}
+          max={-2}
+          step={0.5}
+          value={displayPct}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            if (v === "") return;
+            const n = Number(v);
+            if (!Number.isFinite(n)) return;
+            // Clamp -15..-2 percent → -0.15..-0.02 fraction.
+            const clamped = Math.max(-15, Math.min(-2, n));
+            onChange(clamped / 100);
+          }}
+          className="w-full bg-transparent text-right font-mono text-xs text-ink outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+        />
+        <span className="text-[10px] text-ink-faint">%</span>
+      </div>
+      <input
+        type="range"
+        min={-15}
+        max={-2}
+        step={0.5}
+        value={Number(displayPct)}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        className="flex-1 accent-brand"
+      />
+      <span className="w-20 text-right font-mono text-xs text-amber-200">
+        {`${displayPct}%`} daily
+      </span>
+    </div>
   );
 }

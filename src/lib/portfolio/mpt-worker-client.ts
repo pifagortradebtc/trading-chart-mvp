@@ -106,6 +106,8 @@ export class MPTWorkerClient {
       views: ViewInput[];
       riskCaps: Record<string, { min?: number; max?: number }>;
       aggregateRules: AggregateRules;
+      cvarDefenseThreshold?: number;
+      liveMarketCaps?: Record<string, number> | null;
     }
   ): Promise<RunWithStrategiesResult> {
     this.ensureStarted();
@@ -134,6 +136,8 @@ export class MPTWorkerClient {
     views: ViewInput[];
     riskCaps: Record<string, { min?: number; max?: number }>;
     aggregateRules: AggregateRules;
+    cvarDefenseThreshold?: number;
+    liveMarketCaps?: Record<string, number> | null;
   }): Promise<StrategiesOnlyResult> {
     this.ensureStarted();
     const id = ++this.nextId;
