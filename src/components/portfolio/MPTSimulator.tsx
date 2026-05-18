@@ -3,26 +3,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ChartCandlestick,
+  Crown,
+  Layers,
   Loader2,
-  Pin,
   Play,
+  ShieldAlert,
   Settings2,
+  TrendingDown,
 } from "lucide-react";
 import { PifagorFundHeader } from "@/components/PifagorFundHeader";
 import { AssetSelector } from "./AssetSelector";
 import { BoundsPanel } from "./BoundsPanel";
-import { ComparisonPanel } from "./ComparisonPanel";
 import { CustomPortfolioModal } from "./CustomPortfolioModal";
-import { FrontierChart } from "./FrontierChart";
-import { PortfolioTable } from "./PortfolioTable";
 import { PresetMenu } from "./PresetMenu";
+import { SimulationTab } from "./tabs/SimulationTab";
+import { StrategiesTab } from "./tabs/StrategiesTab";
+import { RiskCapsTab } from "./tabs/RiskCapsTab";
+import { StressTestTab } from "./tabs/StressTestTab";
+import { RecommendedTab } from "./tabs/RecommendedTab";
 import { alignSeries, fetchPortfolioCloses } from "@/lib/portfolio/market-data";
 import { computeMetrics } from "@/lib/portfolio/mpt";
-import {
-  formatPercent,
-  formatRatio,
-  prettySymbol,
-} from "@/lib/portfolio/format";
 import { useMPTWorker } from "@/lib/portfolio/use-mpt-worker";
 import {
   addPinned,
@@ -33,6 +34,12 @@ import {
   savePinned,
   savePreset,
 } from "@/lib/portfolio/storage";
+import {
+  DEFAULT_AGGREGATE_RULES,
+  DEFAULT_RISK_CAPS,
+} from "@/lib/portfolio/riskCaps";
+import { defaultViewsForSymbols } from "@/lib/portfolio/defaultViews";
+import { prettySymbol } from "@/lib/portfolio/format";
 import type {
   AssetBounds,
   MPTResult,
@@ -42,8 +49,21 @@ import type {
   Preset,
   PriceSeries,
 } from "@/lib/portfolio/types";
+import type {
+  AggregateRules,
+  StrategyResult,
+  ViewInput,
+} from "@/lib/portfolio/strategyTypes";
 
-const DEFAULT_ASSETS = ["BTCUSDT", "ETHUSDT"];
+const DEFAULT_ASSETS = [
+  "BTCUSDT",
+  "ETHUSDT",
+  "SOLUSDT",
+  "BNBUSDT",
+  "HYPEUSDT",
+  "TONUSDT",
+  "OKBUSDT",
+];
 const HISTORY_PRESETS = [
   { label: "1 год", days: 365 },
   { label: "2 года", days: 730 },
@@ -66,6 +86,16 @@ const PIN_COLOR_PALETTE = [
   "#d63ec8",
 ];
 
+type TabId = "sim" | "strategies" | "caps" | "stress" | "recommended";
+
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
+  { id: "sim", label: "Simulation", icon: ChartCandlestick },
+  { id: "strategies", label: "Strategies", icon: Layers },
+  { id: "caps", label: "Risk Caps & Views", icon: ShieldAlert },
+  { id: "stress", label: "Stress Test", icon: TrendingDown },
+  { id: "recommended", label: "Recommended", icon: Crown },
+];
+
 export function MPTSimulator() {
   const [assets, setAssets] = useState<string[]>(DEFAULT_ASSETS);
   const [bounds, setBounds] = useState<AssetBounds[]>(() =>
@@ -76,14 +106,29 @@ export function MPTSimulator() {
   const [riskFreeRate, setRiskFreeRate] = useState(0.04);
 
   const [result, setResult] = useState<MPTResult | null>(null);
+  const [strategies, setStrategies] = useState<StrategyResult[] | null>(null);
   const [priceSeries, setPriceSeries] = useState<PriceSeries[] | null>(null);
   const [durationMs, setDurationMs] = useState<number | null>(null);
+  const [warningSymbols, setWarningSymbols] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [presets, setPresets] = useState<Preset[]>([]);
   const [pinned, setPinned] = useState<PinnedPortfolio[]>([]);
   const [customModalOpen, setCustomModalOpen] = useState(false);
+
+  const [tab, setTab] = useState<TabId>("sim");
+  const [activeStrategyId, setActiveStrategyId] = useState<string>("finalFund");
+
+  const [riskCaps, setRiskCaps] = useState<Record<string, { min?: number; max?: number }>>(
+    () => ({ ...DEFAULT_RISK_CAPS })
+  );
+  const [aggregateRules, setAggregateRules] = useState<AggregateRules>(
+    () => ({ ...DEFAULT_AGGREGATE_RULES })
+  );
+  const [views, setViews] = useState<ViewInput[]>(() =>
+    defaultViewsForSymbols(DEFAULT_ASSETS)
+  );
 
   const worker = useMPTWorker();
 
@@ -94,6 +139,12 @@ export function MPTSimulator() {
 
   useEffect(() => {
     setBounds((prev) => syncBounds(prev, assets));
+    // Add views for newly added symbols (keep existing edits)
+    setViews((prev) => {
+      const existing = new Map(prev.map((v) => [v.symbol, v]));
+      const defaults = defaultViewsForSymbols(assets);
+      return defaults.map((d) => existing.get(d.symbol) ?? d);
+    });
   }, [assets]);
 
   const recalculate = useCallback(async () => {
@@ -104,38 +155,114 @@ export function MPTSimulator() {
     setError(null);
     setLoading(true);
     setDurationMs(null);
+    setWarningSymbols([]);
     try {
-      const series = await Promise.all(
+      const fetched = await Promise.allSettled(
         assets.map(async (symbol) => {
           const klines = await fetchPortfolioCloses({ symbol, days: historyDays });
           return { symbol, klines };
         })
       );
 
-      const aligned = alignSeries(series);
+      const ok: { symbol: string; klines: { time: number; close: number }[] }[] = [];
+      const failed: string[] = [];
+      for (let i = 0; i < fetched.length; i++) {
+        const r = fetched[i];
+        if (r.status === "fulfilled" && r.value.klines.length > 30) {
+          ok.push(r.value);
+        } else {
+          failed.push(assets[i]);
+        }
+      }
+      if (failed.length > 0) setWarningSymbols(failed);
+      if (ok.length < 2) {
+        throw new Error(
+          failed.length > 0
+            ? `Недоступны данные: ${failed.join(", ")}. Замените активы.`
+            : "Слишком мало активов с данными."
+        );
+      }
+
+      const aligned = alignSeries(ok);
       if ((aligned[0]?.times.length ?? 0) < 30) {
         throw new Error(
           "Слишком мало общих торговых дней между активами. Уменьшите окно или замените активы."
         );
       }
 
-      const { result: mptResult, durationMs: elapsed } = await worker.run({
-        priceSeries: aligned,
-        simulations,
-        riskFreeRate,
-        bounds,
+      // Adjust bounds to surviving asset list (worker requires |bounds|=|series|)
+      const liveSymbols = aligned.map((p) => p.symbol);
+      const liveBounds = liveSymbols.map((symbol) => {
+        const idx = assets.indexOf(symbol);
+        return idx >= 0 && bounds[idx] ? bounds[idx] : { min: 0, max: 1 };
       });
+      const liveViews = defaultViewsForSymbols(liveSymbols).map((d) => {
+        const found = views.find((v) => v.symbol === d.symbol);
+        return found ?? d;
+      });
+
+      const { result: mptResult, strategies: strats, durationMs: elapsed } =
+        await worker.runWithStrategies({
+          priceSeries: aligned,
+          simulations,
+          riskFreeRate,
+          bounds: liveBounds,
+          views: liveViews,
+          riskCaps,
+          aggregateRules,
+        });
       setPriceSeries(aligned);
       setResult(mptResult);
+      setStrategies(strats);
       setDurationMs(elapsed);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось получить данные.");
       setResult(null);
+      setStrategies(null);
       setPriceSeries(null);
     } finally {
       setLoading(false);
     }
-  }, [assets, bounds, historyDays, riskFreeRate, simulations, worker]);
+  }, [
+    assets,
+    bounds,
+    historyDays,
+    riskFreeRate,
+    simulations,
+    worker,
+    views,
+    riskCaps,
+    aggregateRules,
+  ]);
+
+  /**
+   * Recomputes the 9 strategies without re-running the heavy MC cloud.
+   * Used after the user edits caps/views.
+   */
+  const reapplyStrategies = useCallback(async () => {
+    if (!result || !priceSeries) return;
+    setLoading(true);
+    try {
+      const liveSymbols = priceSeries.map((p) => p.symbol);
+      const liveViews = defaultViewsForSymbols(liveSymbols).map((d) => {
+        const found = views.find((v) => v.symbol === d.symbol);
+        return found ?? d;
+      });
+      const { strategies: strats } = await worker.computeStrategies({
+        priceSeries,
+        riskFreeRate,
+        mptResult: result,
+        views: liveViews,
+        riskCaps,
+        aggregateRules,
+      });
+      setStrategies(strats);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось пересчитать стратегии.");
+    } finally {
+      setLoading(false);
+    }
+  }, [result, priceSeries, worker, riskFreeRate, views, riskCaps, aggregateRules]);
 
   useEffect(() => {
     recalculate();
@@ -229,6 +356,8 @@ export function MPTSimulator() {
     );
   }, [pinned, result]);
 
+  const liveSymbols = result?.symbols ?? assets;
+  const finalStrategy = strategies?.find((s) => s.id === "finalFund") ?? null;
   const busy = loading;
 
   return (
@@ -236,7 +365,6 @@ export function MPTSimulator() {
       <PifagorFundHeader />
 
       <header className="relative overflow-hidden border-b border-surface-border bg-[rgba(10,16,32,0.55)] px-4 py-10 sm:px-8 sm:py-12">
-        {/* Gold aurora */}
         <div
           aria-hidden
           className="pointer-events-none absolute -right-32 -top-32 h-72 w-72 rounded-full bg-brand-glow blur-3xl animate-aurora-drift"
@@ -270,8 +398,9 @@ export function MPTSimulator() {
                 </span>
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[15px]">
-                Симуляция оптимального распределения долей капитала фонда. Модель
-                Марковица, дневные закрытия Binance, расчёт в Web Worker.
+                Симуляция оптимального распределения долей капитала фонда. 9 моделей
+                построения, risk caps, Black-Litterman views, CVaR stress test и
+                рекомендованный портфель — всё в Web Worker.
               </p>
             </div>
             {durationMs !== null && (result?.portfolios.length ?? 0) > 0 && (
@@ -284,6 +413,10 @@ export function MPTSimulator() {
                 <StatChip
                   label="Окно"
                   value={`${result?.windowDays ?? 0} дн.`}
+                />
+                <StatChip
+                  label="Стратегий"
+                  value={String(strategies?.length ?? 0)}
                 />
                 {result?.rejectionRate !== undefined &&
                   result.rejectionRate > 0.01 && (
@@ -396,6 +529,16 @@ export function MPTSimulator() {
           </div>
         </section>
 
+        {warningSymbols.length > 0 && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>
+              Нет данных по: {warningSymbols.map(prettySymbol).join(", ")}. Эти
+              активы исключены из расчёта (limited data).
+            </span>
+          </div>
+        )}
+
         {error && (
           <div className="flex items-start gap-3 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
             <AlertCircle size={18} className="mt-0.5 shrink-0" />
@@ -403,49 +546,70 @@ export function MPTSimulator() {
           </div>
         )}
 
-        <section className="grid flex-1 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_460px]">
-          <div className="relative min-h-[560px] rounded-2xl border border-surface-border bg-surface p-3 backdrop-blur-xl shadow-card">
-            {busy && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-black/40 backdrop-blur-sm">
-                <div className="flex items-center gap-2 text-sm text-ink">
-                  <Loader2 size={18} className="animate-spin text-brand" />
-                  Загружаем данные и считаем симуляции в фоне…
-                </div>
-              </div>
-            )}
-            {result ? (
-              <FrontierChart result={result} pinned={visiblePinned} />
-            ) : (
-              <div className="flex h-full min-h-[520px] items-center justify-center text-ink-muted">
-                Нажмите «Пересчитать», чтобы запустить симуляцию.
-              </div>
-            )}
-          </div>
+        <TabSwitcher tab={tab} setTab={setTab} />
 
-          <div className="flex flex-col gap-5">
-            {result && (
-              <>
-                <StatsPanel result={result} onPin={handlePin} />
-                <PortfolioTable result={result} />
-              </>
-            )}
-          </div>
-        </section>
+        {tab === "sim" && (
+          <SimulationTab
+            loading={busy}
+            result={result}
+            priceSeries={priceSeries}
+            pinned={visiblePinned}
+            onPin={handlePin}
+            onUnpin={handleUnpin}
+            onAddCustom={() => setCustomModalOpen(true)}
+            onClearAll={clearAllPinned}
+          />
+        )}
 
-        <ComparisonPanel
-          pinned={visiblePinned}
-          onRemove={handleUnpin}
-          onAddCustom={() => setCustomModalOpen(true)}
-          onClearAll={clearAllPinned}
-          canAddCustom={!!priceSeries && !!result}
-        />
+        {tab === "strategies" && (
+          <StrategiesTab
+            strategies={strategies}
+            symbols={liveSymbols}
+            activeId={activeStrategyId}
+            onSelect={setActiveStrategyId}
+          />
+        )}
+
+        {tab === "caps" && (
+          <RiskCapsTab
+            symbols={liveSymbols}
+            riskCaps={riskCaps}
+            aggregateRules={aggregateRules}
+            views={views}
+            strategies={strategies}
+            onRiskCapsChange={setRiskCaps}
+            onAggregateChange={setAggregateRules}
+            onViewsChange={setViews}
+            onApply={reapplyStrategies}
+            loading={busy}
+          />
+        )}
+
+        {tab === "stress" && (
+          <StressTestTab
+            strategies={strategies}
+            symbols={liveSymbols}
+            priceSeries={priceSeries}
+            activeId={activeStrategyId}
+            onSelect={setActiveStrategyId}
+          />
+        )}
+
+        {tab === "recommended" && (
+          <RecommendedTab
+            strategy={finalStrategy}
+            symbols={liveSymbols}
+            botSleeve={0.05}
+            manualSleeve={0.05}
+          />
+        )}
 
         <footer className="border-t border-surface-border pt-4">
           <p className="fund-disclaimer">
             Внутренний инструмент Pifagor Fund. Данные — Binance Spot (через
-            /api/ohlcv с дисковым кэшем); расчёты — в Web Worker; пресеты и
-            закреплённые портфели хранятся в localStorage браузера.
-            Образовательная демонстрация, не публичная финансовая рекомендация.
+            /api/ohlcv с дисковым кэшем); все расчёты — в Web Worker; пресеты и
+            закреплённые портфели хранятся в localStorage. Образовательная
+            демонстрация, не публичная финансовая рекомендация.
           </p>
         </footer>
 
@@ -460,6 +624,38 @@ export function MPTSimulator() {
         )}
       </main>
     </div>
+  );
+}
+
+function TabSwitcher({
+  tab,
+  setTab,
+}: {
+  tab: TabId;
+  setTab: (t: TabId) => void;
+}) {
+  return (
+    <nav className="flex flex-wrap gap-1 rounded-full border border-surface-border bg-surface p-1 backdrop-blur-xl shadow-card">
+      {TABS.map((t) => {
+        const Icon = t.icon;
+        const active = t.id === tab;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition ${
+              active
+                ? "bg-brand text-[var(--bg-deep)] shadow-sm"
+                : "text-ink-muted hover:bg-white/[0.04] hover:text-ink"
+            }`}
+          >
+            <Icon size={13} />
+            {t.label}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -532,115 +728,6 @@ function SegmentedControl<T extends string | number>({
           {o.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function StatsPanel({
-  result,
-  onPin,
-}: {
-  result: MPTResult;
-  onPin: (portfolio: Portfolio, source: PinnedSource) => void;
-}) {
-  return (
-    <div className="grid grid-cols-3 gap-3">
-      <KeyStat
-        title="Max Sharpe"
-        color="text-emerald-400"
-        portfolio={result.maxSharpe}
-        symbols={result.symbols}
-        metric="sharpe"
-        onPin={() => onPin(result.maxSharpe, "max-sharpe")}
-      />
-      <KeyStat
-        title="Max Sortino"
-        color="text-violet-300"
-        portfolio={result.maxSortino}
-        symbols={result.symbols}
-        metric="sortino"
-        onPin={() => onPin(result.maxSortino, "max-sortino")}
-      />
-      <KeyStat
-        title="Min Volatility"
-        color="text-sky-400"
-        portfolio={result.minVol}
-        symbols={result.symbols}
-        metric="vol"
-        onPin={() => onPin(result.minVol, "min-vol")}
-      />
-    </div>
-  );
-}
-
-function KeyStat({
-  title,
-  color,
-  portfolio,
-  symbols,
-  metric,
-  onPin,
-}: {
-  title: string;
-  color: string;
-  portfolio: Portfolio;
-  symbols: string[];
-  metric: "sharpe" | "sortino" | "vol";
-  onPin: () => void;
-}) {
-  const headline =
-    metric === "sharpe"
-      ? formatRatio(portfolio.sharpe)
-      : metric === "sortino"
-        ? formatRatio(portfolio.sortino)
-        : formatRatio(portfolio.volatility);
-
-  return (
-    <div className="group relative rounded-xl border border-surface-border bg-gradient-to-br from-white/[0.04] to-transparent p-3 transition-colors hover:border-brand/30">
-      <div className="flex items-baseline justify-between">
-        <span
-          className={`font-mono text-[10px] font-medium uppercase tracking-[0.22em] ${color}`}
-        >
-          {title}
-        </span>
-        <span className="font-mono text-lg font-semibold text-ink">
-          {headline}
-        </span>
-      </div>
-      <div className="mt-2 space-y-0.5 text-[11px] text-ink-muted">
-        <div className="flex justify-between">
-          <span>Доходность</span>
-          <span className="font-mono text-ink">
-            {formatPercent(portfolio.return)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span>Волатильность</span>
-          <span className="font-mono text-ink">
-            {formatPercent(portfolio.volatility)}
-          </span>
-        </div>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1">
-        {portfolio.weights.map((w, i) =>
-          w > 0.005 ? (
-            <span
-              key={i}
-              className="rounded border border-surface-border bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-ink"
-            >
-              {prettySymbol(symbols[i])} {(w * 100).toFixed(0)}%
-            </span>
-          ) : null
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onPin}
-        title="Закрепить в сравнении"
-        className="absolute right-2 top-2 rounded-md border border-surface-border bg-black/30 p-1 text-ink-muted opacity-0 transition group-hover:opacity-100 hover:border-brand/40 hover:text-ink"
-      >
-        <Pin size={12} />
-      </button>
     </div>
   );
 }
