@@ -3,40 +3,246 @@
 @tailwind utilities;
 
 :root {
-  --tv-bg: #050814;
-  --tv-panel: #0c101f;
+  /* ── Pifagor Fund palette ── */
+  --bg-deep: #060a10;
+  --bg-mid: #0c121c;
+  --gold: #c9a962;
+  --gold-light: #dcc285;
+  --gold-dark: #a88b4a;
+  --gold-dim: rgba(201, 169, 98, 0.45);
+  --gold-glow: rgba(201, 169, 98, 0.22);
+  --border-subtle: rgba(201, 169, 98, 0.1);
+  --border-strong: rgba(201, 169, 98, 0.24);
+  --glass: rgba(14, 20, 32, 0.75);
+  --ink: #e8eaf0;
+  --ink-muted: #8b93a8;
+  --ink-faint: #5c6478;
+
+  /* ── Legacy — keep existing chart/Plotly/lightweight-charts wiring alive.
+       Re-mapped onto the gold theme so old hard-coded references read
+       correctly when not yet refactored. ── */
+  --tv-bg: var(--bg-deep);
+  --tv-panel: #0c121c;
   --tv-toolbar: #12192c;
-  --tv-border: rgba(148, 163, 184, 0.18);
-  --tv-text: #e2e8f0;
-  --tv-muted: #94a3b8;
-  --tv-accent: #22d3ee;
+  --tv-border: rgba(201, 169, 98, 0.18);
+  --tv-text: var(--ink);
+  --tv-muted: var(--ink-muted);
+  --tv-accent: var(--gold);
 
-  /* Research terminal — премиальная тёмная тема */
-  --rex-bg: #050814;
+  --rex-bg: var(--bg-deep);
   --rex-bg-elevated: #0a1020;
-  --rex-glass: rgba(15, 23, 42, 0.55);
-  --rex-text: #e8eef8;
-  --rex-muted: #8b9cb8;
-  --rex-accent: #22d3ee;
-  --rex-accent2: #a78bfa;
+  --rex-glass: rgba(14, 20, 32, 0.75);
+  --rex-text: var(--ink);
+  --rex-muted: var(--ink-muted);
+  --rex-accent: var(--gold);
+  --rex-accent2: var(--gold-light);
 }
 
-body {
-  margin: 0;
-  background: var(--rex-bg);
-  color: var(--rex-text);
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-[var(--bg-deep)] text-ink font-sans antialiased;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+
+  ::selection {
+    @apply bg-brand-muted text-ink;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
-/** Нативный выпадающий список в тёмной теме (Windows / Chrome). */
+/* Native dark <select> on Windows/Chrome */
 select {
   color-scheme: dark;
 }
-
 select option {
   background-color: #131722;
-  color: #d1d4dc;
+  color: var(--ink);
 }
 
 .rex-sidebar {
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset -1px 0 0 rgba(201, 169, 98, 0.08);
+}
+
+@layer components {
+  /* ── Editorial grain texture (fixed, very subtle) ── */
+  .app-grain {
+    pointer-events: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ── Italic-serif для одно-два слова в заголовках ── */
+  .accent-serif {
+    @apply font-serif italic font-normal text-ink;
+    letter-spacing: -0.01em;
+  }
+
+  /* ── Eyebrow — крошечный uppercase лейбл над секциями ── */
+  .eyebrow {
+    @apply font-mono text-[10px] font-medium uppercase text-brand;
+    letter-spacing: 0.28em;
+  }
+  .eyebrow-muted {
+    @apply eyebrow text-ink-faint;
+  }
+
+  /* ── Magnetic-style кнопки (без JS, чистый CSS) ── */
+  .btn-magnetic {
+    @apply relative inline-flex items-center justify-center gap-1.5 overflow-hidden rounded-full px-6 py-3 text-sm font-medium tracking-tight transition-all;
+    will-change: transform;
+  }
+  .btn-magnetic-primary {
+    @apply btn-magnetic bg-brand text-[var(--bg-deep)] shadow-glow-strong hover:bg-brand-light hover:-translate-y-[1px];
+  }
+  .btn-magnetic-ghost {
+    @apply btn-magnetic border border-surface-border-strong bg-white/[0.02] text-ink-muted hover:border-brand/40 hover:text-ink hover:bg-white/[0.04];
+  }
+
+  /* ── Hairline with central gold diamond ── */
+  .hairline {
+    position: relative;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.32), transparent);
+  }
+  .hairline::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    background: var(--gold);
+    transform: translate(-50%, -50%) rotate(45deg);
+    opacity: 0.8;
+  }
+
+  /* ── Live-pulse индикатор ── */
+  .pulse-dot {
+    @apply relative inline-block h-1.5 w-1.5 rounded-full bg-brand;
+    animation: pulseDot 2.4s ease-in-out infinite;
+  }
+  .pulse-dot::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 9999px;
+    background: var(--gold);
+    opacity: 0.35;
+    animation: pulseDot 2.4s ease-in-out infinite;
+    transform-origin: center;
+  }
+
+  .card {
+    @apply rounded-xl border border-surface-border bg-surface backdrop-blur-md shadow-card;
+  }
+  .card-highlight {
+    @apply card border-brand/30 shadow-glow;
+  }
+  .card-danger {
+    @apply card border-red-500/25;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-surface-border bg-[rgba(8,12,20,0.6)] px-3 py-2.5 sm:py-2 text-sm text-ink
+      placeholder:text-ink-faint transition-colors
+      focus:border-brand/50 focus:outline-none focus:ring-1 focus:ring-brand/20;
+  }
+  .select-field {
+    @apply input-field cursor-pointer;
+  }
+
+  .page-title {
+    @apply font-display text-2xl sm:text-3xl font-semibold tracking-display-tight text-ink;
+  }
+  .page-subtitle {
+    @apply mt-1 text-sm text-ink-muted;
+  }
+  .section-title {
+    @apply font-display text-lg sm:text-xl font-semibold tracking-tight text-ink;
+  }
+
+  .stat-card {
+    @apply card p-5 animate-slide-up;
+  }
+  .stat-label {
+    @apply text-xs font-medium uppercase tracking-wider text-ink-faint;
+  }
+  .stat-value {
+    @apply mt-2 font-display text-2xl font-semibold tracking-tight text-ink tabular-nums;
+  }
+
+  .fund-disclaimer {
+    @apply rounded-lg border border-surface-border bg-[rgba(8,12,20,0.5)] px-4 py-3 text-xs leading-relaxed text-ink-faint;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Portfolio module integrations — keep as-is, recoloured only.
+   Plotly modebar must blend with our dark glass; dual-range slider thumbs
+   power the BoundsPanel. Do NOT remove.
+   ────────────────────────────────────────────────────────────────────── */
+.modebar {
+  background: transparent !important;
+}
+.modebar-btn path {
+  fill: rgba(232, 234, 240, 0.55) !important;
+}
+.modebar-btn:hover path {
+  fill: var(--gold) !important;
+}
+
+.dual-range {
+  pointer-events: none;
+}
+.dual-range::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--gold);
+  border: 2px solid #0a1020;
+  box-shadow: 0 0 0 1px rgba(201, 169, 98, 0.35);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.dual-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.dual-range::-moz-range-thumb {
+  pointer-events: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--gold);
+  border: 2px solid #0a1020;
+  cursor: pointer;
+}
+.dual-range::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.dual-range::-moz-range-track {
+  background: transparent;
+}
+.dual-range:disabled::-webkit-slider-thumb {
+  background: #52525b;
+  cursor: not-allowed;
+}
+.dual-range:disabled::-moz-range-thumb {
+  background: #52525b;
+  cursor: not-allowed;
 }
