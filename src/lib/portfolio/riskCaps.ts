@@ -1,4 +1,5 @@
 import type { AggregateRules } from "./strategyTypes";
+import type { AssetDataQuality } from "./dataQuality";
 
 /**
  * Per-asset weight caps used as the *Pifagor Fund* policy floor on the
@@ -70,7 +71,8 @@ export function applyRiskCaps(
   weights: number[],
   symbols: string[],
   caps: Record<string, { min?: number; max?: number }> = DEFAULT_RISK_CAPS,
-  aggregate: AggregateRules = DEFAULT_AGGREGATE_RULES
+  aggregate: AggregateRules = DEFAULT_AGGREGATE_RULES,
+  dataQuality?: AssetDataQuality[]
 ): ApplyRiskCapsResult {
   if (weights.length !== symbols.length) {
     throw new Error("riskCaps: weights length mismatch with symbols.");
@@ -159,6 +161,30 @@ export function applyRiskCaps(
     if (w[i] > hi + 1e-9) w[i] = hi;
   }
   w = renormalize(w);
+
+  // 5. Data-quality ceiling. Each asset is clamped to its max-allowed weight
+  // implied by available history (good=100%, limited=5%, very-limited=2%,
+  // no-data=0%). Iterate once: clamp + renormalize. If renormalization
+  // pushes other weights above their dq cap, we accept the residual error;
+  // in practice the spill is tiny because no-data assets start near 0.
+  if (dataQuality && dataQuality.length === n) {
+    let touched = false;
+    const dqBySymbol = new Map<string, AssetDataQuality>();
+    for (const dq of dataQuality) dqBySymbol.set(dq.symbol, dq);
+    for (let i = 0; i < n; i++) {
+      const dq = dqBySymbol.get(symbols[i]);
+      if (!dq) continue;
+      const ceiling = dq.maxAllowedWeight;
+      if (w[i] > ceiling + 1e-9) {
+        violations.push(
+          `${symbols[i]}: data quality cap (${(ceiling * 100).toFixed(0)}%)`
+        );
+        w[i] = ceiling;
+        touched = true;
+      }
+    }
+    if (touched) w = renormalize(w);
+  }
 
   return { weights: w, violations };
 }

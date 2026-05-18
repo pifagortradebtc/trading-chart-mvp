@@ -59,6 +59,8 @@ import type {
   StrategyResult,
   ViewInput,
 } from "@/lib/portfolio/strategyTypes";
+import type { AssetDataQuality } from "@/lib/portfolio/dataQuality";
+import { MODES, type RecommendationMode } from "@/lib/portfolio/recommendationModes";
 
 const DEFAULT_ASSETS = [
   "BTCUSDT",
@@ -112,6 +114,9 @@ export function MPTSimulator() {
 
   const [result, setResult] = useState<MPTResult | null>(null);
   const [strategies, setStrategies] = useState<StrategyResult[] | null>(null);
+  const [dataQuality, setDataQuality] = useState<AssetDataQuality[] | null>(null);
+  const [recommendationMode, setRecommendationMode] = useState<RecommendationMode | undefined>(undefined);
+  const [currentWeights, setCurrentWeights] = useState<Record<string, number>>({});
   const [priceSeries, setPriceSeries] = useState<PriceSeries[] | null>(null);
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [warningSymbols, setWarningSymbols] = useState<string[]>([]);
@@ -173,6 +178,12 @@ export function MPTSimulator() {
     ) {
       setTab(stored.activeTab as TabId);
     }
+    if (stored.recommendationMode) {
+      setRecommendationMode(stored.recommendationMode);
+    }
+    if (stored.currentWeights) {
+      setCurrentWeights(stored.currentWeights);
+    }
     setPolicyHydrated(true);
     // Live market caps (Фича 2) — silent best-effort
     fetchLiveMarketCaps().then((caps) => {
@@ -192,6 +203,8 @@ export function MPTSimulator() {
         botSleeve,
         manualSleeve,
         activeTab: tab,
+        recommendationMode,
+        currentWeights,
       });
     }, 300);
     return () => clearTimeout(handle);
@@ -204,6 +217,8 @@ export function MPTSimulator() {
     botSleeve,
     manualSleeve,
     tab,
+    recommendationMode,
+    currentWeights,
   ]);
 
   const handleResetPolicy = useCallback(() => {
@@ -214,7 +229,22 @@ export function MPTSimulator() {
     setCvarDefenseThreshold(DEFAULT_CVAR_DEFENSE_THRESHOLD);
     setBotSleeve(0.05);
     setManualSleeve(0.05);
+    setRecommendationMode(undefined);
+    setCurrentWeights({});
   }, [assets]);
+
+  const handleApplyMode = useCallback(
+    (mode: RecommendationMode) => {
+      const cfg = MODES[mode];
+      setRiskCaps({ ...cfg.riskCaps });
+      setAggregateRules({ ...cfg.aggregateRules });
+      setCvarDefenseThreshold(cfg.cvarDefenseThreshold);
+      setBotSleeve(cfg.botSleeve);
+      setManualSleeve(cfg.manualSleeve);
+      setRecommendationMode(mode);
+    },
+    []
+  );
 
   useEffect(() => {
     setBounds((prev) => syncBounds(prev, assets));
@@ -280,7 +310,7 @@ export function MPTSimulator() {
         return found ?? d;
       });
 
-      const { result: mptResult, strategies: strats, durationMs: elapsed } =
+      const { result: mptResult, strategies: strats, dataQuality: dq, durationMs: elapsed } =
         await worker.runWithStrategies({
           priceSeries: aligned,
           simulations,
@@ -295,6 +325,7 @@ export function MPTSimulator() {
       setPriceSeries(aligned);
       setResult(mptResult);
       setStrategies(strats);
+      setDataQuality(dq);
       setDurationMs(elapsed);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось получить данные.");
@@ -331,7 +362,7 @@ export function MPTSimulator() {
         const found = views.find((v) => v.symbol === d.symbol);
         return found ?? d;
       });
-      const { strategies: strats } = await worker.computeStrategies({
+      const { strategies: strats, dataQuality: dq } = await worker.computeStrategies({
         priceSeries,
         riskFreeRate,
         mptResult: result,
@@ -342,6 +373,7 @@ export function MPTSimulator() {
         liveMarketCaps,
       });
       setStrategies(strats);
+      setDataQuality(dq);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось пересчитать стратегии.");
     } finally {
@@ -686,6 +718,8 @@ export function MPTSimulator() {
             onResetPolicy={handleResetPolicy}
             onApply={reapplyStrategies}
             loading={busy}
+            recommendationMode={recommendationMode}
+            onApplyMode={handleApplyMode}
           />
         )}
 
@@ -707,6 +741,11 @@ export function MPTSimulator() {
             botSleeve={botSleeve}
             manualSleeve={manualSleeve}
             cvarDefenseThreshold={cvarDefenseThreshold}
+            dataQuality={dataQuality}
+            allStrategies={strategies}
+            windowDays={result?.windowDays ?? historyDays}
+            currentWeights={currentWeights}
+            onCurrentWeightsChange={setCurrentWeights}
           />
         )}
 

@@ -16,6 +16,8 @@ import { portfolioDailyReturns } from "@/lib/portfolio/strategyMetrics";
 import type { Data, Layout } from "plotly.js";
 import type { StrategyResult } from "@/lib/portfolio/strategyTypes";
 import type { PriceSeries } from "@/lib/portfolio/types";
+import type { AssetDataQuality } from "@/lib/portfolio/dataQuality";
+import { computeConfidence } from "@/lib/portfolio/confidence";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -28,6 +30,15 @@ interface Props {
   manualSleeve?: number;
   /** Daily CVaR-95 trigger from the policy editor, e.g. -0.08. */
   cvarDefenseThreshold?: number;
+  /** Per-asset data-quality assessment from the worker — drives confidence + rebalance reasons. */
+  dataQuality?: AssetDataQuality[] | null;
+  /** All 9 strategies — used by the confidence "model agreement" factor. */
+  allStrategies?: StrategyResult[] | null;
+  /** Backtest window length in days. */
+  windowDays?: number;
+  /** Current portfolio weights entered by the operator (0..1 per symbol). */
+  currentWeights?: Record<string, number>;
+  onCurrentWeightsChange?: (next: Record<string, number>) => void;
 }
 
 const SPOT_PALETTE = [
@@ -56,6 +67,11 @@ export function RecommendedTab({
   botSleeve = 0.05,
   manualSleeve = 0.05,
   cvarDefenseThreshold = -0.08,
+  dataQuality,
+  allStrategies,
+  windowDays,
+  currentWeights,
+  onCurrentWeightsChange,
 }: Props) {
   const sleeveTotalPct = ((botSleeve + manualSleeve) * 100).toFixed(0);
   const cvarPct = (cvarDefenseThreshold * 100).toFixed(1);
@@ -69,6 +85,17 @@ export function RecommendedTab({
             .sort((a, b) => b.weight - a.weight),
     [strategy, symbols]
   );
+
+  const confidence = useMemo(() => {
+    if (!strategy || !dataQuality || !allStrategies) return null;
+    return computeConfidence({
+      windowDays: windowDays ?? 0,
+      dataQuality,
+      finalStrategy: strategy,
+      allStrategies,
+      symbols,
+    });
+  }, [strategy, dataQuality, allStrategies, windowDays, symbols]);
 
   const spotScale = Math.max(0, 1 - botSleeve - manualSleeve);
   const totalRows = useMemo(() => {
@@ -119,6 +146,8 @@ export function RecommendedTab({
         </div>
       </header>
 
+      {confidence && <ConfidenceBadge breakdown={confidence} />}
+
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <AllocationCard
           title="Spot allocation"
@@ -132,6 +161,16 @@ export function RecommendedTab({
           rows={totalRows}
         />
       </section>
+
+      {strategy && onCurrentWeightsChange && (
+        <RebalancePlan
+          strategy={strategy}
+          symbols={symbols}
+          dataQuality={dataQuality ?? null}
+          currentWeights={currentWeights ?? {}}
+          onCurrentWeightsChange={onCurrentWeightsChange}
+        />
+      )}
 
       {priceSeries && priceSeries.length > 0 && (
         <EquitySection
@@ -698,5 +737,323 @@ function Reason({
         <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">{body}</p>
       </div>
     </li>
+  );
+}
+
+/**
+ * Compact confidence card: large gold number, level label, gradient progress bar,
+ * collapsible breakdown of factors. Score is a heuristic triage signal — see
+ * computeConfidence() docstring.
+ */
+function ConfidenceBadge({
+  breakdown,
+}: {
+  breakdown: ReturnType<typeof computeConfidence>;
+}) {
+  const { score, level, factors } = breakdown;
+  const levelTone =
+    level === "high"
+      ? { bar: "from-emerald-400 to-emerald-200", text: "text-emerald-300", label: "High" }
+      : level === "medium"
+        ? { bar: "from-brand to-brand-light", text: "text-brand-light", label: "Medium" }
+        : { bar: "from-rose-500 to-rose-300", text: "text-rose-300", label: "Low" };
+
+  const tooltipText = factors
+    .map((f) => `${f.impact === "+" ? "+" : f.impact === "-" ? "−" : "·"} ${f.label}: ${f.detail}`)
+    .join("\n");
+
+  return (
+    <details className="group rounded-2xl border border-brand/30 bg-surface p-5 backdrop-blur-xl shadow-glow">
+      <summary
+        className="flex cursor-pointer list-none flex-wrap items-center gap-5"
+        title={tooltipText}
+      >
+        <div className="flex items-baseline gap-3">
+          <span className="font-display text-4xl font-semibold leading-none text-brand">
+            {score}
+          </span>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+              Confidence
+            </p>
+            <p className={`font-display text-lg font-semibold ${levelTone.text}`}>
+              {levelTone.label}
+            </p>
+          </div>
+        </div>
+        <div className="min-w-[180px] flex-1">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.05]">
+            <div
+              className={`h-full rounded-full bg-gradient-to-r ${levelTone.bar}`}
+              style={{ width: `${score}%` }}
+            />
+          </div>
+          <p className="mt-2 text-[11px] leading-snug text-ink-muted">
+            Эвристический сводный сигнал «стоит ли действовать по этой рекомендации сегодня».
+            Не posterior, а triage-метрика — кликните, чтобы раскрыть факторы.
+          </p>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint group-open:hidden">
+          ▾ детали
+        </span>
+        <span className="hidden font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint group-open:inline">
+          ▴ скрыть
+        </span>
+      </summary>
+      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+        {factors.map((f, i) => {
+          const tone =
+            f.impact === "+"
+              ? "text-emerald-300"
+              : f.impact === "-"
+                ? "text-rose-300"
+                : "text-ink-muted";
+          const sign = f.impact === "+" ? "+" : f.impact === "-" ? "−" : "·";
+          return (
+            <li
+              key={i}
+              className="flex items-start gap-2 rounded-md border border-surface-border bg-white/[0.02] px-3 py-2"
+            >
+              <span className={`font-mono text-xs ${tone}`}>{sign}</span>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-ink">
+                  {f.label}{" "}
+                  <span className={`font-mono text-[10px] ${tone}`}>
+                    {f.points >= 0 ? "+" : ""}
+                    {f.points}
+                  </span>
+                </p>
+                <p className="mt-0.5 text-[11px] leading-snug text-ink-muted">
+                  {f.detail}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * Operator-facing rebalance plan.
+ *   - User enters current weights (per symbol, %), targets come from strategy.
+ *   - Delta vs target classified into HOLD / BUY / SELL / WATCH ONLY with
+ *     a tolerance band (3% BTC/ETH, 2% major alts, 1% small/limited).
+ *   - Priority bucket (High / Medium / Low) by |delta|.
+ *   - Reason combines data quality status + delta sign.
+ *
+ * Current weights are persisted in localStorage via the parent.
+ */
+function RebalancePlan({
+  strategy,
+  symbols,
+  dataQuality,
+  currentWeights,
+  onCurrentWeightsChange,
+}: {
+  strategy: StrategyResult;
+  symbols: string[];
+  dataQuality: AssetDataQuality[] | null;
+  currentWeights: Record<string, number>;
+  onCurrentWeightsChange: (next: Record<string, number>) => void;
+}) {
+  const dqBySymbol = new Map<string, AssetDataQuality>();
+  if (dataQuality) for (const d of dataQuality) dqBySymbol.set(d.symbol, d);
+
+  const MAJOR_ALTS = new Set(["SOLUSDT", "BNBUSDT", "XRPUSDT"]);
+  const bandOf = (symbol: string): number => {
+    const dq = dqBySymbol.get(symbol);
+    if (dq && (dq.status === "limited" || dq.status === "very-limited" || dq.status === "no-data")) {
+      return 0.01;
+    }
+    if (symbol === "BTCUSDT" || symbol === "ETHUSDT") return 0.03;
+    if (MAJOR_ALTS.has(symbol)) return 0.02;
+    return 0.01;
+  };
+
+  type Row = {
+    symbol: string;
+    current: number;
+    target: number;
+    delta: number;
+    band: number;
+    action: "HOLD" | "BUY" | "INCREASE" | "SELL" | "REDUCE" | "WATCH ONLY";
+    priority: "High" | "Medium" | "Low";
+    reason: string;
+  };
+
+  const rows: Row[] = strategy.weights.map((target, i) => {
+    const symbol = symbols[i] ?? `#${i}`;
+    const current = currentWeights[symbol] ?? 0;
+    const delta = target - current;
+    const band = bandOf(symbol);
+    const absD = Math.abs(delta);
+    const dq = dqBySymbol.get(symbol);
+    const noData = dq?.status === "no-data";
+
+    let action: Row["action"];
+    if (noData) {
+      action = "WATCH ONLY";
+    } else if (absD <= band) {
+      action = "HOLD";
+    } else if (delta > 0) {
+      action = current > 0.001 ? "INCREASE" : "BUY";
+    } else {
+      action = current > target + band ? "REDUCE" : "SELL";
+    }
+
+    const priority: Row["priority"] = absD >= 0.05 ? "High" : absD >= 0.02 ? "Medium" : "Low";
+
+    const parts: string[] = [];
+    if (dq && dq.status !== "good") parts.push(dq.reason);
+    if (action === "HOLD") parts.push("в полосе допуска");
+    else if (action === "WATCH ONLY") parts.push("исключён, наблюдаем");
+    else if (delta > 0) parts.push("ниже таргета");
+    else parts.push("выше таргета");
+    const reason = parts.join(" · ");
+
+    return { symbol, current, target, delta, band, action, priority, reason };
+  });
+
+  // Summary
+  let buys = 0;
+  let sells = 0;
+  let holds = 0;
+  let turnover = 0;
+  for (const r of rows) {
+    turnover += Math.abs(r.delta);
+    if (r.action === "BUY" || r.action === "INCREASE") buys++;
+    else if (r.action === "SELL" || r.action === "REDUCE") sells++;
+    else if (r.action === "HOLD") holds++;
+  }
+  // L1 turnover counts both legs; divide by 2 for one-side turnover.
+  const turnoverOneSide = turnover / 2;
+
+  const handleEdit = (symbol: string, pct: number) => {
+    const next = { ...currentWeights };
+    if (!Number.isFinite(pct) || pct <= 0) delete next[symbol];
+    else next[symbol] = Math.max(0, Math.min(1, pct / 100));
+    onCurrentWeightsChange(next);
+  };
+
+  const resetToTarget = () => {
+    const next: Record<string, number> = {};
+    for (let i = 0; i < symbols.length; i++) next[symbols[i]] = strategy.weights[i];
+    onCurrentWeightsChange(next);
+  };
+  const resetToZero = () => onCurrentWeightsChange({});
+
+  const actionColor = (a: Row["action"]) => {
+    if (a === "BUY" || a === "INCREASE") return "text-emerald-300";
+    if (a === "SELL" || a === "REDUCE") return "text-rose-300";
+    if (a === "WATCH ONLY") return "text-amber-200";
+    return "text-ink-faint";
+  };
+  const priorityColor = (p: Row["priority"]) =>
+    p === "High" ? "text-rose-200" : p === "Medium" ? "text-amber-200" : "text-ink-faint";
+
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-3">
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Rebalance Plan
+          </h3>
+          <span className="font-mono text-[10px] text-ink-faint">
+            turnover ~{(turnoverOneSide * 100).toFixed(1)}% ·{" "}
+            <span className="text-emerald-300">{buys} buy</span> ·{" "}
+            <span className="text-rose-300">{sells} sell</span> ·{" "}
+            <span className="text-ink-faint">{holds} hold</span>
+          </span>
+        </div>
+        <div className="flex gap-2 print:hidden">
+          <button
+            type="button"
+            onClick={resetToTarget}
+            className="rounded-md border border-surface-border bg-white/[0.04] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink"
+            title="Сбросить current = target (всё в равновесии)"
+          >
+            current = target
+          </button>
+          <button
+            type="button"
+            onClick={resetToZero}
+            className="rounded-md border border-surface-border bg-white/[0.04] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink"
+            title="Обнулить все current — портфель ещё не собран"
+          >
+            обнулить
+          </button>
+        </div>
+      </header>
+
+      <div className="overflow-auto">
+        <table className="mt-3 w-full text-xs">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+            <tr className="border-b border-surface-border">
+              <th className="px-2 py-2 text-left font-medium">Asset</th>
+              <th className="px-2 py-2 text-right font-medium">Current %</th>
+              <th className="px-2 py-2 text-right font-medium">Target %</th>
+              <th className="px-2 py-2 text-right font-medium">Δ</th>
+              <th className="px-2 py-2 text-left font-medium">Action</th>
+              <th className="px-2 py-2 text-left font-medium">Priority</th>
+              <th className="px-2 py-2 text-left font-medium">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr
+                key={r.symbol}
+                className="border-b border-surface-border/60"
+              >
+                <td className="px-2 py-2 font-mono text-sm text-ink">
+                  {prettySymbol(r.symbol)}
+                </td>
+                <td className="px-2 py-2 text-right">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={
+                      currentWeights[r.symbol] !== undefined
+                        ? +(currentWeights[r.symbol] * 100).toFixed(2)
+                        : ""
+                    }
+                    placeholder="0"
+                    onChange={(e) => handleEdit(r.symbol, Number(e.target.value))}
+                    className="w-20 rounded-md border border-surface-border bg-[rgba(8,12,20,0.6)] px-2 py-1 text-right font-mono text-xs text-ink outline-none [appearance:textfield] focus:border-brand/40 [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                  />
+                </td>
+                <td className="px-2 py-2 text-right font-mono text-ink">
+                  {(r.target * 100).toFixed(1)}%
+                </td>
+                <td
+                  className={`px-2 py-2 text-right font-mono ${
+                    r.delta > 0 ? "text-emerald-300" : r.delta < 0 ? "text-rose-300" : "text-ink-faint"
+                  }`}
+                >
+                  {r.delta >= 0 ? "+" : ""}
+                  {(r.delta * 100).toFixed(1)}%
+                </td>
+                <td className={`px-2 py-2 font-mono text-[11px] ${actionColor(r.action)}`}>
+                  {r.action}
+                </td>
+                <td className={`px-2 py-2 font-mono text-[11px] ${priorityColor(r.priority)}`}>
+                  {r.priority}
+                </td>
+                <td className="px-2 py-2 text-[11px] text-ink-muted">{r.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="fund-disclaimer mt-3">
+        Plan не учитывает spread, комиссии биржи, маркет-импакт и slippage —
+        для крупных ребалансировок добавьте 20-40bps буфера и разделите
+        исполнение на несколько частей.
+      </p>
+    </section>
   );
 }

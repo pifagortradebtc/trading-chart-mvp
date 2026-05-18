@@ -3,6 +3,7 @@
 import {
   CheckCircle2,
   Crown,
+  Gauge,
   Lock,
   RotateCcw,
   ShieldAlert,
@@ -17,6 +18,7 @@ import type {
   StrategyResult,
   ViewInput,
 } from "@/lib/portfolio/strategyTypes";
+import { MODES, type RecommendationMode } from "@/lib/portfolio/recommendationModes";
 
 interface Props {
   symbols: string[];
@@ -40,6 +42,8 @@ interface Props {
   onResetPolicy: () => void;
   onApply: () => void;
   loading: boolean;
+  recommendationMode?: RecommendationMode;
+  onApplyMode?: (mode: RecommendationMode) => void;
 }
 
 /**
@@ -68,6 +72,8 @@ export function RiskCapsTab({
   onResetPolicy,
   onApply,
   loading,
+  recommendationMode,
+  onApplyMode,
 }: Props) {
   const sleevesTotal = botSleeve + manualSleeve;
   const sleevesOverflow = sleevesTotal > 0.5;
@@ -105,6 +111,64 @@ export function RiskCapsTab({
           <RotateCcw size={12} /> Reset to defaults
         </button>
       </header>
+
+      {onApplyMode && (
+        <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+          <div className="flex items-center justify-between border-b border-surface-border pb-3">
+            <div className="flex items-center gap-2">
+              <Gauge size={14} className="text-brand" />
+              <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+                Recommendation Mode
+              </h3>
+            </div>
+            <span className="text-[10px] text-ink-faint">
+              Один клик — пересобрать caps, aggregate rules, CVaR и sleeves.
+            </span>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(Object.keys(MODES) as RecommendationMode[]).map((m) => {
+              const cfg = MODES[m];
+              const active = recommendationMode === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    onApplyMode(m);
+                    onApply();
+                  }}
+                  className={`flex-1 min-w-[180px] rounded-xl border px-4 py-3 text-left transition ${
+                    active
+                      ? "border-brand bg-brand/10 shadow-glow"
+                      : "border-surface-border bg-white/[0.02] hover:border-brand/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`font-mono text-[10px] font-medium uppercase tracking-[0.22em] ${
+                        active ? "text-brand" : "text-ink-muted"
+                      }`}
+                    >
+                      {cfg.label}
+                    </span>
+                    {active && (
+                      <CheckCircle2 size={12} className="text-brand" />
+                    )}
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-ink-muted">
+                    {cfg.description}
+                  </p>
+                  <p className="mt-2 font-mono text-[10px] text-ink-faint">
+                    BTC≤{Math.round((cfg.riskCaps.BTCUSDT?.max ?? 1) * 100)}% ·
+                    CVaR {(cfg.cvarDefenseThreshold * 100).toFixed(1)}% ·
+                    sleeves {((cfg.botSleeve + cfg.manualSleeve) * 100).toFixed(0)}%
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
         <div className="flex items-center justify-between border-b border-surface-border pb-3">

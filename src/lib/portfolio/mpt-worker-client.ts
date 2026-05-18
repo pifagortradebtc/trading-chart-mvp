@@ -4,6 +4,7 @@ import type {
   StrategyResult,
   ViewInput,
 } from "./strategyTypes";
+import type { AssetDataQuality } from "./dataQuality";
 
 interface PendingJob {
   resolve: (value: unknown) => void;
@@ -21,10 +22,12 @@ export interface RunResult {
 export interface RunWithStrategiesResult {
   result: MPTResult;
   strategies: StrategyResult[];
+  dataQuality: AssetDataQuality[];
   durationMs: number;
 }
 export interface StrategiesOnlyResult {
   strategies: StrategyResult[];
+  dataQuality: AssetDataQuality[];
   durationMs: number;
 }
 
@@ -56,12 +59,14 @@ export class MPTWorkerClient {
             type: "resultWithStrategies";
             result: MPTResult;
             strategies: StrategyResult[];
+            dataQuality: AssetDataQuality[];
             durationMs: number;
           }
         | {
             id: number;
             type: "strategiesResult";
             strategies: StrategyResult[];
+            dataQuality: AssetDataQuality[];
             durationMs: number;
           }
         | { id: number; type: "error"; message: string };
@@ -119,6 +124,7 @@ export class MPTWorkerClient {
           resolve({
             result: d.result,
             strategies: d.strategies,
+            dataQuality: d.dataQuality,
             durationMs: d.durationMs,
           });
         },
@@ -145,7 +151,11 @@ export class MPTWorkerClient {
       this.pending.set(id, {
         resolve: (data) => {
           const d = data as StrategiesOnlyResult;
-          resolve({ strategies: d.strategies, durationMs: d.durationMs });
+          resolve({
+            strategies: d.strategies,
+            dataQuality: d.dataQuality,
+            durationMs: d.durationMs,
+          });
         },
         reject,
         expected: "strategiesResult",

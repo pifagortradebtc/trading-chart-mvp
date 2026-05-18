@@ -263,6 +263,9 @@ function ComparisonTable({
               <Th label="Max DD" tip={METRIC_TOOLTIPS.maxDrawdown} />
               <Th label="CVaR 95%" tip={METRIC_TOOLTIPS.cvar95} />
               <Th label="CVaR 99%" tip={METRIC_TOOLTIPS.cvar99} />
+              <Th label="Calmar" tip={METRIC_TOOLTIPS.calmar} />
+              <Th label="Ulcer" tip={METRIC_TOOLTIPS.ulcer} />
+              <Th label="β-BTC" tip={METRIC_TOOLTIPS["β-btc"]} />
               <Th label="BTC" tip={METRIC_TOOLTIPS.btc} />
               <Th label="ETH" tip={METRIC_TOOLTIPS.eth} />
               <Th label="Alts" tip={METRIC_TOOLTIPS.alts} />
@@ -308,6 +311,19 @@ function ComparisonTable({
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-rose-200">
                     {formatPercent(s.metrics.cvar99, 2)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-ink">
+                    {formatRatio(s.metrics.calmar, 2)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-ink">
+                    {Number.isFinite(s.metrics.ulcer)
+                      ? (s.metrics.ulcer * 100).toFixed(2) + "%"
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-ink-muted">
+                    {Number.isFinite(s.metrics.betaToBtc)
+                      ? s.metrics.betaToBtc.toFixed(2)
+                      : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-ink">
                     {btcIdx >= 0 ? fmt(s.weights[btcIdx]) : "—"}
@@ -388,6 +404,9 @@ function CopyCsvButton({
       "MaxDD",
       "CVaR95",
       "CVaR99",
+      "Calmar",
+      "Ulcer",
+      "BetaBTC",
       "BTC",
       "ETH",
       "Alts",
@@ -414,6 +433,9 @@ function CopyCsvButton({
       pctFix(s.metrics.maxDrawdown),
       pctFix(s.metrics.cvar95, 3),
       pctFix(s.metrics.cvar99, 3),
+      numFix(s.metrics.calmar, 2),
+      pctFix(s.metrics.ulcer, 2),
+      numFix(s.metrics.betaToBtc, 2),
       btcIdx >= 0 ? pctFix(s.weights[btcIdx], 1) : "",
       ethIdx >= 0 ? pctFix(s.weights[ethIdx], 1) : "",
       pctFix(altsW(s), 1),

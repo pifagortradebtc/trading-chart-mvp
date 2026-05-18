@@ -27,13 +27,18 @@ export function computeStrategyMetrics(
   const maxDD = maxDrawdown(dailyReturns);
   const cvar95 = conditionalValueAtRisk(dailyReturns, 0.95);
   const cvar99 = conditionalValueAtRisk(dailyReturns, 0.99);
+  const ulcer = ulcerIndex(dailyReturns);
 
   const btcIdx = priceSeries.findIndex(
     (p) => p.symbol === "BTCUSDT" || p.symbol === "BTCUSDC" || p.symbol === "BTC"
   );
-  const corrToBtc =
-    btcIdx >= 0
-      ? pearson(dailyReturns, logReturns(priceSeries[btcIdx].prices))
+  const btcDaily = btcIdx >= 0 ? logReturns(priceSeries[btcIdx].prices) : null;
+  const corrToBtc = btcDaily ? pearson(dailyReturns, btcDaily) : Number.NaN;
+  const betaToBtc = btcDaily ? linearRegressionBeta(dailyReturns, btcDaily) : Number.NaN;
+  // Calmar uses annualized return; reuse base.return which is already annualized.
+  const calmar =
+    Math.abs(maxDD) > 1e-9 && Number.isFinite(base.return)
+      ? base.return / Math.abs(maxDD)
       : Number.NaN;
 
   const n = weights.length;
@@ -54,7 +59,55 @@ export function computeStrategyMetrics(
     cvar99,
     corrToBtc,
     turnover,
+    calmar,
+    ulcer,
+    betaToBtc,
   };
+}
+
+/**
+ * Ulcer Index = sqrt( mean( drawdown_t² ) ) on the equity curve.
+ * Captures both depth and duration of drawdowns.
+ */
+export function ulcerIndex(dailyReturns: number[]): number {
+  if (dailyReturns.length === 0) return 0;
+  let equity = 1;
+  let peak = 1;
+  let sumSq = 0;
+  for (const r of dailyReturns) {
+    equity *= Math.exp(r);
+    if (equity > peak) peak = equity;
+    const dd = equity / peak - 1; // <= 0
+    sumSq += dd * dd;
+  }
+  return Math.sqrt(sumSq / dailyReturns.length);
+}
+
+/**
+ * Slope of OLS regression of `xs` (portfolio returns) on `ys` (BTC returns):
+ *   β = cov(xs, ys) / var(ys)
+ * Returns NaN if BTC variance is zero or arrays empty.
+ */
+export function linearRegressionBeta(xs: number[], ys: number[]): number {
+  const len = Math.min(xs.length, ys.length);
+  if (len < 2) return Number.NaN;
+  let mx = 0;
+  let my = 0;
+  for (let i = 0; i < len; i++) {
+    mx += xs[i];
+    my += ys[i];
+  }
+  mx /= len;
+  my /= len;
+  let cov = 0;
+  let vy = 0;
+  for (let i = 0; i < len; i++) {
+    const dx = xs[i] - mx;
+    const dy = ys[i] - my;
+    cov += dx * dy;
+    vy += dy * dy;
+  }
+  return vy > 0 ? cov / vy : Number.NaN;
 }
 
 /** Daily portfolio log-returns under static weights. */

@@ -1,5 +1,6 @@
 import type { PinnedPortfolio, Preset } from "./types";
 import type { AggregateRules, ViewInput } from "./strategyTypes";
+import type { RecommendationMode } from "./recommendationModes";
 
 const PRESETS_KEY = "mpt-simulator:presets/v1";
 const PINNED_KEY = "mpt-simulator:pinned/v1";
@@ -92,6 +93,10 @@ export interface PolicyState {
   manualSleeve: number;
   /** Which Portfolio sub-tab was open last — restored on next visit. */
   activeTab: string;
+  /** Last-applied recommendation preset (Conservative / Balanced / Aggressive). */
+  recommendationMode?: RecommendationMode;
+  /** User-entered current portfolio weights (0..1, keyed by symbol) for Rebalance Plan. */
+  currentWeights?: Record<string, number>;
 }
 
 /**

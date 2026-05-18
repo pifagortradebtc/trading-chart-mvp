@@ -1,13 +1,14 @@
 /// <reference lib="webworker" />
 
 import { runMPT } from "@/lib/portfolio/mpt";
-import { buildAllStrategies } from "@/lib/portfolio/strategies";
+import { buildStrategiesBundle } from "@/lib/portfolio/strategies";
 import type { MPTResult, PriceSeries, RunMPTOptions } from "@/lib/portfolio/types";
 import type {
   AggregateRules,
   StrategyResult,
   ViewInput,
 } from "@/lib/portfolio/strategyTypes";
+import type { AssetDataQuality } from "@/lib/portfolio/dataQuality";
 
 export type WorkerRequest =
   | { id: number; type: "run"; payload: RunMPTOptions }
@@ -44,12 +45,14 @@ export type WorkerResponse =
       type: "resultWithStrategies";
       result: MPTResult;
       strategies: StrategyResult[];
+      dataQuality: AssetDataQuality[];
       durationMs: number;
     }
   | {
       id: number;
       type: "strategiesResult";
       strategies: StrategyResult[];
+      dataQuality: AssetDataQuality[];
       durationMs: number;
     }
   | { id: number; type: "error"; message: string };
@@ -82,7 +85,7 @@ ctx.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         ...mptOpts
       } = event.data.payload;
       const result = runMPT(mptOpts);
-      const strategies = buildAllStrategies({
+      const bundle = buildStrategiesBundle({
         priceSeries: mptOpts.priceSeries,
         riskFreeRate: mptOpts.riskFreeRate,
         mptResult: result,
@@ -96,18 +99,20 @@ ctx.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         id,
         type: "resultWithStrategies",
         result,
-        strategies,
+        strategies: bundle.strategies,
+        dataQuality: bundle.dataQuality,
         durationMs: performance.now() - startedAt,
       } satisfies WorkerResponse);
       return;
     }
 
     if (type === "computeStrategies") {
-      const strategies = buildAllStrategies(event.data.payload);
+      const bundle = buildStrategiesBundle(event.data.payload);
       ctx.postMessage({
         id,
         type: "strategiesResult",
-        strategies,
+        strategies: bundle.strategies,
+        dataQuality: bundle.dataQuality,
         durationMs: performance.now() - startedAt,
       } satisfies WorkerResponse);
       return;

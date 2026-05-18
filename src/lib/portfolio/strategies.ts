@@ -8,6 +8,7 @@ import type {
 import { computeStrategyMetrics, portfolioDailyReturns, conditionalValueAtRisk } from "./strategyMetrics";
 import { marketCapWeightsWithLive } from "./marketCaps";
 import { applyRiskCaps } from "./riskCaps";
+import { assessDataQuality, type AssetDataQuality } from "./dataQuality";
 
 const TRADING_DAYS_PER_YEAR = 365;
 const SAMPLER_SEED = 8675309;
@@ -60,7 +61,16 @@ export interface BuildStrategiesArgs {
  * Builds all 9 strategy results. Pure function — no I/O, deterministic given
  * the inputs and an internal seed.
  */
+export interface StrategiesBundle {
+  strategies: StrategyResult[];
+  dataQuality: AssetDataQuality[];
+}
+
 export function buildAllStrategies(args: BuildStrategiesArgs): StrategyResult[] {
+  return buildStrategiesBundle(args).strategies;
+}
+
+export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBundle {
   const {
     priceSeries,
     riskFreeRate,
@@ -71,6 +81,7 @@ export function buildAllStrategies(args: BuildStrategiesArgs): StrategyResult[] 
     cvarDefenseThreshold = DEFAULT_CVAR_DEFENSE_THRESHOLD,
     liveMarketCaps,
   } = args;
+  const dataQuality = assessDataQuality(priceSeries);
   const symbols = priceSeries.map((p) => p.symbol);
   const n = symbols.length;
   const equalBaseline = new Array(n).fill(1 / n);
@@ -99,16 +110,17 @@ export function buildAllStrategies(args: BuildStrategiesArgs): StrategyResult[] 
   const bl = blackLittermanTilt(priceSeries, views, symbols, riskFreeRate, liveMarketCaps);
   const cv = cvarMinimizingPortfolio(priceSeries, mptResult);
 
-  // Final fund = BL → riskCaps → CVaR-defense bump
+  // Final fund = BL → riskCaps (incl. data-quality) → CVaR-defense bump
   const final = finalFundPortfolio(
     priceSeries,
     bl.weights,
     riskCaps,
     aggregateRules,
-    cvarDefenseThreshold
+    cvarDefenseThreshold,
+    dataQuality
   );
 
-  return [
+  const strategies: StrategyResult[] = [
     make(
       "marketCap",
       "Market Cap",
@@ -169,6 +181,7 @@ export function buildAllStrategies(args: BuildStrategiesArgs): StrategyResult[] 
       final.warning
     ),
   ];
+  return { strategies, dataQuality };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -359,13 +372,14 @@ export function finalFundPortfolio(
   blWeights: number[],
   riskCaps: Record<string, { min?: number; max?: number }>,
   aggregateRules: AggregateRules,
-  cvarDefenseThreshold: number = DEFAULT_CVAR_DEFENSE_THRESHOLD
+  cvarDefenseThreshold: number = DEFAULT_CVAR_DEFENSE_THRESHOLD,
+  dataQuality?: AssetDataQuality[]
 ): { weights: number[]; warning?: string } {
   const symbols = priceSeries.map((p) => p.symbol);
   const n = symbols.length;
   const CORE = new Set(["BTCUSDT", "ETHUSDT"]);
 
-  const step1 = applyRiskCaps(blWeights, symbols, riskCaps, aggregateRules);
+  const step1 = applyRiskCaps(blWeights, symbols, riskCaps, aggregateRules, dataQuality);
   let w = step1.weights;
   const violations = step1.violations.slice();
 
@@ -394,7 +408,7 @@ export function finalFundPortfolio(
       if (ethIdx >= 0) w[ethIdx] += shift * 0.4;
     }
     // Re-project to keep caps honored
-    const step2 = applyRiskCaps(w, symbols, riskCaps, aggregateRules);
+    const step2 = applyRiskCaps(w, symbols, riskCaps, aggregateRules, dataQuality);
     w = step2.weights;
     violations.push(...step2.violations);
   }

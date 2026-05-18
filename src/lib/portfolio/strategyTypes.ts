@@ -38,6 +38,12 @@ export interface StrategyMetrics {
   corrToBtc: number;
   /** L1 distance from equal-weight baseline (0..2). Proxy for "active share". */
   turnover: number;
+  /** Calmar = annualized return / |maxDrawdown|. NaN if maxDD == 0. */
+  calmar: number;
+  /** Ulcer Index = sqrt(mean(drawdown²)) — captures depth & duration. */
+  ulcer: number;
+  /** Linear-regression β of portfolio daily returns vs BTC. NaN if no BTC. */
+  betaToBtc: number;
 }
 
 export interface StrategyResult {
