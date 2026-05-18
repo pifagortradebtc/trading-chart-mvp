@@ -701,6 +701,7 @@ export function MPTSimulator() {
           <RecommendedTab
             strategy={finalStrategy}
             symbols={liveSymbols}
+            priceSeries={priceSeries}
             botSleeve={botSleeve}
             manualSleeve={manualSleeve}
             cvarDefenseThreshold={cvarDefenseThreshold}

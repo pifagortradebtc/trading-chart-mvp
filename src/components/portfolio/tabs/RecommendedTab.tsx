@@ -12,14 +12,18 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatPercent, prettySymbol } from "@/lib/portfolio/format";
+import { portfolioDailyReturns } from "@/lib/portfolio/strategyMetrics";
 import type { Data, Layout } from "plotly.js";
 import type { StrategyResult } from "@/lib/portfolio/strategyTypes";
+import type { PriceSeries } from "@/lib/portfolio/types";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 interface Props {
   strategy: StrategyResult | null;
   symbols: string[];
+  /** Aligned daily price series — used to build the historical equity curve. */
+  priceSeries?: PriceSeries[] | null;
   botSleeve?: number;
   manualSleeve?: number;
   /** Daily CVaR-95 trigger from the policy editor, e.g. -0.08. */
@@ -48,6 +52,7 @@ const SPOT_PALETTE = [
 export function RecommendedTab({
   strategy,
   symbols,
+  priceSeries,
   botSleeve = 0.05,
   manualSleeve = 0.05,
   cvarDefenseThreshold = -0.08,
@@ -125,6 +130,14 @@ export function RecommendedTab({
           rows={totalRows}
         />
       </section>
+
+      {priceSeries && priceSeries.length > 0 && (
+        <EquitySection
+          weights={strategy.weights}
+          priceSeries={priceSeries}
+          symbols={symbols}
+        />
+      )}
 
       <section className="rounded-2xl border border-brand/30 bg-surface p-6 backdrop-blur-xl shadow-glow">
         <div className="flex items-center gap-2">
@@ -271,6 +284,206 @@ function DonutChart({
       }}
     />
   );
+}
+
+/**
+ * Backtested equity curve under static rebalanced weights.
+ *   - "Final Fund" line (gold): equity_t = 100 · exp(Σ portfolio log-returns).
+ *   - "BTC-only" benchmark (muted): equity from BTC daily log-returns alone.
+ * Both start at 100 on day 0 of the aligned window so they're directly comparable.
+ */
+function EquitySection({
+  weights,
+  priceSeries,
+  symbols,
+}: {
+  weights: number[];
+  priceSeries: PriceSeries[];
+  symbols: string[];
+}) {
+  const { times, fundEquity, btcEquity, summary } = useMemo(() => {
+    const dailyR = portfolioDailyReturns(weights, priceSeries);
+    const ts = priceSeries[0]?.times ?? [];
+    const fundEq = cumulativeEquity(dailyR, 100);
+
+    const btcIdx = symbols.findIndex((s) => s === "BTCUSDT" || s === "BTCUSDC");
+    let btcEq: number[] | null = null;
+    if (btcIdx >= 0) {
+      const btcPrices = priceSeries[btcIdx].prices;
+      const btcR: number[] = [];
+      for (let i = 1; i < btcPrices.length; i++) {
+        btcR.push(Math.log(btcPrices[i] / btcPrices[i - 1]));
+      }
+      btcEq = cumulativeEquity(btcR, 100);
+    }
+
+    const last = fundEq[fundEq.length - 1] ?? 100;
+    const ret = (last - 100) / 100;
+    const dd = computeMaxDD(fundEq);
+
+    return {
+      times: ts,
+      fundEquity: fundEq,
+      btcEquity: btcEq,
+      summary: { totalReturn: ret, finalEquity: last, maxDD: dd, windowDays: dailyR.length },
+    };
+  }, [weights, priceSeries, symbols]);
+
+  if (fundEquity.length < 2) return null;
+
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Backtested equity curve
+          </h3>
+          <span className="font-mono text-[10px] text-ink-faint">
+            $100 → ${summary.finalEquity.toFixed(0)} · {summary.windowDays} дней
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-3 font-mono text-[11px]">
+          <Stat
+            label="Total"
+            value={`${summary.totalReturn >= 0 ? "+" : ""}${(summary.totalReturn * 100).toFixed(1)}%`}
+            tone={summary.totalReturn >= 0 ? "positive" : "negative"}
+          />
+          <Stat
+            label="Max DD"
+            value={`${(summary.maxDD * 100).toFixed(1)}%`}
+            tone="negative"
+          />
+        </div>
+      </header>
+      <div className="mt-3 h-[320px]">
+        <EquityChart times={times} fund={fundEquity} btc={btcEquity} />
+      </div>
+      <p className="mt-2 text-[11px] text-ink-faint">
+        Гипотетический исторический backtest при фиксированных весах
+        Final Fund Portfolio, без ребалансировки в течение окна. Прошлая
+        доходность не гарантирует будущую.
+      </p>
+    </section>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "positive" | "negative";
+}) {
+  const cls = tone === "positive" ? "text-emerald-300" : "text-rose-300";
+  return (
+    <span className="inline-flex items-center gap-2 rounded-md border border-surface-border bg-white/[0.04] px-2.5 py-1">
+      <span className="text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+        {label}
+      </span>
+      <span className={cls}>{value}</span>
+    </span>
+  );
+}
+
+function EquityChart({
+  times,
+  fund,
+  btc,
+}: {
+  times: number[];
+  fund: number[];
+  btc: number[] | null;
+}) {
+  // Align lengths defensively (cumulativeEquity adds 1 leading point).
+  const tsDates = times.slice(0, fund.length).map((t) => new Date(t));
+  const traces: Data[] = [
+    {
+      type: "scatter",
+      mode: "lines",
+      x: tsDates,
+      y: fund,
+      line: { color: "#c9a962", width: 2.5 },
+      name: "Final Fund",
+      hovertemplate: "%{x|%Y-%m-%d}<br>$%{y:.1f}<extra>Final Fund</extra>",
+    },
+  ];
+  if (btc && btc.length === fund.length) {
+    traces.push({
+      type: "scatter",
+      mode: "lines",
+      x: tsDates,
+      y: btc,
+      line: { color: "rgba(139,147,168,0.65)", width: 1.5, dash: "dot" },
+      name: "BTC-only",
+      hovertemplate: "%{x|%Y-%m-%d}<br>$%{y:.1f}<extra>BTC</extra>",
+    });
+  }
+  const layout: Partial<Layout> = {
+    autosize: true,
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: "#d4d4d8", family: "ui-sans-serif, system-ui" },
+    margin: { l: 50, r: 20, t: 10, b: 40 },
+    xaxis: {
+      gridcolor: "rgba(255,255,255,0.05)",
+      tickfont: { color: "#a1a1aa", size: 10 },
+    },
+    yaxis: {
+      gridcolor: "rgba(255,255,255,0.05)",
+      tickfont: { color: "#a1a1aa", size: 10 },
+      tickprefix: "$",
+    },
+    showlegend: true,
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: -0.18,
+      bgcolor: "rgba(0,0,0,0)",
+      font: { size: 10, color: "#a1a1aa" },
+    },
+    hoverlabel: {
+      bgcolor: "#0c121c",
+      bordercolor: "#c9a962",
+      font: { color: "#e8eaf0", size: 11 },
+    },
+  };
+  return (
+    <Plot
+      data={traces}
+      layout={layout}
+      useResizeHandler
+      style={{ width: "100%", height: "100%" }}
+      config={{
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d"],
+      }}
+    />
+  );
+}
+
+function cumulativeEquity(dailyLogReturns: number[], start: number): number[] {
+  const out = new Array<number>(dailyLogReturns.length + 1);
+  out[0] = start;
+  let acc = 0;
+  for (let i = 0; i < dailyLogReturns.length; i++) {
+    acc += dailyLogReturns[i];
+    out[i + 1] = start * Math.exp(acc);
+  }
+  return out;
+}
+
+function computeMaxDD(equity: number[]): number {
+  let peak = equity[0] ?? 1;
+  let worst = 0;
+  for (const e of equity) {
+    if (e > peak) peak = e;
+    const dd = e / peak - 1;
+    if (dd < worst) worst = dd;
+  }
+  return worst;
 }
 
 function CopyJsonButton({
