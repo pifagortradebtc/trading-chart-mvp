@@ -4,6 +4,7 @@ import { AlertTriangle, ClipboardCopy, Check, Layers, Sparkles } from "lucide-re
 import { useState } from "react";
 import { formatPercent, formatRatio, prettySymbol } from "@/lib/portfolio/format";
 import { METRIC_TOOLTIPS } from "@/lib/portfolio/metricGlossary";
+import { strategyTooltip } from "@/lib/portfolio/strategyGlossary";
 import type { StrategyResult } from "@/lib/portfolio/strategyTypes";
 
 interface Props {
@@ -100,6 +101,7 @@ function StrategyCard({
       onClick={onClick}
       onMouseEnter={() => onHover(strategy.id)}
       onMouseLeave={() => onHover(null)}
+      title={strategyTooltip(strategy.id)}
       className={`group relative rounded-2xl border bg-surface p-4 text-left backdrop-blur-xl shadow-card transition ${ring}`}
     >
       {isFinal && (
@@ -280,7 +282,7 @@ function ComparisonTable({
                     isActive ? "bg-brand/[0.06] outline outline-1 -outline-offset-1 outline-brand/30" : ""
                   } ${isFinal ? "bg-brand/[0.04]" : ""}`}
                 >
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5" title={strategyTooltip(s.id)}>
                     <div className="font-medium text-ink">{s.name}</div>
                     <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
                       {s.id}

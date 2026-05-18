@@ -167,6 +167,12 @@ export function MPTSimulator() {
     if (typeof stored.manualSleeve === "number" && Number.isFinite(stored.manualSleeve)) {
       setManualSleeve(stored.manualSleeve);
     }
+    if (
+      typeof stored.activeTab === "string" &&
+      TABS.some((t) => t.id === stored.activeTab)
+    ) {
+      setTab(stored.activeTab as TabId);
+    }
     setPolicyHydrated(true);
     // Live market caps (Фича 2) — silent best-effort
     fetchLiveMarketCaps().then((caps) => {
@@ -185,6 +191,7 @@ export function MPTSimulator() {
         cvarDefenseThreshold,
         botSleeve,
         manualSleeve,
+        activeTab: tab,
       });
     }, 300);
     return () => clearTimeout(handle);
@@ -196,6 +203,7 @@ export function MPTSimulator() {
     cvarDefenseThreshold,
     botSleeve,
     manualSleeve,
+    tab,
   ]);
 
   const handleResetPolicy = useCallback(() => {

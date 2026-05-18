@@ -10,6 +10,7 @@ import {
   runStressTest,
 } from "@/lib/portfolio/cvarStress";
 import { tailRiskContribution } from "@/lib/portfolio/strategyMetrics";
+import { strategyTooltip } from "@/lib/portfolio/strategyGlossary";
 import type { Data, Layout } from "plotly.js";
 import type {
   StrategyResult,
@@ -80,7 +81,10 @@ export function StressTestTab({
             ежедневные (среднее по худшим 5% и 1% дней).
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-ink-muted">
+        <label
+          className="flex items-center gap-2 text-xs text-ink-muted"
+          title={strategyTooltip(active.id)}
+        >
           Стратегия:
           <select
             value={active.id}
@@ -88,7 +92,12 @@ export function StressTestTab({
             className="rounded-md border border-surface-border bg-[rgba(8,12,20,0.6)] px-3 py-1.5 text-sm text-ink focus:border-brand/50 focus:outline-none"
           >
             {strategies.map((s) => (
-              <option key={s.id} value={s.id} className="bg-[var(--bg-deep)]">
+              <option
+                key={s.id}
+                value={s.id}
+                className="bg-[var(--bg-deep)]"
+                title={strategyTooltip(s.id)}
+              >
                 {s.name}
               </option>
             ))}

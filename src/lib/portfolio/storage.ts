@@ -90,6 +90,8 @@ export interface PolicyState {
   botSleeve: number;
   /** Manual book sleeve as a fraction of total AUM. */
   manualSleeve: number;
+  /** Which Portfolio sub-tab was open last — restored on next visit. */
+  activeTab: string;
 }
 
 /**
