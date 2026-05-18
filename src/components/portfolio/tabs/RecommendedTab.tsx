@@ -92,6 +92,8 @@ export function RecommendedTab({
 
   return (
     <div className="flex flex-col gap-5">
+      <PrintCoverPage strategy={strategy} symbols={symbols} />
+
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="eyebrow">fund pick</p>
@@ -283,6 +285,93 @@ function DonutChart({
         modeBarButtonsToRemove: ["lasso2d", "select2d"],
       }}
     />
+  );
+}
+
+/**
+ * Cover page shown only in print/PDF — превращает экспорт из «скриншот таба»
+ * в нормальный титульный отчёт фонда. Скрыт на экране через `hidden print:block`.
+ * `break-after: page` отделяет cover от основного содержимого.
+ */
+function PrintCoverPage({
+  strategy,
+  symbols,
+}: {
+  strategy: StrategyResult;
+  symbols: string[];
+}) {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+
+  const top3 = [...strategy.weights]
+    .map((w, i) => ({ symbol: symbols[i] ?? `#${i}`, weight: w }))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 3)
+    .map((r) => `${prettySymbol(r.symbol)} ${(r.weight * 100).toFixed(0)}%`)
+    .join(" · ");
+
+  return (
+    <section
+      className="hidden print:block print:break-after-page"
+      aria-hidden="true"
+    >
+      <div className="flex h-[28rem] flex-col items-start justify-between py-12">
+        <div>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[#8a6f2c] text-2xl font-semibold text-[#8a6f2c]">
+              π
+            </span>
+            <div>
+              <p className="font-display text-lg font-semibold tracking-tight text-black">
+                Pifagor Fund
+              </p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.25em] text-neutral-500">
+                Закрытый криптофонд
+              </p>
+            </div>
+          </div>
+
+          <h1 className="mt-16 font-display text-4xl font-semibold tracking-tight text-black">
+            Allocation Research Report
+          </h1>
+          <p className="mt-3 max-w-xl font-serif italic text-lg text-neutral-700">
+            Black-Litterman base, risk caps, CVaR-95 defense.
+          </p>
+        </div>
+
+        <div className="w-full border-t border-neutral-300 pt-6">
+          <div className="grid grid-cols-3 gap-6 text-sm">
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-neutral-500">
+                Дата
+              </p>
+              <p className="mt-1 font-medium text-neutral-800">{dateStr}</p>
+            </div>
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-neutral-500">
+                Модель
+              </p>
+              <p className="mt-1 font-medium text-neutral-800">{strategy.name}</p>
+            </div>
+            <div>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-neutral-500">
+                Ядро
+              </p>
+              <p className="mt-1 font-medium text-neutral-800">{top3}</p>
+            </div>
+          </div>
+          <p className="mt-6 text-[10px] leading-relaxed text-neutral-500">
+            Внутренний инструмент Pifagor Fund. Образовательная количественная
+            модель — не публичная финансовая рекомендация. Прошлая доходность
+            не гарантирует будущую.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
