@@ -9,6 +9,7 @@ import {
   formatRatio,
   prettySymbol,
 } from "@/lib/portfolio/format";
+import { METRIC_TOOLTIPS } from "@/lib/portfolio/metricGlossary";
 import type {
   MPTResult,
   PinnedPortfolio,
@@ -100,6 +101,7 @@ function StatsPanel({
         portfolio={result.maxSharpe}
         symbols={result.symbols}
         metric="sharpe"
+        tooltip={METRIC_TOOLTIPS.sharpe}
         onPin={() => onPin(result.maxSharpe, "max-sharpe")}
       />
       <KeyStat
@@ -108,6 +110,7 @@ function StatsPanel({
         portfolio={result.maxSortino}
         symbols={result.symbols}
         metric="sortino"
+        tooltip={METRIC_TOOLTIPS.sortino}
         onPin={() => onPin(result.maxSortino, "max-sortino")}
       />
       <KeyStat
@@ -116,6 +119,7 @@ function StatsPanel({
         portfolio={result.minVol}
         symbols={result.symbols}
         metric="vol"
+        tooltip={METRIC_TOOLTIPS.vol}
         onPin={() => onPin(result.minVol, "min-vol")}
       />
     </div>
@@ -128,6 +132,7 @@ function KeyStat({
   portfolio,
   symbols,
   metric,
+  tooltip,
   onPin,
 }: {
   title: string;
@@ -135,6 +140,7 @@ function KeyStat({
   portfolio: Portfolio;
   symbols: string[];
   metric: "sharpe" | "sortino" | "vol";
+  tooltip?: string;
   onPin: () => void;
 }) {
   const headline =
@@ -145,7 +151,10 @@ function KeyStat({
         : formatRatio(portfolio.volatility);
 
   return (
-    <div className="group relative rounded-xl border border-surface-border bg-gradient-to-br from-white/[0.04] to-transparent p-3 transition-colors hover:border-brand/30">
+    <div
+      className="group relative rounded-xl border border-surface-border bg-gradient-to-br from-white/[0.04] to-transparent p-3 transition-colors hover:border-brand/30"
+      title={tooltip}
+    >
       <div className="flex items-baseline justify-between">
         <span
           className={`font-mono text-[10px] font-medium uppercase tracking-[0.22em] ${color}`}

@@ -1,8 +1,9 @@
 "use client";
 
-import { AlertTriangle, Layers, Sparkles } from "lucide-react";
+import { AlertTriangle, ClipboardCopy, Check, Layers, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { formatPercent, formatRatio, prettySymbol } from "@/lib/portfolio/format";
+import { METRIC_TOOLTIPS } from "@/lib/portfolio/metricGlossary";
 import type { StrategyResult } from "@/lib/portfolio/strategyTypes";
 
 interface Props {
@@ -125,9 +126,23 @@ function StrategyCard({
       </p>
 
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-surface-border pt-3 text-[11px]">
-        <Mini label="Return" value={formatPercent(strategy.metrics.expectedReturn)} positive />
-        <Mini label="Vol" value={formatPercent(strategy.metrics.volatility)} />
-        <Mini label="Max DD" value={formatPercent(strategy.metrics.maxDrawdown)} negative />
+        <Mini
+          label="Return"
+          value={formatPercent(strategy.metrics.expectedReturn)}
+          positive
+          tooltip={METRIC_TOOLTIPS.return}
+        />
+        <Mini
+          label="Vol"
+          value={formatPercent(strategy.metrics.volatility)}
+          tooltip={METRIC_TOOLTIPS.vol}
+        />
+        <Mini
+          label="Max DD"
+          value={formatPercent(strategy.metrics.maxDrawdown)}
+          negative
+          tooltip={METRIC_TOOLTIPS.maxDrawdown}
+        />
       </div>
 
       <div className="mt-3 space-y-1">
@@ -166,11 +181,13 @@ function Mini({
   value,
   positive,
   negative,
+  tooltip,
 }: {
   label: string;
   value: string;
   positive?: boolean;
   negative?: boolean;
+  tooltip?: string;
 }) {
   const cls = positive
     ? "text-emerald-300"
@@ -178,7 +195,7 @@ function Mini({
       ? "text-rose-300"
       : "text-ink";
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col" title={tooltip}>
       <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
         {label}
       </span>
@@ -221,30 +238,33 @@ function ComparisonTable({
   };
   return (
     <section className="rounded-2xl border border-surface-border bg-surface backdrop-blur-xl shadow-card">
-      <header className="flex items-center justify-between border-b border-surface-border px-5 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-border px-5 py-3">
         <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
           Strategy comparison
         </h3>
-        <span className="text-[10px] text-ink-faint">
-          Кликните строку, чтобы выбрать стратегию для стресс-теста.
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-[10px] text-ink-faint sm:inline">
+            Кликните строку, чтобы выбрать стратегию для стресс-теста.
+          </span>
+          <CopyCsvButton strategies={strategies} symbols={symbols} btcIdx={btcIdx} ethIdx={ethIdx} />
+        </div>
       </header>
       <div className="overflow-auto">
         <table className="w-full text-xs">
           <thead className="bg-[var(--bg-deep)]/40 text-[10px] uppercase tracking-[0.18em] text-ink-faint">
             <tr className="border-b border-surface-border">
               <th className="px-4 py-2.5 text-left font-medium">Strategy</th>
-              <th className="px-3 py-2.5 text-right font-medium">Return</th>
-              <th className="px-3 py-2.5 text-right font-medium">Vol</th>
-              <th className="px-3 py-2.5 text-right font-medium">Sharpe</th>
-              <th className="px-3 py-2.5 text-right font-medium">Sortino</th>
-              <th className="px-3 py-2.5 text-right font-medium">Max DD</th>
-              <th className="px-3 py-2.5 text-right font-medium">CVaR 95%</th>
-              <th className="px-3 py-2.5 text-right font-medium">CVaR 99%</th>
-              <th className="px-3 py-2.5 text-right font-medium">BTC</th>
-              <th className="px-3 py-2.5 text-right font-medium">ETH</th>
-              <th className="px-3 py-2.5 text-right font-medium">Alts</th>
-              <th className="px-3 py-2.5 text-right font-medium">ρ BTC</th>
+              <Th label="Return" tip={METRIC_TOOLTIPS.return} />
+              <Th label="Vol" tip={METRIC_TOOLTIPS.vol} />
+              <Th label="Sharpe" tip={METRIC_TOOLTIPS.sharpe} />
+              <Th label="Sortino" tip={METRIC_TOOLTIPS.sortino} />
+              <Th label="Max DD" tip={METRIC_TOOLTIPS.maxDrawdown} />
+              <Th label="CVaR 95%" tip={METRIC_TOOLTIPS.cvar95} />
+              <Th label="CVaR 99%" tip={METRIC_TOOLTIPS.cvar99} />
+              <Th label="BTC" tip={METRIC_TOOLTIPS.btc} />
+              <Th label="ETH" tip={METRIC_TOOLTIPS.eth} />
+              <Th label="Alts" tip={METRIC_TOOLTIPS.alts} />
+              <Th label="ρ BTC" tip={METRIC_TOOLTIPS["ρ btc"]} />
               <th className="px-3 py-2.5 text-left font-medium">Note</th>
             </tr>
           </thead>
@@ -323,4 +343,123 @@ function topWeights(weights: number[], symbols: string[], k: number) {
     .map((w, i) => ({ weight: w, symbol: symbols[i] ?? `#${i}` }))
     .sort((a, b) => b.weight - a.weight)
     .slice(0, k);
+}
+
+function Th({ label, tip }: { label: string; tip?: string }) {
+  return (
+    <th
+      className="cursor-help px-3 py-2.5 text-right font-medium"
+      title={tip}
+    >
+      {label}
+    </th>
+  );
+}
+
+function CopyCsvButton({
+  strategies,
+  symbols,
+  btcIdx,
+  ethIdx,
+}: {
+  strategies: StrategyResult[];
+  symbols: string[];
+  btcIdx: number;
+  ethIdx: number;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const altsW = (s: StrategyResult) => {
+      let sum = 0;
+      for (let i = 0; i < symbols.length; i++) {
+        if (!MAJOR_SET.has(symbols[i])) sum += s.weights[i];
+      }
+      return sum;
+    };
+    const header = [
+      "Strategy",
+      "Return",
+      "Vol",
+      "Sharpe",
+      "Sortino",
+      "MaxDD",
+      "CVaR95",
+      "CVaR99",
+      "BTC",
+      "ETH",
+      "Alts",
+      "CorrBTC",
+      "Turnover",
+      "Note",
+    ];
+    const pctFix = (x: number, d = 2) =>
+      Number.isFinite(x) ? (x * 100).toFixed(d) : "";
+    const numFix = (x: number, d = 3) =>
+      Number.isFinite(x) ? x.toFixed(d) : "";
+    const escape = (s: string) => {
+      if (s == null) return "";
+      const needs = /[",\n]/.test(s);
+      const esc = s.replace(/"/g, '""');
+      return needs ? `"${esc}"` : esc;
+    };
+    const rows = strategies.map((s) => [
+      s.name,
+      pctFix(s.metrics.expectedReturn),
+      pctFix(s.metrics.volatility),
+      numFix(s.metrics.sharpe),
+      numFix(s.metrics.sortino),
+      pctFix(s.metrics.maxDrawdown),
+      pctFix(s.metrics.cvar95, 3),
+      pctFix(s.metrics.cvar99, 3),
+      btcIdx >= 0 ? pctFix(s.weights[btcIdx], 1) : "",
+      ethIdx >= 0 ? pctFix(s.weights[ethIdx], 1) : "",
+      pctFix(altsW(s), 1),
+      numFix(s.metrics.corrToBtc, 2),
+      numFix(s.metrics.turnover, 2),
+      escape(s.warning ?? s.comment),
+    ]);
+    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(csv);
+      } else {
+        // Legacy fallback
+        const ta = document.createElement("textarea");
+        ta.value = csv;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-white/[0.04] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink"
+      title="Скопировать таблицу в CSV — готово для вставки в Excel/презентацию"
+    >
+      {copied ? (
+        <>
+          <Check size={11} className="text-emerald-300" />
+          <span className="text-emerald-200">Copied</span>
+        </>
+      ) : (
+        <>
+          <ClipboardCopy size={11} />
+          <span>Copy CSV</span>
+        </>
+      )}
+    </button>
+  );
 }
