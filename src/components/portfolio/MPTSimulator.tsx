@@ -643,6 +643,8 @@ export function MPTSimulator() {
 
         <TabSwitcher tab={tab} setTab={setTab} />
 
+        {loading && !result && <FirstRunSkeleton />}
+
         {tab === "sim" && (
           <SimulationTab
             loading={busy}
@@ -868,4 +870,40 @@ function customNameFromAllocation(
   return top
     .map((a) => `${prettySymbol(a.symbol)} ${(a.weight * 100).toFixed(0)}%`)
     .join(" · ");
+}
+
+/**
+ * First-load skeleton — показывается под TabSwitcher пока идёт первый расчёт
+ * и `result` ещё `null`. Лучше пустых блоков и текста «ещё не рассчитано».
+ * Использует пульсацию tailwind `animate-pulse` + матовые золотые тона.
+ */
+function FirstRunSkeleton() {
+  return (
+    <div className="flex flex-col gap-5" aria-busy="true" aria-live="polite">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_460px]">
+        <SkelBlock className="h-[560px]" />
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <SkelBlock className="h-[120px]" />
+            <SkelBlock className="h-[120px]" />
+            <SkelBlock className="h-[120px]" />
+          </div>
+          <SkelBlock className="h-[300px]" />
+        </div>
+      </div>
+      <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+        Загружаем дневные closes и считаем 9 моделей…
+      </p>
+    </div>
+  );
+}
+
+function SkelBlock({ className }: { className?: string }) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl border border-surface-border bg-surface ${className ?? ""}`}
+    >
+      <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-brand/[0.04] to-transparent" />
+    </div>
+  );
 }

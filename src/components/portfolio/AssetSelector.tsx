@@ -28,6 +28,25 @@ const QUICK_PICKS = [
   "LTCUSDT",
 ];
 
+/** Plain-language one-liners для quick-pick chip'ов. Показываются по hover (title=). */
+const ASSET_BLURBS: Record<string, string> = {
+  BTCUSDT: "Bitcoin — цифровое золото, монетарный примитив крипты.",
+  ETHUSDT: "Ethereum — крупнейшая smart-contract платформа, базовый L1 для DeFi/NFT.",
+  SOLUSDT: "Solana — высокопроизводительный L1, быстрые транзакции, high-throughput ниша.",
+  BNBUSDT: "BNB — exchange-token Binance + смешанная инфраструктура BSC.",
+  HYPEUSDT: "Hyperliquid — perp DEX с собственным L1, high-risk alpha asset.",
+  TONUSDT: "The Open Network — экосистема Telegram, theme-bet на мессенджер-распространение.",
+  OKBUSDT: "OKB — exchange-token OKX; повышенный регуляторный риск.",
+  XRPUSDT: "XRP — токен расчётов Ripple, фокус на межбанковских платежах.",
+  ADAUSDT: "Cardano — академический L1 с акцентом на формальную верификацию.",
+  DOGEUSDT: "Dogecoin — мем-альт с большой ликвидностью и культурным следом.",
+  AVAXUSDT: "Avalanche — субнет-архитектура, EVM-совместимый L1.",
+  LINKUSDT: "Chainlink — крупнейший oracle-провайдер для смарт-контрактов.",
+  DOTUSDT: "Polkadot — параchain-архитектура, межцепочечное взаимодействие.",
+  ATOMUSDT: "Cosmos — IBC-экосистема, app-chain парадигма.",
+  LTCUSDT: "Litecoin — silver to bitcoin gold, проверенный временем proof-of-work.",
+};
+
 export function AssetSelector({ value, onChange, disabled }: Props) {
   const [input, setInput] = useState("");
 
@@ -103,6 +122,7 @@ export function AssetSelector({ value, onChange, disabled }: Props) {
               type="button"
               onClick={() => add(s)}
               disabled={disabled}
+              title={ASSET_BLURBS[s]}
               className="rounded-full border border-surface-border bg-white/[0.02] px-2.5 py-0.5 text-xs text-ink-muted transition hover:border-brand/40 hover:text-ink disabled:opacity-40"
             >
               {prettySymbol(s)}

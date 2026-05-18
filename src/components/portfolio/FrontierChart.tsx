@@ -69,9 +69,9 @@ export function FrontierChart({
     };
 
     const keyTraces: Data[] = [
-      markerTrace([result.minVol], "Min Volatility", "#38bdf8"),
-      markerTrace([result.maxSharpe], "Max Sharpe", "#4ade80"),
-      markerTrace([result.maxSortino], "Max Sortino", "#a78bfa"),
+      markerTrace([result.minVol], "Min Volatility", "#38bdf8", "Min Vol"),
+      markerTrace([result.maxSharpe], "Max Sharpe", "#4ade80", "Max Sharpe"),
+      markerTrace([result.maxSortino], "Max Sortino", "#a78bfa", "Max Sortino"),
     ];
 
     const pinTraces: Data[] = pinned.length
@@ -154,12 +154,20 @@ export function FrontierChart({
   );
 }
 
-function markerTrace(portfolios: Portfolio[], name: string, color: string): Data {
+function markerTrace(
+  portfolios: Portfolio[],
+  name: string,
+  color: string,
+  label?: string
+): Data {
   return {
     type: "scatter",
-    mode: "markers",
+    mode: label ? "text+markers" : "markers",
     x: portfolios.map((p) => p.volatility),
     y: portfolios.map((p) => p.return),
+    text: label ? portfolios.map(() => label) : undefined,
+    textposition: "top center",
+    textfont: { color, size: 10, family: "ui-monospace, monospace" },
     marker: {
       size: 13,
       color,
