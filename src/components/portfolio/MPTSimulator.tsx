@@ -182,7 +182,17 @@ export function MPTSimulator() {
       setRecommendationMode(stored.recommendationMode);
     }
     if (stored.currentWeights) {
-      setCurrentWeights(stored.currentWeights);
+      // Sanity-filter: drop any ticker the user no longer holds in `assets`.
+      // Without this, switching baskets leaves stale BUY/SELL rows for tickers
+      // that aren't even in the table — "ghost data" from a previous session.
+      const allowed = new Set(DEFAULT_ASSETS);
+      const cleaned: Record<string, number> = {};
+      for (const [sym, w] of Object.entries(stored.currentWeights)) {
+        if (allowed.has(sym) && typeof w === "number" && Number.isFinite(w)) {
+          cleaned[sym] = Math.max(0, Math.min(1, w));
+        }
+      }
+      setCurrentWeights(cleaned);
     }
     setPolicyHydrated(true);
     // Live market caps (Фича 2) — silent best-effort
@@ -253,6 +263,17 @@ export function MPTSimulator() {
       const existing = new Map(prev.map((v) => [v.symbol, v]));
       const defaults = defaultViewsForSymbols(assets);
       return defaults.map((d) => existing.get(d.symbol) ?? d);
+    });
+    // Drop currentWeights entries for symbols that left the basket.
+    setCurrentWeights((prev) => {
+      const allowed = new Set(assets);
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [sym, w] of Object.entries(prev)) {
+        if (allowed.has(sym)) next[sym] = w;
+        else changed = true;
+      }
+      return changed ? next : prev;
     });
   }, [assets]);
 
@@ -525,7 +546,7 @@ export function MPTSimulator() {
                 </span>
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[15px]">
-                Симуляция оптимального распределения долей капитала фонда. 9 моделей
+                Симуляция оптимального распределения долей капитала фонда. 11 моделей
                 построения, risk caps, Black-Litterman views, CVaR stress test и
                 рекомендованный портфель — всё в Web Worker.
               </p>
@@ -931,7 +952,7 @@ function FirstRunSkeleton() {
         </div>
       </div>
       <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
-        Загружаем дневные closes и считаем 9 моделей…
+        Загружаем дневные closes и считаем 11 моделей…
       </p>
     </div>
   );

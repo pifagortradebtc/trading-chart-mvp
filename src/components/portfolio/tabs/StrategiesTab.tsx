@@ -35,14 +35,14 @@ export function StrategiesTab({ strategies, symbols, activeId, onSelect }: Props
     <div className="flex flex-col gap-5">
       <header className="flex items-center justify-between">
         <div>
-          <p className="eyebrow">9 моделей · одно семейство</p>
+          <p className="eyebrow">11 моделей · одно семейство</p>
           <h2 className="mt-2 font-display text-2xl font-semibold tracking-display-tight text-ink">
             Стратегии <span className="accent-serif text-brand-light">построения</span> портфеля
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-            Девять параллельных моделей — от пассивного market-cap до финальной
-            рекомендации с risk caps и CVaR-защитой. Все считаются на одном
-            историческом окне и сравнимы напрямую.
+            Одиннадцать параллельных моделей — от пассивного market-cap до
+            финальной рекомендации с risk caps и CVaR-защитой. Все считаются
+            на одном историческом окне и сравнимы напрямую.
           </p>
         </div>
         <span className="hidden items-center gap-2 rounded-full border border-surface-border bg-white/[0.03] px-3 py-1.5 text-[11px] font-mono uppercase tracking-[0.18em] text-ink-muted sm:inline-flex">

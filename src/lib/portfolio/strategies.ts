@@ -9,6 +9,7 @@ import { computeStrategyMetrics, portfolioDailyReturns, conditionalValueAtRisk }
 import { marketCapWeightsWithLive } from "./marketCaps";
 import { applyRiskCaps } from "./riskCaps";
 import { assessDataQuality, type AssetDataQuality } from "./dataQuality";
+import { hrpWeights, maxDiversificationWeights } from "./hrp";
 
 const TRADING_DAYS_PER_YEAR = 365;
 const SAMPLER_SEED = 8675309;
@@ -109,6 +110,8 @@ export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBund
   const rp = inverseVolRiskParity(priceSeries);
   const bl = blackLittermanTilt(priceSeries, views, symbols, riskFreeRate, liveMarketCaps);
   const cv = cvarMinimizingPortfolio(priceSeries, mptResult);
+  const hrp = hrpWeights(priceSeries);
+  const md = maxDiversificationWeights(priceSeries);
 
   // Final fund = BL → riskCaps (incl. data-quality) → CVaR-defense bump
   const final = finalFundPortfolio(
@@ -172,6 +175,20 @@ export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBund
       "Минимизация CVaR-95: лучший среди 5k семплов по среднему худших 5%.",
       cv.weights,
       cv.warning
+    ),
+    make(
+      "hrp",
+      "HRP",
+      "Hierarchical Risk Parity (López de Prado): кластеризация по корреляции + recursive bisection бюджета.",
+      hrp.weights,
+      hrp.warning
+    ),
+    make(
+      "maxDiv",
+      "Max Diversification",
+      "Choueifaty & Coignard: максимизируем DR(w) = Σ wᵢσᵢ / √(w'Σw) — диверсификационный коэффициент.",
+      md.weights,
+      md.warning
     ),
     make(
       "finalFund",

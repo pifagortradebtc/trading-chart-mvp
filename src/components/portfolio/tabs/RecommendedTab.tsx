@@ -3,12 +3,15 @@
 import dynamic from "next/dynamic";
 import {
   ArrowRight,
+  ArrowRightLeft,
   Check,
   ClipboardCopy,
   Crown,
   Layers2,
+  Network,
   Printer,
   ShieldCheck,
+  Workflow,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatPercent, prettySymbol } from "@/lib/portfolio/format";
@@ -18,6 +21,9 @@ import type { StrategyResult } from "@/lib/portfolio/strategyTypes";
 import type { PriceSeries } from "@/lib/portfolio/types";
 import type { AssetDataQuality } from "@/lib/portfolio/dataQuality";
 import { computeConfidence } from "@/lib/portfolio/confidence";
+import { aggregateByCluster, type ClusterExposure } from "@/lib/portfolio/clusters";
+import { buildRotationSuggestions, type RotationSuggestion } from "@/lib/portfolio/rotation";
+import { computeModelContributions, type ModelContribution } from "@/lib/portfolio/modelContribution";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -97,6 +103,35 @@ export function RecommendedTab({
     });
   }, [strategy, dataQuality, allStrategies, windowDays, symbols]);
 
+  const clusterExposures = useMemo<ClusterExposure[]>(
+    () => (strategy ? aggregateByCluster(strategy.weights, symbols) : []),
+    [strategy, symbols]
+  );
+
+  const rotationSuggestions = useMemo<RotationSuggestion[]>(
+    () =>
+      strategy
+        ? buildRotationSuggestions({
+            weights: strategy.weights,
+            symbols,
+            dataQuality: dataQuality ?? null,
+          })
+        : [],
+    [strategy, symbols, dataQuality]
+  );
+
+  const modelContributions = useMemo<ModelContribution[]>(
+    () =>
+      strategy && allStrategies
+        ? computeModelContributions({
+            finalWeights: strategy.weights,
+            allStrategies,
+            symbols,
+          })
+        : [],
+    [strategy, allStrategies, symbols]
+  );
+
   const spotScale = Math.max(0, 1 - botSleeve - manualSleeve);
   const totalRows = useMemo(() => {
     const rows = spotRows.map((r) => ({
@@ -146,7 +181,11 @@ export function RecommendedTab({
         </div>
       </header>
 
-      {confidence && <ConfidenceBadge breakdown={confidence} />}
+      {confidence ? (
+        <ConfidenceBadge breakdown={confidence} />
+      ) : (
+        <ConfidencePlaceholder />
+      )}
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <AllocationCard
@@ -162,6 +201,10 @@ export function RecommendedTab({
         />
       </section>
 
+      {clusterExposures.length > 0 && (
+        <ClusterExposureCard exposures={clusterExposures} />
+      )}
+
       {strategy && onCurrentWeightsChange && (
         <RebalancePlan
           strategy={strategy}
@@ -170,6 +213,14 @@ export function RecommendedTab({
           currentWeights={currentWeights ?? {}}
           onCurrentWeightsChange={onCurrentWeightsChange}
         />
+      )}
+
+      {rotationSuggestions.length > 0 && (
+        <RotationSuggestionsCard suggestions={rotationSuggestions} />
+      )}
+
+      {modelContributions.length > 0 && (
+        <ModelContributionCard contributions={modelContributions} />
       )}
 
       {priceSeries && priceSeries.length > 0 && (
@@ -741,6 +792,41 @@ function Reason({
 }
 
 /**
+ * Cold-start stub for Confidence: shown when persisted activeTab=recommended
+ * brings the user here before the first worker round-trip completes. Lighter
+ * border, dashed bar — visually distinct from the "real" badge so the user
+ * doesn't read it as a finished verdict.
+ */
+function ConfidencePlaceholder() {
+  return (
+    <div className="rounded-2xl border border-dashed border-surface-border bg-surface/60 p-5 backdrop-blur-xl">
+      <div className="flex flex-wrap items-center gap-5">
+        <div className="flex items-baseline gap-3">
+          <span className="font-display text-4xl font-semibold leading-none text-ink-faint">
+            —
+          </span>
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+              Confidence
+            </p>
+            <p className="font-display text-lg font-semibold text-ink-muted">
+              Awaiting calculation
+            </p>
+          </div>
+        </div>
+        <div className="min-w-[180px] flex-1">
+          <div className="h-1.5 w-full overflow-hidden rounded-full border border-dashed border-surface-border bg-transparent" />
+          <p className="mt-2 text-[11px] leading-snug text-ink-muted">
+            Бэйдж появится после первого расчёта — Confidence требует
+            data quality, метрик финального портфеля и согласия моделей.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Compact confidence card: large gold number, level label, gradient progress bar,
  * collapsible breakdown of factors. Score is a heuristic triage signal — see
  * computeConfidence() docstring.
@@ -1054,6 +1140,272 @@ function RebalancePlan({
         для крупных ребалансировок добавьте 20-40bps буфера и разделите
         исполнение на несколько частей.
       </p>
+    </section>
+  );
+}
+
+/**
+ * Stacked horizontal bar showing fund exposure across taxonomy clusters
+ * (Core / Infra / High-beta L1 / Exchange / Alpha / Meme / Other). Empty
+ * clusters are hidden — the bar only shows what's actually allocated.
+ *
+ * Each row below the bar lists cluster weight, soft-ceiling, and members.
+ */
+function ClusterExposureCard({ exposures }: { exposures: ClusterExposure[] }) {
+  const visible = exposures.filter((e) => e.weight > 0.001);
+  if (visible.length === 0) return null;
+  const total = visible.reduce((s, e) => s + e.weight, 0);
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex items-center justify-between border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Network size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Cluster exposure
+          </h3>
+        </div>
+        <span className="font-mono text-[10px] text-ink-faint">
+          Таксономия фонда · soft-ceilings advisory
+        </span>
+      </header>
+
+      <div
+        className="mt-4 flex h-3 w-full overflow-hidden rounded-full border border-surface-border bg-white/[0.03]"
+        role="img"
+        aria-label="Распределение по кластерам"
+      >
+        {visible.map((e) => (
+          <span
+            key={e.cluster.id}
+            title={`${e.cluster.label}: ${(e.weight * 100).toFixed(1)}% (soft-ceiling ${(e.cluster.softCeiling * 100).toFixed(0)}%)`}
+            style={{
+              width: `${(e.weight / total) * 100}%`,
+              backgroundColor: e.cluster.color,
+            }}
+          />
+        ))}
+      </div>
+
+      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+        {visible.map((e) => {
+          const overshoot = e.overshoot > 0.005;
+          return (
+            <li
+              key={e.cluster.id}
+              className={`rounded-xl border bg-white/[0.02] px-3 py-2 ${
+                overshoot ? "border-amber-500/30" : "border-surface-border"
+              }`}
+              title={e.cluster.description}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: e.cluster.color }}
+                  />
+                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted">
+                    {e.cluster.label}
+                  </span>
+                </div>
+                <span className="font-mono text-xs text-ink">
+                  {(e.weight * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[10px] text-ink-faint">
+                <span>
+                  soft-ceiling {(e.cluster.softCeiling * 100).toFixed(0)}%
+                  {overshoot && (
+                    <span className="ml-2 text-amber-300">
+                      +{(e.overshoot * 100).toFixed(1)}pp
+                    </span>
+                  )}
+                </span>
+                <span className="truncate text-right">
+                  {e.members
+                    .slice(0, 3)
+                    .map((m) => prettySymbol(m.symbol))
+                    .join(" · ") || "—"}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Strategic-level rotation tickets layered on top of Rebalance Plan.
+ * Each row is "Trim X by N%, route into Y" with priority + driving rule.
+ */
+function RotationSuggestionsCard({
+  suggestions,
+}: {
+  suggestions: RotationSuggestion[];
+}) {
+  const sourceLabel: Record<RotationSuggestion["source"], string> = {
+    "data-quality": "Data quality",
+    "cluster-overshoot": "Cluster",
+    "core-deficit": "Core deficit",
+  };
+  const sourceTone: Record<RotationSuggestion["source"], string> = {
+    "data-quality": "text-rose-300",
+    "cluster-overshoot": "text-amber-200",
+    "core-deficit": "text-brand-light",
+  };
+  const priorityTone: Record<RotationSuggestion["priority"], string> = {
+    High: "text-rose-200",
+    Medium: "text-amber-200",
+    Low: "text-ink-faint",
+  };
+
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <ArrowRightLeft size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Rotation suggestions
+          </h3>
+        </div>
+        <span className="font-mono text-[10px] text-ink-faint">
+          {suggestions.length} тикет{suggestions.length === 1 ? "" : suggestions.length < 5 ? "а" : "ов"} ·
+          Data-quality + кластерные потолки + core floor
+        </span>
+      </header>
+
+      <div className="overflow-auto">
+        <table className="mt-3 w-full text-xs">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+            <tr className="border-b border-surface-border">
+              <th className="px-2 py-2 text-left font-medium">Trim from</th>
+              <th className="px-2 py-2 text-left font-medium">Add to</th>
+              <th className="px-2 py-2 text-right font-medium">Δ</th>
+              <th className="px-2 py-2 text-left font-medium">Reason</th>
+              <th className="px-2 py-2 text-left font-medium">Driver</th>
+              <th className="px-2 py-2 text-left font-medium">Priority</th>
+            </tr>
+          </thead>
+          <tbody>
+            {suggestions.map((s, i) => (
+              <tr key={i} className="border-b border-surface-border/60">
+                <td className="px-2 py-2 font-mono text-rose-200">
+                  −{(s.trim.reduceBy * 100).toFixed(1)}% {prettySymbol(s.trim.symbol)}
+                </td>
+                <td className="px-2 py-2 font-mono text-emerald-300">
+                  +{(s.add.addBy * 100).toFixed(1)}% {prettySymbol(s.add.symbol)}
+                </td>
+                <td className="px-2 py-2 text-right font-mono text-ink">
+                  {(s.trim.reduceBy * 100).toFixed(1)}pp
+                </td>
+                <td className="px-2 py-2 text-[11px] text-ink-muted">{s.reason}</td>
+                <td className={`px-2 py-2 font-mono text-[10px] uppercase tracking-[0.18em] ${sourceTone[s.source]}`}>
+                  {sourceLabel[s.source]}
+                </td>
+                <td className={`px-2 py-2 font-mono text-[11px] ${priorityTone[s.priority]}`}>
+                  {s.priority}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="fund-disclaimer mt-3">
+        Эвристические тикеты, не результат оптимизации. Каждый — независимая
+        переброска веса; применять последовательно с пересчётом метрик.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * "Which models drove the final allocation."
+ *   - Influence bar: 1 − L1(model, final)/2, normalized to 0..100%.
+ *   - Top effects: three assets where this model voted hardest vs final.
+ *     Positive delta = model pushed for *more* of this asset.
+ */
+function ModelContributionCard({
+  contributions,
+}: {
+  contributions: ModelContribution[];
+}) {
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Workflow size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Model contribution
+          </h3>
+        </div>
+        <span className="font-mono text-[10px] text-ink-faint">
+          Influence = 1 − L1(model, final)/2 · ближе к 100% значит модель ближе к итогу
+        </span>
+      </header>
+
+      <div className="overflow-auto">
+        <table className="mt-3 w-full text-xs">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+            <tr className="border-b border-surface-border">
+              <th className="px-2 py-2 text-left font-medium">Model</th>
+              <th className="px-2 py-2 text-left font-medium">Influence</th>
+              <th className="px-2 py-2 text-left font-medium">Top effects vs final</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contributions.map((c) => (
+              <tr key={c.modelId} className="border-b border-surface-border/60">
+                <td className="px-2 py-2">
+                  <div className="font-medium text-ink">{c.modelName}</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+                    {c.modelId}
+                  </div>
+                </td>
+                <td className="px-2 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-brand to-brand-light"
+                        style={{ width: `${(c.influence * 100).toFixed(1)}%` }}
+                      />
+                    </div>
+                    <span className="font-mono text-[11px] text-ink">
+                      {(c.influence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                </td>
+                <td className="px-2 py-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.topEffects.map((e) => {
+                      const sign = e.delta >= 0 ? "+" : "−";
+                      const tone =
+                        Math.abs(e.delta) < 0.005
+                          ? "text-ink-faint"
+                          : e.delta > 0
+                            ? "text-emerald-300"
+                            : "text-rose-300";
+                      return (
+                        <span
+                          key={e.symbol}
+                          className={`inline-flex items-center gap-1 rounded-md border border-surface-border bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] ${tone}`}
+                        >
+                          {prettySymbol(e.symbol)}
+                          <span>
+                            {sign}
+                            {(Math.abs(e.delta) * 100).toFixed(1)}%
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
