@@ -7,10 +7,14 @@ import {
   Check,
   ClipboardCopy,
   Crown,
+  Eye,
+  Gauge,
   Layers2,
   Network,
   Printer,
+  ScrollText,
   ShieldCheck,
+  Timer,
   Workflow,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -24,6 +28,11 @@ import { computeConfidence } from "@/lib/portfolio/confidence";
 import { aggregateByCluster, type ClusterExposure } from "@/lib/portfolio/clusters";
 import { buildRotationSuggestions, type RotationSuggestion } from "@/lib/portfolio/rotation";
 import { computeModelContributions, type ModelContribution } from "@/lib/portfolio/modelContribution";
+import { buildWatchlist, type WatchlistEntry } from "@/lib/portfolio/watchlist";
+import { buildWhyNarrative, type WhyParagraph } from "@/lib/portfolio/whyTheseWeights";
+import { buildVolTargetAdvisory, type VolTargetAdvisory } from "@/lib/portfolio/volTarget";
+import { walkForwardHRPEquity, type WalkForwardResult } from "@/lib/portfolio/walkForward";
+import type { ViewInput } from "@/lib/portfolio/strategyTypes";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -38,13 +47,15 @@ interface Props {
   cvarDefenseThreshold?: number;
   /** Per-asset data-quality assessment from the worker — drives confidence + rebalance reasons. */
   dataQuality?: AssetDataQuality[] | null;
-  /** All 9 strategies — used by the confidence "model agreement" factor. */
+  /** All strategies — used by confidence "model agreement" + Why narrative. */
   allStrategies?: StrategyResult[] | null;
   /** Backtest window length in days. */
   windowDays?: number;
   /** Current portfolio weights entered by the operator (0..1 per symbol). */
   currentWeights?: Record<string, number>;
   onCurrentWeightsChange?: (next: Record<string, number>) => void;
+  /** Active Black-Litterman views — needed for the Why narrative. */
+  views?: ViewInput[];
 }
 
 const SPOT_PALETTE = [
@@ -78,6 +89,7 @@ export function RecommendedTab({
   windowDays,
   currentWeights,
   onCurrentWeightsChange,
+  views,
 }: Props) {
   const sleeveTotalPct = ((botSleeve + manualSleeve) * 100).toFixed(0);
   const cvarPct = (cvarDefenseThreshold * 100).toFixed(1);
@@ -131,6 +143,48 @@ export function RecommendedTab({
         : [],
     [strategy, allStrategies, symbols]
   );
+
+  const watchlist = useMemo<WatchlistEntry[]>(
+    () =>
+      strategy
+        ? buildWatchlist({
+            weights: strategy.weights,
+            symbols,
+            dataQuality: dataQuality ?? null,
+          })
+        : [],
+    [strategy, symbols, dataQuality]
+  );
+
+  const volTargetAdvisory = useMemo<VolTargetAdvisory | null>(
+    () => (strategy ? buildVolTargetAdvisory(strategy.metrics.volatility) : null),
+    [strategy]
+  );
+
+  const whyNarrative = useMemo<WhyParagraph[]>(() => {
+    if (!strategy || !allStrategies || !dataQuality) return [];
+    return buildWhyNarrative({
+      finalStrategy: strategy,
+      allStrategies,
+      symbols,
+      dataQuality,
+      views: views ?? [],
+      cvarDefenseThreshold: cvarDefenseThreshold ?? -0.08,
+      windowDays: windowDays ?? 0,
+      clusterExposures,
+      confidence,
+    });
+  }, [
+    strategy,
+    allStrategies,
+    symbols,
+    dataQuality,
+    views,
+    cvarDefenseThreshold,
+    windowDays,
+    clusterExposures,
+    confidence,
+  ]);
 
   const spotScale = Math.max(0, 1 - botSleeve - manualSleeve);
   const totalRows = useMemo(() => {
@@ -187,6 +241,10 @@ export function RecommendedTab({
         <ConfidencePlaceholder />
       )}
 
+      {volTargetAdvisory && <VolTargetCard advisory={volTargetAdvisory} />}
+
+      {whyNarrative.length > 0 && <WhyNarrativeCard paragraphs={whyNarrative} />}
+
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <AllocationCard
           title="Spot allocation"
@@ -219,6 +277,8 @@ export function RecommendedTab({
         <RotationSuggestionsCard suggestions={rotationSuggestions} />
       )}
 
+      {watchlist.length > 0 && <WatchlistCard entries={watchlist} />}
+
       {modelContributions.length > 0 && (
         <ModelContributionCard contributions={modelContributions} />
       )}
@@ -229,6 +289,10 @@ export function RecommendedTab({
           priceSeries={priceSeries}
           symbols={symbols}
         />
+      )}
+
+      {priceSeries && priceSeries.length > 0 && (
+        <WalkForwardSection priceSeries={priceSeries} />
       )}
 
       <section className="rounded-2xl border border-brand/30 bg-surface p-6 backdrop-blur-xl shadow-glow">
@@ -1316,6 +1380,295 @@ function RotationSuggestionsCard({
         Эвристические тикеты, не результат оптимизации. Каждый — независимая
         переброска веса; применять последовательно с пересчётом метрик.
       </p>
+    </section>
+  );
+}
+
+/**
+ * Walk-forward equity for HRP weights — retrains weights every `step` days on
+ * a sliding training window and applies them out-of-sample. Pure OOS curve,
+ * no look-ahead. Plotted as a single line with summary stats.
+ *
+ * Why HRP: parameter-free, cheap to retrain (no BL views, no MC cloud), and
+ * a robust risk-only model — good honest benchmark for "what would this
+ * basket have done under disciplined rebalancing."
+ */
+function WalkForwardSection({ priceSeries }: { priceSeries: PriceSeries[] }) {
+  const wf = useMemo<WalkForwardResult | null>(
+    () => walkForwardHRPEquity(priceSeries),
+    [priceSeries]
+  );
+  if (!wf || wf.equity.length < 2) {
+    return (
+      <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+        <header className="flex items-center gap-2 border-b border-surface-border pb-3">
+          <Timer size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Walk-forward (HRP)
+          </h3>
+        </header>
+        <p className="mt-3 text-sm text-ink-muted">
+          {wf?.warning ??
+            "Истории недостаточно для walk-forward: нужно ≥395 дней (365 train + 30 step)."}
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Timer size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Walk-forward equity · HRP retrain
+          </h3>
+          <span className="font-mono text-[10px] text-ink-faint">
+            train 365d · step 30d · {wf.rebalances} ребалансов · OOS
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-3 font-mono text-[11px]">
+          <Stat
+            label="Total"
+            value={`${wf.totalReturn >= 0 ? "+" : ""}${(wf.totalReturn * 100).toFixed(1)}%`}
+            tone={wf.totalReturn >= 0 ? "positive" : "negative"}
+          />
+          <Stat label="Max DD" value={`${(wf.maxDrawdown * 100).toFixed(1)}%`} tone="negative" />
+          <Stat
+            label="Realized σ p.a."
+            value={`${(wf.realizedVol * 100).toFixed(1)}%`}
+            tone="negative"
+          />
+        </div>
+      </header>
+      <div className="mt-3 h-[260px]">
+        <WalkForwardChart times={wf.times} equity={wf.equity} />
+      </div>
+      <p className="mt-2 text-[11px] text-ink-faint">
+        Каждые 30 дней HRP-веса пересчитываются на последних 365 днях и
+        применяются к следующим 30 дням OOS. Это честная out-of-sample
+        репликация дисциплинированной квартальной ребалансировки — без
+        look-ahead и без подгонки.
+      </p>
+    </section>
+  );
+}
+
+function WalkForwardChart({ times, equity }: { times: number[]; equity: number[] }) {
+  const tsDates = times.map((t) => new Date(t));
+  const traces: Data[] = [
+    {
+      type: "scatter",
+      mode: "lines",
+      x: tsDates,
+      y: equity,
+      line: { color: "#8aa6c4", width: 2 },
+      name: "Walk-forward HRP",
+      hovertemplate: "%{x|%Y-%m-%d}<br>$%{y:.1f}<extra>WF HRP</extra>",
+    },
+  ];
+  const layout: Partial<Layout> = {
+    autosize: true,
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: "#d4d4d8", family: "ui-sans-serif, system-ui" },
+    margin: { l: 50, r: 20, t: 10, b: 40 },
+    xaxis: {
+      gridcolor: "rgba(255,255,255,0.05)",
+      tickfont: { color: "#a1a1aa", size: 10 },
+    },
+    yaxis: {
+      gridcolor: "rgba(255,255,255,0.05)",
+      tickfont: { color: "#a1a1aa", size: 10 },
+      tickprefix: "$",
+    },
+    showlegend: false,
+    hoverlabel: {
+      bgcolor: "#0c121c",
+      bordercolor: "#8aa6c4",
+      font: { color: "#e8eaf0", size: 11 },
+    },
+  };
+  return (
+    <Plot
+      data={traces}
+      layout={layout}
+      useResizeHandler
+      style={{ width: "100%", height: "100%" }}
+      config={{
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["lasso2d", "select2d"],
+      }}
+    />
+  );
+}
+
+/**
+ * Compact vol-target advisory card. Three states encoded by border tone:
+ *   ok        — within target, no buffer needed
+ *   stretched — slightly over, soft recommendation
+ *   exceeded  — well over target, strong recommendation
+ *
+ * Designed to live right under the Confidence badge — both are quick triage
+ * signals: confidence answers "should I act", vol-target answers "how much".
+ */
+function VolTargetCard({ advisory }: { advisory: VolTargetAdvisory }) {
+  const tone =
+    advisory.level === "ok"
+      ? { border: "border-emerald-500/30", chip: "text-emerald-300", label: "On target" }
+      : advisory.level === "stretched"
+        ? { border: "border-amber-500/40", chip: "text-amber-200", label: "Stretched" }
+        : { border: "border-rose-500/40", chip: "text-rose-300", label: "Exceeded" };
+  return (
+    <section className={`rounded-2xl border ${tone.border} bg-surface p-5 backdrop-blur-xl shadow-card`}>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Gauge size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Vol target advisory
+          </h3>
+        </div>
+        <span className={`font-mono text-[10px] uppercase tracking-[0.22em] ${tone.chip}`}>
+          {tone.label}
+        </span>
+      </header>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Tile label="Target σ p.a." value={`${(advisory.target * 100).toFixed(0)}%`} />
+        <Tile label="Actual σ p.a." value={`${(advisory.actual * 100).toFixed(1)}%`} />
+        <Tile
+          label="Cash buffer"
+          value={`${(advisory.cashBuffer * 100).toFixed(0)}%`}
+          accent={advisory.cashBuffer > 0 ? "amber" : "neutral"}
+        />
+      </div>
+      <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
+        {advisory.advice}
+      </p>
+      <p className="mt-2 text-[10px] text-ink-faint">
+        Exposure {(advisory.exposure * 100).toFixed(0)}% — рекомендуемая доля
+        капитала, развёрнутая по весам выше. Остальное держится в стейблах /
+        кеше для приведения σ к цели.
+      </p>
+    </section>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: "amber" | "neutral";
+}) {
+  const cls = accent === "amber" ? "text-amber-200" : "text-ink";
+  return (
+    <div className="rounded-xl border border-surface-border bg-white/[0.02] p-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+        {label}
+      </p>
+      <p className={`mt-1.5 font-mono text-xl font-semibold ${cls}`}>{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Narrative summary of the recommended allocation — five short paragraphs
+ * answering "what's in the basket / which models / what risk framing /
+ * what cluster shape / how confident." All text is generated from current
+ * state; no LLM, no canned templates beyond fact substitution.
+ */
+function WhyNarrativeCard({ paragraphs }: { paragraphs: WhyParagraph[] }) {
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex items-center justify-between border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <ScrollText size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Why these weights
+          </h3>
+        </div>
+        <span className="font-mono text-[10px] text-ink-faint">
+          Авто-наратив · факты из текущего state, не AI
+        </span>
+      </header>
+      <ol className="mt-4 grid gap-3 sm:grid-cols-2">
+        {paragraphs.map((p, i) => (
+          <li
+            key={i}
+            className="rounded-xl border border-surface-border bg-white/[0.02] p-3"
+          >
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-brand-light">
+              {i + 1}. {p.heading}
+            </p>
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
+              {p.body}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/**
+ * Watchlist — assets the fund tracks but does not currently hold (or holds
+ * effectively zero). Three internal flavors (no-data / uncategorized /
+ * effectively-zero) plus a small set of honorary tickers tracked for context.
+ */
+function WatchlistCard({ entries }: { entries: WatchlistEntry[] }) {
+  const reasonLabel: Record<WatchlistEntry["reason"], string> = {
+    "no-data": "No data",
+    uncategorized: "Uncategorized",
+    "effectively-zero": "≈ 0% weight",
+    honorary: "Honorary",
+  };
+  const reasonTone: Record<WatchlistEntry["reason"], string> = {
+    "no-data": "text-rose-300",
+    uncategorized: "text-amber-200",
+    "effectively-zero": "text-ink-faint",
+    honorary: "text-brand-light",
+  };
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Eye size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Watchlist
+          </h3>
+        </div>
+        <span className="font-mono text-[10px] text-ink-faint">
+          Активы фонда «следим, но не покупаем» · {entries.length} запис{entries.length === 1 ? "ь" : entries.length < 5 ? "и" : "ей"}
+        </span>
+      </header>
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+        {entries.map((e) => (
+          <li
+            key={`${e.reason}-${e.symbol}`}
+            className="rounded-xl border border-surface-border bg-white/[0.02] p-3"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-sm text-ink">
+                {prettySymbol(e.symbol)}
+              </span>
+              <span className={`font-mono text-[10px] uppercase tracking-[0.18em] ${reasonTone[e.reason]}`}>
+                {reasonLabel[e.reason]}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-ink-muted">
+              {e.detail}
+            </p>
+            {e.currentWeight > 0 && (
+              <p className="mt-1 font-mono text-[10px] text-ink-faint">
+                текущий вес {(e.currentWeight * 100).toFixed(2)}%
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -546,7 +546,7 @@ export function MPTSimulator() {
                 </span>
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[15px]">
-                Симуляция оптимального распределения долей капитала фонда. 11 моделей
+                Симуляция оптимального распределения долей капитала фонда. 13 моделей
                 построения, risk caps, Black-Litterman views, CVaR stress test и
                 рекомендованный портфель — всё в Web Worker.
               </p>
@@ -767,6 +767,7 @@ export function MPTSimulator() {
             windowDays={result?.windowDays ?? historyDays}
             currentWeights={currentWeights}
             onCurrentWeightsChange={setCurrentWeights}
+            views={views}
           />
         )}
 
@@ -952,7 +953,7 @@ function FirstRunSkeleton() {
         </div>
       </div>
       <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
-        Загружаем дневные closes и считаем 11 моделей…
+        Загружаем дневные closes и считаем 13 моделей…
       </p>
     </div>
   );

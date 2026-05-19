@@ -10,6 +10,8 @@ import { marketCapWeightsWithLive } from "./marketCaps";
 import { applyRiskCaps } from "./riskCaps";
 import { assessDataQuality, type AssetDataQuality } from "./dataQuality";
 import { hrpWeights, maxDiversificationWeights } from "./hrp";
+import { momentumOverlayWeights } from "./momentum";
+import { fractionalKellyWeights } from "./kelly";
 
 const TRADING_DAYS_PER_YEAR = 365;
 const SAMPLER_SEED = 8675309;
@@ -112,6 +114,8 @@ export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBund
   const cv = cvarMinimizingPortfolio(priceSeries, mptResult);
   const hrp = hrpWeights(priceSeries);
   const md = maxDiversificationWeights(priceSeries);
+  const mom = momentumOverlayWeights(priceSeries, liveMarketCaps);
+  const kly = fractionalKellyWeights(priceSeries);
 
   // Final fund = BL → riskCaps (incl. data-quality) → CVaR-defense bump
   const final = finalFundPortfolio(
@@ -189,6 +193,20 @@ export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBund
       "Choueifaty & Coignard: максимизируем DR(w) = Σ wᵢσᵢ / √(w'Σw) — диверсификационный коэффициент.",
       md.weights,
       md.warning
+    ),
+    make(
+      "momentum",
+      "Momentum Overlay",
+      "Market-cap база × exp(λ · 200d log-return). Time-series momentum в кросс-секции.",
+      mom.weights,
+      mom.warning
+    ),
+    make(
+      "kelly",
+      "Fractional Kelly",
+      "Half-Kelly: w_i ∝ μ_i/σ_i² (только μ_i>0), потом 50/50 микс с equal-weight как haircut на оценку μ.",
+      kly.weights,
+      kly.warning
     ),
     make(
       "finalFund",
