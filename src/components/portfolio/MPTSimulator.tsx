@@ -546,7 +546,7 @@ export function MPTSimulator() {
                 </span>
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[15px]">
-                Симуляция оптимального распределения долей капитала фонда. 13 моделей
+                Симуляция оптимального распределения долей капитала фонда. 14 моделей
                 построения, risk caps, Black-Litterman views, CVaR stress test и
                 рекомендованный портфель — всё в Web Worker.
               </p>
@@ -953,7 +953,7 @@ function FirstRunSkeleton() {
         </div>
       </div>
       <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
-        Загружаем дневные closes и считаем 13 моделей…
+        Загружаем дневные closes и считаем 14 моделей…
       </p>
     </div>
   );

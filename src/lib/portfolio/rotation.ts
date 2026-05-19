@@ -1,5 +1,6 @@
 import type { AssetDataQuality } from "./dataQuality";
 import { aggregateByCluster, clusterOf, type ClusterId } from "./clusters";
+import type { LiquidityAssessment } from "./liquidity";
 
 /**
  * Rotation suggestions — strategic-level moves *on top of* the Rebalance Plan.
@@ -29,13 +30,15 @@ export interface RotationSuggestion {
   reason: string;
   priority: "High" | "Medium" | "Low";
   /** Diagnostic tag — which rule produced this row. */
-  source: "data-quality" | "cluster-overshoot" | "core-deficit";
+  source: "data-quality" | "cluster-overshoot" | "core-deficit" | "liquidity";
 }
 
 export interface BuildRotationArgs {
   weights: number[];
   symbols: string[];
   dataQuality: AssetDataQuality[] | null;
+  /** Per-asset liquidity assessment — drives the "thin market" rule. */
+  liquidity?: LiquidityAssessment[] | null;
   /** Minimum suggestion magnitude — anything smaller is noise. */
   minMagnitude?: number;
 }
@@ -43,7 +46,7 @@ export interface BuildRotationArgs {
 const DEFAULT_MIN = 0.005;
 
 export function buildRotationSuggestions(args: BuildRotationArgs): RotationSuggestion[] {
-  const { weights, symbols, dataQuality, minMagnitude = DEFAULT_MIN } = args;
+  const { weights, symbols, dataQuality, liquidity, minMagnitude = DEFAULT_MIN } = args;
   const out: RotationSuggestion[] = [];
   const btcIdx = symbols.indexOf("BTCUSDT");
   const ethIdx = symbols.indexOf("ETHUSDT");
@@ -101,7 +104,43 @@ export function buildRotationSuggestions(args: BuildRotationArgs): RotationSugge
     });
   }
 
-  // ───── 3. Core deficit ────────────────────────────────────────────────────
+  // ───── 3. Liquidity (thin-market) ─────────────────────────────────────────
+  // For each asset in red tier with weight > 5%, suggest halving the position
+  // and routing into core. Yellow tier with weight > 15% gets a softer ticket.
+  if (liquidity && liquidity.length === weights.length) {
+    for (let i = 0; i < weights.length; i++) {
+      const liq = liquidity[i];
+      if (!liq) continue;
+      const w = weights[i];
+      let trim = 0;
+      let reason = "";
+      let priority: RotationSuggestion["priority"] = "Medium";
+      if (liq.tier === "red" && w > 0.05) {
+        trim = w * 0.5;
+        reason = `Тонкий рынок (ADV ≈ ${liq.note.split(" — ")[0] ?? "thin"}). Половинить позицию ${(w * 100).toFixed(1)}%.`;
+        priority = "High";
+      } else if (liq.tier === "yellow" && w > 0.15) {
+        trim = w - 0.15;
+        reason = `Retail-large ликвидность при ${(w * 100).toFixed(1)}% веса — резать до 15% безопаснее.`;
+        priority = "Medium";
+      } else if (liq.tier === "no-data" && w > 0.02) {
+        trim = w * 0.5;
+        reason = `Нет данных volume — слепое исполнение опасно при ${(w * 100).toFixed(1)}%.`;
+        priority = "Medium";
+      }
+      if (trim > minMagnitude) {
+        out.push({
+          trim: { symbol: symbols[i], reduceBy: trim },
+          add: { symbol: coreTarget, addBy: trim },
+          reason,
+          priority,
+          source: "liquidity",
+        });
+      }
+    }
+  }
+
+  // ───── 4. Core deficit ────────────────────────────────────────────────────
   const coreWeight = clusters.find((c) => c.cluster.id === "core")?.weight ?? 0;
   const infraWeight = clusters.find((c) => c.cluster.id === "infra")?.weight ?? 0;
   const coreInfraSum = coreWeight + infraWeight;

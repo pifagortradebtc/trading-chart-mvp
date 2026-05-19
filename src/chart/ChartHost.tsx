@@ -185,9 +185,13 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     const outerEl = outerRef.current;
     if (outerEl) ro.observe(outerEl);
 
+    // Snapshot mutable refs for cleanup — React lint warns that ref.current may
+    // have changed by the time the cleanup fires; capturing the Map instance at
+    // mount keeps that warning honest.
+    const overlaySeries = indicatorSeriesRef.current;
+
     return () => {
       ro.disconnect();
-      const overlaySeries = indicatorSeriesRef.current;
       overlaySeries.forEach((s) => {
         try {
           chart.removeSeries(s);

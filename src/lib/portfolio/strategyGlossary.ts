@@ -31,6 +31,8 @@ export const STRATEGY_GLOSSARY: Record<StrategyId, string> = {
     "Momentum Overlay: берёт market-cap базу и наклоняет её через exp(λ · log-return за 200 дней). Активы с положительным трендом получают больше веса, с отрицательным — меньше. Time-series momentum (Moskowitz et al. 2012).",
   kelly:
     "Fractional Kelly: классический «доля капитала на ставку» — w_i пропорционально μ/σ². Half-Kelly (0.5×) защищает от ошибок в оценке μ, которые в крипте велики. Финал — 50/50 микс с equal-weight как haircut.",
+  resampled:
+    "Resampled Markowitz (Michaud, 1998): бутстрап-усреднение классического MVO. Многократно сэмплируем «синтетические» истории, на каждой ищем max-Sharpe веса, усредняем. Сглаживает классическую «estimation-error maximization» MVO без QP-солвера.",
   finalFund:
     "Final Fund Portfolio: рекомендованная модель фонда. Black-Litterman база → жёсткие risk caps → защита от хвоста по CVaR. Не одна формула, а комбинация ограничений и взглядов фонда.",
 };

@@ -1,12 +1,16 @@
 export interface Kline {
   time: number;
   close: number;
+  /** Base-asset volume from Binance kline row[5]. Optional — back-compat with old callers. */
+  volume?: number;
 }
 
 export interface PriceSeries {
   symbol: string;
   times: number[];
   prices: number[];
+  /** Base-asset volume aligned with `times`. Optional; absent for pre-volume callers. */
+  volumes?: number[];
 }
 
 export interface AssetBounds {

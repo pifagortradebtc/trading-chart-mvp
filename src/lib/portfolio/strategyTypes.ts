@@ -1,17 +1,18 @@
 /**
  * Type contracts for the "Portfolio Construction Strategies" feature.
  *
- * 13 model families are produced in a single Web-Worker round-trip on top of
+ * 14 model families are produced in a single Web-Worker round-trip on top of
  * the existing Monte-Carlo cloud (see strategies.ts + strategyMetrics.ts):
  *   marketCap, equalWeight, minVol, maxSharpe, maxSortino,
  *   riskParity, blackLitterman, cvar, hrp, maxDiv,
- *   momentum, kelly, finalFund
+ *   momentum, kelly, resampled, finalFund
  *
  * Black-Litterman is implemented as a *view-tilt MVP* (see strategies.ts);
  * full Theil-mixed Σ-prime is intentionally out of scope.
  * HRP and MaxDiv live in hrp.ts — single-linkage clustering + Dirichlet sweep.
  * Momentum (200d log-return tilt on market-cap) lives in momentum.ts.
  * Kelly (half-Kelly μ/σ² + equal-weight blend) lives in kelly.ts.
+ * Resampled Markowitz (Michaud bootstrap averaging) lives in resampledMarkowitz.ts.
  */
 
 export type StrategyId =
@@ -27,6 +28,7 @@ export type StrategyId =
   | "maxDiv"
   | "momentum"
   | "kelly"
+  | "resampled"
   | "finalFund";
 
 export interface StrategyMetrics {

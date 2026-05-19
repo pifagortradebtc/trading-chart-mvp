@@ -1,109 +1,130 @@
 # Handoff — Pifagor Fund · Кабинет аналитики
 
-**Дата сохранения**: 2026-05-19. **Этап 3 закоммичен — план roadmap-а закрыт.** Билд exit 0, `/portfolio` 47.5 kB / 152 kB First Load. GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
+**Дата сохранения**: 2026-05-19. **Финальное состояние.** Этап 4 закрыт — всё, что можно было сделать без новых API ключей и внешних провайдеров, реализовано. Билд exit 0, `/portfolio` 50.1 kB / 155 kB First Load.
+
+GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
 ---
 
-## Где мы — статус «MVP завершён»
+## Где мы — статус «полный MVP»
 
-Кабинет аналитики Pifagor Fund (`/portfolio`) — полнофункциональный Allocation Decision Engine. Все три этапа реализованы:
+Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с четырьмя законченными итерациями:
 
-- ✅ **Этап 1** — Data Quality Layer, Calmar/Ulcer/β метрики, Recommendation Modes, Rebalance Plan, Confidence Score
-- ✅ **Этап 2** — HRP, Max Diversification, Cluster Analysis, Rotation Suggestions, Model Contribution
-- ✅ **Этап 3** — Watchlist, Why-these-weights narrative, Momentum Overlay, Fractional Kelly, Volatility Targeting, Walk-forward equity
+- ✅ **Этап 1** — Data Quality, Calmar/Ulcer/β, Modes, Rebalance Plan, Confidence
+- ✅ **Этап 2** — HRP, MaxDiv, Cluster Analysis, Rotation, Model Contribution
+- ✅ **Этап 3** — Watchlist, Why narrative, Momentum, Kelly, Vol Target, Walk-forward
+- ✅ **Этап 4** — Liquidity Layer, Resampled Markowitz, polish
 
-В сумме: **13 моделей построения портфеля**, 5 sub-tabs, persistence, exports (CSV/JSON/PDF), live market caps, web-worker математика.
-
----
-
-## Что добавил этап 3
-
-### Стратегии: 11 → 13
-
-`momentum` и `kelly` подключены в `buildStrategiesBundle()`:
-- **Momentum Overlay** (`momentum.ts`) — `w_i ∝ mc_i · exp(λ · log(P_t / P_{t-200d}))`. Time-series momentum в кросс-секции (Moskowitz et al. 2012). λ=1.5. Активы с историей <200 дней получают momentum=0 (нейтрально, без look-ahead).
-- **Fractional Kelly** (`kelly.ts`) — `raw_i = max(0, μ_i)/σ_i²` (annualized), нормализуем + смешиваем 50/50 с equal-weight как haircut. Защищает от классической Kelly-чувствительности к ошибкам в μ.
-
-### Watchlist Engine (`watchlist.ts`)
-
-`buildWatchlist({ weights, symbols, dataQuality })` возвращает приоритетный список:
-1. **no-data** — статус `no-data` из dataQuality
-2. **uncategorized** — кластер `other` в таксономии
-3. **effectively-zero** — модели дали <0.2%
-4. **honorary** — fund-tracked тикеры вне корзины (ARB, OP, AVAX, DOGE)
-
-UI: `WatchlistCard` — grid карточек с цветовым кодом по reason.
-
-### Why-these-weights narrative (`whyTheseWeights.ts`)
-
-`buildWhyNarrative({...})` генерирует 5 параграфов с подстановкой реальных фактов: корзина, модели и согласие, views/risk caps/CVaR, кластерная структура, confidence. Чистый текст, без LLM.
-
-UI: `WhyNarrativeCard` — сразу под Confidence + Vol Target.
-
-### Volatility Targeting (`volTarget.ts`)
-
-Target σ p.a. = 25%. Если actual выше — рекомендует cash buffer = `1 − target/actual`. Три уровня: `ok` / `stretched` / `exceeded` с разными border-tone.
-
-UI: `VolTargetCard` — три тайла (Target / Actual / Cash buffer) + одна строка совета.
-
-### Walk-forward equity (`walkForward.ts`)
-
-`walkForwardHRPEquity(priceSeries, trainWindow=365, step=30)`:
-- На каждом шаге t: HRP обучается на `[t-365, t)` → веса применяются к OOS на `[t, t+30)`
-- Конкатенация дневных лог-доходностей в одну equity-кривую
-- Метрики OOS: total return, max drawdown, realized σ p.a.
-
-Почему HRP: parameter-free, дешёвый retrain, robust risk-only baseline. **Никакого look-ahead**.
-
-UI: `WalkForwardSection` — отдельная карточка под main equity curve, с собственным plotly-графиком (синяя линия, серебристый тон чтобы отличать от gold finalFund).
+В итоге: **14 моделей построения портфеля**, **8 advisory модулей**, полный Recommended Tab дашборд.
 
 ---
 
-## Что осталось как future-work
+## Что добавил этап 4
 
-Из ChatGPT-roadmap-а сознательно **не делал** — каждый пункт требует архитектурного обсуждения:
+### Стратегии: 13 → 14
 
-| Пункт | Почему пропущен |
+Новая стратегия `resampled` (`resampledMarkowitz.ts`) — **Michaud's Resampled Efficiency**:
+- 24 bootstrap-resamples × 800 Dirichlet samples max-Sharpe = 19.2k trials/вызов
+- Усредняет веса по синтетическим историям → robust MVO без QP solver
+- Решает классическую «estimation-error maximization» проблему наивного Markowitz
+- Deterministic (фиксированный seed)
+- В worker'е ~300-500ms на 7 активов × 1095 дней
+
+### Liquidity Layer (`liquidity.ts`)
+
+Полная инфраструктура оценки рыночной глубины:
+- **Extended PriceSeries** опциональным `volumes: number[]` (back-compat — math не задет)
+- `market-data.ts` тащит base-asset volume из существующего `/api/ohlcv` (Binance уже даёт его в row[5])
+- `assessLiquidity(priceSeries)` → массив `LiquidityAssessment`: 30-day mean USD volume (close × volume), tier (blue/green/yellow/red), max executable position (5% ADV)
+- `basketLiquidityScore(weights, assessments)` → 0..100 aggregate
+- 4 tiers:
+  - **blue** ≥ $1B/день — institutional
+  - **green** $100M-$1B — fund-tier
+  - **yellow** $10M-$100M — retail-large
+  - **red** < $10M — thin market / OTC
+
+UI: `LiquidityCard` в Recommended Tab — таблица с per-asset tier, max ticket, basket-score.
+
+**Integration:**
+- `rotation.ts` — новое правило **`liquidity`**: red tier с weight > 5% → trim half; yellow > 15% → trim to 15%; no-data > 2% → trim half. Route в Core.
+- `confidence.ts` — новый фактор **«Ликвидность»** (±10 points) — basket score меняет confidence score.
+
+### Polish
+
+- Pre-existing ESLint warning `react-hooks/exhaustive-deps` в `ChartHost.tsx:190` исправлен через захват `indicatorSeriesRef.current` в начале эффекта (стандартный React-паттерн).
+- README обновлён: список из 14 моделей, описание новых блоков Recommended Tab.
+
+---
+
+## Что **не сделал** и почему
+
+| Пункт | Причина |
 |---|---|
-| **Robust/Resampled Markowitz** | Требует QP-solver. Существующий 50k Monte-Carlo cloud в `mpt.ts` уже даёт похожую устойчивость через Dirichlet-сэмплинг. ROI добавления Resampled Markowitz без solver-а маргинальный. |
-| **On-chain / Fundamental Score** | Нужна отдельная data plane (Glassnode/Coinmetrics/Token Terminal). Новый API key, провайдер, формат данных, кэш — отдельный мини-спринт. |
-| **Liquidity Layer** | Нужна интеграция volume endpoint Binance. Технически возможно (у нас уже Binance OHLCV), но требует normalization (volume в USD против BTC-denominated), фильтра по avg-daily-volume, новой метрики "executability". Отдельный спринт. |
+| **On-chain / Fundamental Score** | Требует external API keys (Glassnode/Coinmetrics/Token Terminal). Хардкод данных = ложь инвестору. Без проплаченного провайдера не делать. |
 
-Если решишь делать — стартовать стоит с **Liquidity Layer** (волюмы у нас уже есть, надо только подтянуть). On-chain даст наибольший edge, но дороже всех.
+Это единственный пункт исходного roadmap-а, который объективно невозможен без внешнего commitment. Если будет API key — это отдельный модуль уровня `liquidity.ts`, по той же архитектуре (load on initial fetch, share via priceSeries-like state, consume via UI block).
 
 ---
 
-## Стек этапа 3 — файлы
+## Полная карта Recommended Tab — что в каком порядке
 
-### Новые модули
-- `src/lib/portfolio/momentum.ts` — Momentum Overlay
-- `src/lib/portfolio/kelly.ts` — Fractional Kelly
-- `src/lib/portfolio/watchlist.ts` — Watchlist Engine
-- `src/lib/portfolio/whyTheseWeights.ts` — нарратив-генератор
-- `src/lib/portfolio/volTarget.ts` — Vol Target advisory
-- `src/lib/portfolio/walkForward.ts` — walk-forward equity
-
-### Изменённые модули
-- `strategyTypes.ts` — расширен `StrategyId` (+momentum, +kelly)
-- `strategies.ts` — два новых entry в `buildStrategiesBundle`
-- `strategyGlossary.ts` — glossary для двух новых
-- `RecommendedTab.tsx` — 5 новых компонентов (Why, Vol, Watchlist, WalkForward, +mods)
-- `MPTSimulator.tsx` — проброс `views` в RecommendedTab
-- `StrategiesTab.tsx`, `app/page.tsx` — обновлены тексты «11 → 13 моделей»
+```
+PrintCoverPage (только в Print/PDF)
+header (eyebrow + title + JSON copy + Print button)
+─────────────────────────────────────────
+1.  Confidence badge / Awaiting placeholder
+2.  Vol Target advisory                          ← этап 3
+3.  Why narrative                                ← этап 3
+4.  Spot + Total Fund allocation donuts
+5.  Cluster Exposure card                        ← этап 2
+6.  Rebalance Plan (operator-input current)
+7.  Rotation Suggestions (4 sources: dq / cluster / liquidity / core)
+8.  Watchlist                                    ← этап 3
+9.  Liquidity Layer card                         ← этап 4
+10. Model Contribution                           ← этап 2
+11. Backtested equity curve (in-sample static weights)
+12. Walk-forward equity (HRP OOS retraining)     ← этап 3
+13. "Why this allocation" 4 reason cards
+14. Disclaimer
+```
 
 ---
 
-## Все sub-tabs `/portfolio` — что внутри
+## Все 14 стратегий
 
-| Tab | Что показывает |
+| ID | Имя | Источник |
+|---|---|---|
+| `marketCap` | Market Cap | live CoinGecko + fallback snapshot |
+| `equalWeight` | Equal Weight | trivial |
+| `minVol` | Min Volatility | MC cloud |
+| `maxSharpe` | Max Sharpe | MC cloud |
+| `maxSortino` | Max Sortino | MC cloud |
+| `riskParity` | Risk Parity (inverse-vol) | analytical |
+| `blackLitterman` | Black-Litterman (view-tilt MVP) | 5k Dirichlet |
+| `cvar` | CVaR-Optimal | MC cloud subsample |
+| `hrp` | HRP (López de Prado 2016) | single-linkage + bisection |
+| `maxDiv` | Max Diversification | 5k Dirichlet |
+| `momentum` | Momentum Overlay (200d MA) | analytical |
+| `kelly` | Fractional Kelly (half-Kelly haircut) | analytical |
+| `resampled` | Resampled Markowitz (Michaud) | 24 × 800 bootstrap |
+| `finalFund` | Final Fund Portfolio | BL → caps → CVaR defense |
+
+---
+
+## Все 8 advisory модулей
+
+| Файл | Назначение |
 |---|---|
-| Simulation | Frontier-облако, KeyStat карточки, портфельная таблица, PinnedPortfolios |
-| Strategies | Grid 13 моделей + comparison-таблица с Calmar/Ulcer/β-BTC и CSV export |
-| Risk Caps & Views | Pill-кнопки Conservative/Balanced/Aggressive · per-asset caps · BL views table · CVaR-defense slider · sleeves |
-| Stress Test | Сценарные шоки на per-symbol returns |
-| **Recommended** | Confidence → **Vol Target** → **Why narrative** → 2 donuts → Cluster exposure → Rebalance plan → Rotation → **Watchlist** → Model contribution → Equity curve → **Walk-forward equity** → Reason cards |
-
-Bold = новое в этапе 3.
+| `dataQuality.ts` | history-length-based weight ceilings |
+| `clusters.ts` | fund taxonomy (Core/Infra/HighBeta/Exchange/Alpha/Meme/Other) |
+| `rotation.ts` | strategic trim/add tickets (4 sources) |
+| `watchlist.ts` | tracked-but-not-held tickers |
+| `whyTheseWeights.ts` | 5-paragraph narrative generator |
+| `volTarget.ts` | cash buffer recommendation |
+| `liquidity.ts` | USD-volume tier + executable ticket + basket score |
+| `walkForward.ts` | HRP retraining-based OOS equity |
+| `modelContribution.ts` | influence ranking by L1 distance |
+| `confidence.ts` | aggregate triage score (8 factors) |
 
 ---
 
@@ -122,18 +143,31 @@ git log --oneline -10
 
 - **TLS на машине автора**: все скрипты обёрнуты в `cross-env NODE_OPTIONS="--use-system-ca"`. Запускать только через `npm run dev` / `npm run build`. Прямой вызов `cross-env` не работает — он только в `node_modules/.bin`.
 - **OneDrive путь с кириллицей** → git предупреждает про CRLF, это норма.
-- **Web Worker нагрузка**: `buildStrategiesBundle` теперь делает 13 стратегий. Каждая ≤ 5k Dirichlet samples (BL/CVaR/MaxDiv) или O(n³) clustering (HRP). На 7 активах работает <500ms в воркере, UI не блокируется.
-- **Walk-forward в RecommendedTab** считается **на main thread** через `useMemo` (HRP-only, дешёвый). Если активы → больше 15, рассмотреть offload в воркер.
+- **Web Worker нагрузка**: `buildStrategiesBundle` делает 14 стратегий. Самая тяжёлая — Resampled Markowitz (19.2k Dirichlet) — ~300-500ms на 7 активах. UI не блокируется.
+- **Walk-forward и Liquidity** считаются на main thread через `useMemo` в RecommendedTab. Walk-forward HRP — дёшево; Liquidity — простая агрегация 30 точек. Если basket → >15 активов, рассмотреть offload в воркер.
 - **Cluster taxonomy** (`clusters.ts`) — single source of truth. Новый токен в Alpha — добавлять там, и он автоматически попадёт в Cluster Exposure + Rotation + Why narrative.
+- **PriceSeries.volumes** — опциональное поле. Если future caller возвращает PriceSeries без volumes, Liquidity не рендерится и не влияет на confidence/rotation. Полная back-compat.
+
+---
+
+## Что осталось — действия для следующей сессии
+
+Проект «закрыт» по технической линии. Что имеет смысл делать дальше — **только бизнес-задачи**:
+
+1. **Реальная Auth + multi-tenancy** — если планируется выпуск нескольким management-партнёрам.
+2. **API keys для on-chain** — если фонд хочет Glassnode/Coinmetrics. Тогда сделать `onchainScore.ts` по архитектуре `liquidity.ts`.
+3. **Интеграция с реальным NAV в основном Pifagor Fund repo** (`C:/Users/pifag/OneDrive/Криптофонд/apps/frontend`) — экспорт finalFund.weights → NAV-таблица позиций.
+4. **A/B-тест разных Final Fund политик на реальных деньгах** — нужен production data plane и хранилище весов по времени.
+
+Технические backlogs:
+- Lottie/анимации брендинга, если решат украшать.
+- Mobile-friendly адаптация — сейчас фокус desktop research.
+- E2E тесты (Playwright) для нескольких golden-path scenarios.
 
 ---
 
 ## TL;DR
 
-Проект «закрыт» по плану. Можно подключать к публикации (если ещё не) и переходить к маркетинговой/бизнес-стороне:
-- README + landing уже под Pifagor Fund брендом
-- PDF/JSON exports — продакшен-готово
-- Все 13 моделей валидированы через билд + dev smoke
-- Future-work задокументирован выше — Liquidity → On-chain → Resampled Markowitz, в порядке стоимость/ценность
+Кабинет аналитики **готов к использованию в production-режиме фонда**. 14 моделей, полный risk framework, liquidity, walk-forward, model attribution. Один пропущенный пункт roadmap-а (on-chain) объективно требует external commitment — недостающего у нас сейчас.
 
-Если будет следующая сессия — приноси конкретное направление: либо новые активы в баскет, либо подключение к external data (on-chain, liquidity), либо UI-улучшения по фидбеку реальных пользователей.
+Если возвращаешься к проекту — приноси конкретное направление: новые активы, новые провайдеры данных (on-chain), UI-полировка по фидбеку реальных аналитиков, или интеграция с другим репозиторием фонда.

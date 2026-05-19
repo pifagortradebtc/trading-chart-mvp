@@ -31,8 +31,10 @@ export function computeConfidence(input: {
   finalStrategy: StrategyResult;
   allStrategies: StrategyResult[];
   symbols: string[];
+  /** 0..100 from basketLiquidityScore — optional, omitted on pre-liquidity callers. */
+  basketLiquidity?: number;
 }): ConfidenceBreakdown {
-  const { windowDays, dataQuality, finalStrategy, allStrategies, symbols } = input;
+  const { windowDays, dataQuality, finalStrategy, allStrategies, symbols, basketLiquidity } = input;
   const factors: ConfidenceFactor[] = [];
   let score = 50;
 
@@ -231,6 +233,44 @@ export function computeConfidence(input: {
         impact: "-",
         points: -5,
         detail: `${rho.toFixed(2)} — портфель почти повторяет BTC.`,
+      });
+    }
+  }
+
+  // 8. Basket liquidity — pulls the score down if the recommended weights
+  // skew toward thin-market tickers. Capped at ±10 so it doesn't dominate
+  // the other factors but is visible enough to flag execution risk.
+  if (typeof basketLiquidity === "number" && Number.isFinite(basketLiquidity)) {
+    if (basketLiquidity >= 80) {
+      score += 5;
+      factors.push({
+        label: "Ликвидность",
+        impact: "+",
+        points: 5,
+        detail: `Basket score ${basketLiquidity}/100 — глубина рынка покрывает любые тикеты.`,
+      });
+    } else if (basketLiquidity >= 60) {
+      score += 2;
+      factors.push({
+        label: "Ликвидность",
+        impact: "+",
+        points: 2,
+        detail: `Basket score ${basketLiquidity}/100 — приемлемая глубина для fund-тикетов.`,
+      });
+    } else if (basketLiquidity >= 40) {
+      factors.push({
+        label: "Ликвидность",
+        impact: "neutral",
+        points: 0,
+        detail: `Basket score ${basketLiquidity}/100 — execution требует дисциплины.`,
+      });
+    } else {
+      score -= 10;
+      factors.push({
+        label: "Ликвидность",
+        impact: "-",
+        points: -10,
+        detail: `Basket score ${basketLiquidity}/100 — тонкий рынок, рыночный импакт неизбежен.`,
       });
     }
   }

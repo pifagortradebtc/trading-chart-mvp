@@ -43,16 +43,15 @@ export async function fetchPortfolioCloses(
   const klines: Kline[] = json.candles.map((c) => ({
     time: c.time * 1000,
     close: c.close,
+    volume: c.volume,
   }));
   return dedupAndSort(klines).filter((k) => k.time >= startMs);
 }
 
 function dedupAndSort(klines: Kline[]): Kline[] {
-  const map = new Map<number, number>();
-  for (const k of klines) map.set(k.time, k.close);
-  return [...map.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([time, close]) => ({ time, close }));
+  const map = new Map<number, Kline>();
+  for (const k of klines) map.set(k.time, k);
+  return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
 /**
@@ -74,11 +73,17 @@ export function alignSeries(
   const sortedTimes = [...(common ?? [])].sort((a, b) => a - b);
 
   return series.map((s) => {
-    const byTime = new Map(s.klines.map((k) => [k.time, k.close]));
+    const byTime = new Map(s.klines.map((k) => [k.time, k]));
+    const hasVolume = s.klines.some(
+      (k) => typeof k.volume === "number" && Number.isFinite(k.volume)
+    );
     return {
       symbol: s.symbol,
       times: sortedTimes,
-      prices: sortedTimes.map((t) => byTime.get(t) as number),
+      prices: sortedTimes.map((t) => byTime.get(t)!.close),
+      volumes: hasVolume
+        ? sortedTimes.map((t) => byTime.get(t)?.volume ?? 0)
+        : undefined,
     };
   });
 }

@@ -12,6 +12,7 @@ import { assessDataQuality, type AssetDataQuality } from "./dataQuality";
 import { hrpWeights, maxDiversificationWeights } from "./hrp";
 import { momentumOverlayWeights } from "./momentum";
 import { fractionalKellyWeights } from "./kelly";
+import { resampledMarkowitzWeights } from "./resampledMarkowitz";
 
 const TRADING_DAYS_PER_YEAR = 365;
 const SAMPLER_SEED = 8675309;
@@ -116,6 +117,7 @@ export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBund
   const md = maxDiversificationWeights(priceSeries);
   const mom = momentumOverlayWeights(priceSeries, liveMarketCaps);
   const kly = fractionalKellyWeights(priceSeries);
+  const rsm = resampledMarkowitzWeights(priceSeries, riskFreeRate);
 
   // Final fund = BL → riskCaps (incl. data-quality) → CVaR-defense bump
   const final = finalFundPortfolio(
@@ -207,6 +209,13 @@ export function buildStrategiesBundle(args: BuildStrategiesArgs): StrategiesBund
       "Half-Kelly: w_i ∝ μ_i/σ_i² (только μ_i>0), потом 50/50 микс с equal-weight как haircut на оценку μ.",
       kly.weights,
       kly.warning
+    ),
+    make(
+      "resampled",
+      "Resampled Markowitz",
+      "Michaud bootstrap: 24 resamples × 800 Dirichlet max-Sharpe → среднее. Робастный MVO без QP solver.",
+      rsm.weights,
+      rsm.warning
     ),
     make(
       "finalFund",

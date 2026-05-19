@@ -7,7 +7,7 @@
 | Путь | Назначение |
 |------|------------|
 | `/` | Landing-страница фонда. Хедер с π-логотипом, hero-слоган, две CTA в разделы. |
-| `/portfolio` | **Кабинет аналитики**: 9 моделей построения портфеля + risk caps + CVaR-стресс + рекомендованная аллокация. |
+| `/portfolio` | **Кабинет аналитики**: 14 моделей построения портфеля + risk caps + liquidity + CVaR-стресс + рекомендованная аллокация. |
 | `/backtest` | **Бэктест стратегий**: DCA с индикатором V2 ЧайкКельт и Pifagor ALTS на исторических OHLCV. |
 | `/chart` | Просмотр графика со сделками из бэктеста (кнопка «График со сделками»). |
 
@@ -16,10 +16,10 @@
 Пять под-вкладок:
 
 - **Simulation** — Monte-Carlo cloud по Markowitz, efficient frontier, Max Sharpe / Max Sortino / Min Vol.
-- **Strategies** — 9 параллельных моделей: Market Cap Weighted, Equal Weight, Min Vol, Max Sharpe, Max Sortino, Risk Parity, Black-Litterman (view-tilt), CVaR-Optimal, Final Fund Portfolio. Карточки + сравнительная таблица с CSV-экспортом.
-- **Risk Caps & Views** — per-asset min/max, агрегатные правила (BTC+ETH floor, small-alts ceiling), CVaR-defense порог, fund sleeves (bot / manual), Black-Litterman views (expected return + confidence + max weight).
+- **Strategies** — 14 параллельных моделей: Market Cap, Equal Weight, Min Vol, Max Sharpe, Max Sortino, Risk Parity, Black-Litterman (view-tilt), CVaR-Optimal, HRP, Max Diversification, Momentum Overlay, Fractional Kelly, Resampled Markowitz (Michaud), Final Fund Portfolio. Карточки + сравнительная таблица с CSV-экспортом.
+- **Risk Caps & Views** — pill-кнопки Conservative/Balanced/Aggressive presets, per-asset min/max, агрегатные правила (BTC+ETH floor, small-alts ceiling), CVaR-defense порог, fund sleeves (bot / manual), Black-Litterman views (expected return + confidence + max weight).
 - **Stress Test** — историческая CVaR-95/99 + сценарные шоки + tail-contribution chart.
-- **Recommended** — итоговая premium-карточка с двумя donut'ами (spot / total fund), backtested equity curve vs BTC, JSON snapshot и Print/PDF с титульной страницей.
+- **Recommended** — финальный premium-вид: Confidence Score, Vol Target advisory, Why-narrative, два donut'а (spot / total fund), Cluster Exposure, Rebalance Plan, Rotation Suggestions, Watchlist, Liquidity Layer, Model Contribution, equity curve, walk-forward HRP equity (OOS retraining), JSON snapshot и Print/PDF с титульной страницей.
 
 Источники данных:
 - **OHLCV** (закрытия дневные/часовые) — Binance Spot через `/api/ohlcv` с дисковым кэшем.
@@ -74,7 +74,7 @@ npm run dev          # http://localhost:3000
 
 ## Экспорт для инвесторов
 
-- **Strategies → Copy CSV** — таблица сравнения 9 моделей с полным набором метрик, готово для Excel / pitch deck.
+- **Strategies → Copy CSV** — таблица сравнения 14 моделей с полным набором метрик (включая Calmar, Ulcer, β-BTC), готово для Excel / pitch deck.
 - **Recommended → Copy JSON** — full snapshot финального портфеля (модель, символы, spot/total fund веса, метрики, policy, warning).
 - **Recommended → Print · PDF** — браузерное «Сохранить как PDF» с титульной страницей и адаптированной светлой темой (golden акценты, ink-чернила, без glass/blur/анимаций).
 

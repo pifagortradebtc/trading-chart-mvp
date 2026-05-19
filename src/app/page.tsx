@@ -59,7 +59,7 @@ export default function Home() {
             icon={<Sparkles size={18} className="text-brand" />}
             eyebrow="Markowitz · Black-Litterman"
             title="Кабинет аналитики"
-            body="13 моделей построения портфеля, ограничения долей фонда, CVaR-стресс-тест и итоговая рекомендованная аллокация. Экспорт JSON и PDF."
+            body="14 моделей построения портфеля, ограничения долей фонда, CVaR-стресс-тест и итоговая рекомендованная аллокация. Экспорт JSON и PDF."
             primary
           />
           <EntryCard

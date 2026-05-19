@@ -7,6 +7,7 @@ import {
   Check,
   ClipboardCopy,
   Crown,
+  Droplets,
   Eye,
   Gauge,
   Layers2,
@@ -32,6 +33,13 @@ import { buildWatchlist, type WatchlistEntry } from "@/lib/portfolio/watchlist";
 import { buildWhyNarrative, type WhyParagraph } from "@/lib/portfolio/whyTheseWeights";
 import { buildVolTargetAdvisory, type VolTargetAdvisory } from "@/lib/portfolio/volTarget";
 import { walkForwardHRPEquity, type WalkForwardResult } from "@/lib/portfolio/walkForward";
+import {
+  assessLiquidity,
+  basketLiquidityScore,
+  formatUsdShort,
+  type LiquidityAssessment,
+  type LiquidityTier,
+} from "@/lib/portfolio/liquidity";
 import type { ViewInput } from "@/lib/portfolio/strategyTypes";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -104,6 +112,20 @@ export function RecommendedTab({
     [strategy, symbols]
   );
 
+  // Liquidity must be computed first because Confidence and Rotation both consume it.
+  const liquidityAssessments = useMemo<LiquidityAssessment[]>(
+    () => (priceSeries ? assessLiquidity(priceSeries) : []),
+    [priceSeries]
+  );
+
+  const basketLiquidity = useMemo(
+    () =>
+      strategy && liquidityAssessments.length === strategy.weights.length
+        ? basketLiquidityScore(strategy.weights, liquidityAssessments)
+        : null,
+    [strategy, liquidityAssessments]
+  );
+
   const confidence = useMemo(() => {
     if (!strategy || !dataQuality || !allStrategies) return null;
     return computeConfidence({
@@ -112,8 +134,9 @@ export function RecommendedTab({
       finalStrategy: strategy,
       allStrategies,
       symbols,
+      basketLiquidity: basketLiquidity ?? undefined,
     });
-  }, [strategy, dataQuality, allStrategies, windowDays, symbols]);
+  }, [strategy, dataQuality, allStrategies, windowDays, symbols, basketLiquidity]);
 
   const clusterExposures = useMemo<ClusterExposure[]>(
     () => (strategy ? aggregateByCluster(strategy.weights, symbols) : []),
@@ -127,9 +150,10 @@ export function RecommendedTab({
             weights: strategy.weights,
             symbols,
             dataQuality: dataQuality ?? null,
+            liquidity: liquidityAssessments.length > 0 ? liquidityAssessments : null,
           })
         : [],
-    [strategy, symbols, dataQuality]
+    [strategy, symbols, dataQuality, liquidityAssessments]
   );
 
   const modelContributions = useMemo<ModelContribution[]>(
@@ -278,6 +302,15 @@ export function RecommendedTab({
       )}
 
       {watchlist.length > 0 && <WatchlistCard entries={watchlist} />}
+
+      {liquidityAssessments.length > 0 && strategy && (
+        <LiquidityCard
+          assessments={liquidityAssessments}
+          weights={strategy.weights}
+          symbols={symbols}
+          basketScore={basketLiquidity}
+        />
+      )}
 
       {modelContributions.length > 0 && (
         <ModelContributionCard contributions={modelContributions} />
@@ -1312,11 +1345,13 @@ function RotationSuggestionsCard({
     "data-quality": "Data quality",
     "cluster-overshoot": "Cluster",
     "core-deficit": "Core deficit",
+    liquidity: "Liquidity",
   };
   const sourceTone: Record<RotationSuggestion["source"], string> = {
     "data-quality": "text-rose-300",
     "cluster-overshoot": "text-amber-200",
     "core-deficit": "text-brand-light",
+    liquidity: "text-sky-300",
   };
   const priorityTone: Record<RotationSuggestion["priority"], string> = {
     High: "text-rose-200",
@@ -1379,6 +1414,138 @@ function RotationSuggestionsCard({
       <p className="fund-disclaimer mt-3">
         Эвристические тикеты, не результат оптимизации. Каждый — независимая
         переброска веса; применять последовательно с пересчётом метрик.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * Liquidity Card — per-asset USD-volume tier + basket-level score.
+ *
+ * Source: Binance daily base-volume × close (proxy for daily USD volume).
+ * Four tiers (blue / green / yellow / red) drive the executable-ticket
+ * recommendation; basket score aggregates by portfolio weight and penalizes
+ * red/yellow exposure. Surfaces capacity for the operator before they
+ * try to size up.
+ */
+function LiquidityCard({
+  assessments,
+  weights,
+  symbols,
+  basketScore,
+}: {
+  assessments: LiquidityAssessment[];
+  weights: number[];
+  symbols: string[];
+  basketScore: number | null;
+}) {
+  const tierTone: Record<LiquidityTier, { dot: string; chip: string; label: string }> = {
+    blue: { dot: "bg-sky-300", chip: "text-sky-200", label: "Blue · Institutional" },
+    green: { dot: "bg-emerald-300", chip: "text-emerald-200", label: "Green · Fund-tier" },
+    yellow: { dot: "bg-amber-300", chip: "text-amber-200", label: "Yellow · Retail-large" },
+    red: { dot: "bg-rose-400", chip: "text-rose-200", label: "Red · Thin" },
+    "no-data": { dot: "bg-ink-faint/60", chip: "text-ink-faint", label: "No data" },
+  };
+  const bySymbol = new Map(assessments.map((a) => [a.symbol, a]));
+  const sorted = symbols
+    .map((sym, i) => ({ sym, weight: weights[i] ?? 0, a: bySymbol.get(sym) }))
+    .filter((r) => r.a !== undefined)
+    .sort((a, b) => b.weight - a.weight);
+
+  const scoreTone =
+    basketScore == null
+      ? "text-ink-faint"
+      : basketScore >= 80
+        ? "text-emerald-300"
+        : basketScore >= 60
+          ? "text-brand-light"
+          : basketScore >= 40
+            ? "text-amber-200"
+            : "text-rose-300";
+
+  // Sum of avg daily USD volume across the basket, weighted by allocation.
+  const weightedAdv = sorted.reduce(
+    (s, r) => s + r.weight * (r.a?.avgDailyUsdVolume ?? 0),
+    0
+  );
+
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Droplets size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Liquidity layer
+          </h3>
+          <span className="font-mono text-[10px] text-ink-faint">
+            30d ADV × close · max ticket = 5% ADV
+          </span>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+            Basket
+          </span>
+          <span className={`font-display text-lg font-semibold ${scoreTone}`}>
+            {basketScore != null ? `${basketScore}/100` : "—"}
+          </span>
+          <span className="font-mono text-[10px] text-ink-faint">
+            ADV-weighted ≈ {formatUsdShort(weightedAdv)}
+          </span>
+        </div>
+      </header>
+
+      <div className="overflow-auto">
+        <table className="mt-3 w-full text-xs">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+            <tr className="border-b border-surface-border">
+              <th className="px-2 py-2 text-left font-medium">Asset</th>
+              <th className="px-2 py-2 text-right font-medium">Weight</th>
+              <th className="px-2 py-2 text-right font-medium">30d ADV</th>
+              <th className="px-2 py-2 text-right font-medium">Latest day</th>
+              <th className="px-2 py-2 text-left font-medium">Tier</th>
+              <th className="px-2 py-2 text-right font-medium">Max ticket</th>
+              <th className="px-2 py-2 text-left font-medium">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => {
+              const a = r.a!;
+              const tone = tierTone[a.tier];
+              return (
+                <tr key={r.sym} className="border-b border-surface-border/60">
+                  <td className="px-2 py-2 font-mono text-sm text-ink">
+                    {prettySymbol(r.sym)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-ink">
+                    {(r.weight * 100).toFixed(1)}%
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-ink">
+                    {formatUsdShort(a.avgDailyUsdVolume)}
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-ink-muted">
+                    {formatUsdShort(a.latestDailyUsdVolume)}
+                  </td>
+                  <td className={`px-2 py-2 font-mono text-[11px] ${tone.chip}`}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`size-2 rounded-full ${tone.dot}`} />
+                      {tone.label}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-ink">
+                    {formatUsdShort(a.maxExecutableUsd)}
+                  </td>
+                  <td className="px-2 py-2 text-[11px] text-ink-muted">{a.note}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="fund-disclaimer mt-3">
+        Volume — base-asset volume Binance × close (USD-проксии). Max ticket =
+        5% ADV (консервативно). Для крупных ребалансировок дробить исполнение,
+        учитывать spread и комиссии биржи.
       </p>
     </section>
   );
