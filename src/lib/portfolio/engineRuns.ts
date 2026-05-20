@@ -39,7 +39,7 @@ export interface EngineRunSnapshot {
   assets: string[];
   /** Final fund weights (symbol → weight 0..1). Сумма ≈ 1. */
   weights: Record<string, number>;
-  /** Confidence score 0..1. */
+  /** Confidence score 0..100 (как в ConfidenceBreakdown.score). */
   confidence: number;
   /** Использован ли live market caps или fallback на snapshot. */
   liveMarketCapsUsed: boolean;

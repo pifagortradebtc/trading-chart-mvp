@@ -220,7 +220,7 @@ function RunRow({
               hash {run.paramsHash.slice(0, 8)}
             </span>
             <span className="font-mono text-[10px] text-ink-faint">
-              conf {(run.confidence * 100).toFixed(0)}%
+              conf {run.confidence.toFixed(0)}%
             </span>
             {run.liveMarketCapsUsed && (
               <span className="font-mono text-[10px] text-ink-faint">live-mcaps</span>
