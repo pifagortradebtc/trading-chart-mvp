@@ -1,98 +1,78 @@
 /**
- * HTTP Basic Auth middleware для всей платформы.
- *
- * Защищает все маршруты (страницы + API) одним паролем из env-var
- * `RESEARCH_PASSWORD`. Браузер показывает нативный диалог «введите имя
- * и пароль» — кешируется до закрытия вкладки.
+ * Cookie-session middleware. Защищает все маршруты кроме publicly listed
+ * (главная, login-форма, API-логина, статика).
  *
  * Поведение:
- *   - Если `RESEARCH_PASSWORD` не задана → middleware пропускает всё
- *     (полезно для локальной разработки и E2E тестов).
- *   - Если задана → требует Basic Auth credentials, проверяет пароль
- *     (имя пользователя игнорируется — single-shared-password setup).
+ *   - `RESEARCH_PASSWORD` не задан → пропускает всё (локальная разработка)
+ *   - Маршрут в PUBLIC_PATHS → пропускает
+ *   - Иначе → проверяет HMAC-подписанную cookie. Если нет/невалидна:
+ *       • HTML-запрос → 307 redirect на `/login?next=<path>`
+ *       • API-запрос → 401 JSON
  *
- * Безопасность:
- *   - Constant-time compare (XOR через timingSafeEqual-эквивалент на edge)
- *     для защиты от timing attacks.
- *   - Skip `_next/*`, `favicon`, `public/*` — статика всегда public,
- *     иначе браузер не сможет загрузить ассеты для login-страницы.
- *
- * Зачем НЕ session-based (JWT cookie + login form):
- *   - Команда фонда — 3-5 человек, не нужен per-user account
- *   - Native browser dialog работает без кода
- *   - Меньше surface для багов аутентификации
- *
- * Если нужна более сложная схема (per-user accounts, RBAC, audit) —
- * можно мигрировать на NextAuth.js или интегрировать с Telegram OIDC
- * Криптофонда. Сейчас это overkill.
+ * Зачем именно так: команда видит landing-страницу как «парадную»,
+ * принимает решение зайти в Кабинет → попадает на /login → вводит пароль
+ * → cookie живёт 30 дней. Дальше переходы между разделами без повторных
+ * запросов пароля.
  */
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/server/auth";
 
-const REALM = "Pifagor Fund · Portfolio Research";
+/**
+ * Открытые маршруты — доступны без cookie.
+ * - `/`           — landing (визитка фонда, без чувствительной информации)
+ * - `/login`      — форма ввода пароля
+ * - `/api/auth/*` — login/logout endpoints
+ */
+const PUBLIC_EXACT = new Set(["/", "/login"]);
+const PUBLIC_PREFIXES = ["/api/auth/", "/_next/", "/fonts/", "/images/"];
 
-function timingSafeEqual(a: string, b: string): boolean {
-  // Constant-time string compare. Длины могут отличаться — но даже это
-  // утечка (timing), поэтому XOR'им до длины max(a,b) и проверяем еще
-  // равенство длин в конце.
-  const len = Math.max(a.length, b.length);
-  let mismatch = a.length === b.length ? 0 : 1;
-  for (let i = 0; i < len; i++) {
-    const ca = i < a.length ? a.charCodeAt(i) : 0;
-    const cb = i < b.length ? b.charCodeAt(i) : 0;
-    mismatch |= ca ^ cb;
+function isPublicPath(pathname: string): boolean {
+  if (PUBLIC_EXACT.has(pathname)) return true;
+  if (pathname === "/favicon.ico") return true;
+  for (const prefix of PUBLIC_PREFIXES) {
+    if (pathname.startsWith(prefix)) return true;
   }
-  return mismatch === 0;
+  return false;
 }
 
-function unauthorized(): NextResponse {
-  return new NextResponse("Auth required", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": `Basic realm="${REALM}", charset="UTF-8"`,
-    },
-  });
+function isApiPath(pathname: string): boolean {
+  return pathname.startsWith("/api/");
 }
 
-export function middleware(req: NextRequest): NextResponse {
+export async function middleware(req: NextRequest): Promise<NextResponse> {
   const expected = process.env.RESEARCH_PASSWORD?.trim() ?? "";
-
-  // Auth disabled — пропускаем (локальная разработка без пароля)
   if (!expected) {
     return NextResponse.next();
   }
 
-  const auth = req.headers.get("authorization") ?? "";
-  if (!auth.startsWith("Basic ")) {
-    return unauthorized();
+  const { pathname } = req.nextUrl;
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
   }
 
-  let decoded: string;
-  try {
-    decoded = atob(auth.slice("Basic ".length).trim());
-  } catch {
-    return unauthorized();
+  const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const ok = await verifySessionToken(token, expected);
+  if (ok) {
+    return NextResponse.next();
   }
 
-  // formats: "user:password" — игнорируем user, проверяем только password
-  const colonIdx = decoded.indexOf(":");
-  const provided = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : decoded;
-
-  if (!timingSafeEqual(provided, expected)) {
-    return unauthorized();
+  // Не залогинены
+  if (isApiPath(pathname)) {
+    return NextResponse.json({ error: "Auth required" }, { status: 401 });
   }
 
-  return NextResponse.next();
+  // HTML-запрос → redirect на /login с next-параметром, чтобы после
+  // успеха вернуть пользователя туда, куда он шёл
+  const loginUrl = req.nextUrl.clone();
+  loginUrl.pathname = "/login";
+  loginUrl.searchParams.set("next", pathname + req.nextUrl.search);
+  return NextResponse.redirect(loginUrl);
 }
 
-/**
- * Какие маршруты middleware видит. Исключаем статику и Next.js internals,
- * иначе браузер не сможет загрузить ассеты страницы 401.
- */
 export const config = {
   matcher: [
-    // Всё кроме статики, _next, и favicon. Включает все страницы и /api/*
-    "/((?!_next/static|_next/image|favicon.ico|fonts/|images/|public/).*)",
+    "/((?!_next/static|_next/image|favicon.ico|fonts/|images/).*)",
   ],
 };
