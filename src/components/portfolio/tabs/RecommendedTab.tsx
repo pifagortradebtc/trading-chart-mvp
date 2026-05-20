@@ -10,6 +10,7 @@ import {
   Droplets,
   Eye,
   Gauge,
+  Landmark,
   Layers2,
   Network,
   Printer,
@@ -40,6 +41,7 @@ import {
   type LiquidityAssessment,
   type LiquidityTier,
 } from "@/lib/portfolio/liquidity";
+import { buildNavExport } from "@/lib/portfolio/navExport";
 import type { ViewInput } from "@/lib/portfolio/strategyTypes";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -254,6 +256,11 @@ export function RecommendedTab({
             botSleeve={botSleeve}
             manualSleeve={manualSleeve}
             cvarDefenseThreshold={cvarDefenseThreshold}
+          />
+          <CopyNavExportButton
+            weights={strategy.weights}
+            symbols={symbols}
+            sleeveFraction={botSleeve + manualSleeve}
           />
           <PrintButton />
         </div>
@@ -846,6 +853,86 @@ function CopyJsonButton({
           <span>Copy JSON</span>
         </>
       )}
+    </button>
+  );
+}
+
+/**
+ * Copies a JSON payload matching the Криптофонд backend's
+ * `PUT /admin/portfolio/composition` schema. Operator pastes the JSON into
+ * the admin form (or curl with an admin cookie) — direct cross-domain POST
+ * is intentionally not attempted: the cookie-bound JWT lives on the fund's
+ * domain and would be unavailable here anyway.
+ *
+ * Hover tooltip surfaces the symbol whitelist + dust-drop policy so the
+ * operator understands why some tickers may be absent.
+ */
+function CopyNavExportButton({
+  weights,
+  symbols,
+  sleeveFraction,
+}: {
+  weights: number[];
+  symbols: string[];
+  sleeveFraction: number;
+}) {
+  const [state, setState] = useState<"idle" | "copied" | "error">("idle");
+
+  const handleCopy = async () => {
+    const exported = buildNavExport({ weights, symbols, sleeveFraction });
+    if (exported.payload.items.length === 0) {
+      setState("error");
+      setTimeout(() => setState("idle"), 1800);
+      return;
+    }
+    const wrapper = {
+      generatedAt: new Date().toISOString(),
+      target: "Криптофонд · PUT /admin/portfolio/composition",
+      sumPercent: exported.sumPercent,
+      warnings: exported.warnings,
+      body: exported.payload,
+    };
+    const text = JSON.stringify(wrapper, null, 2);
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setState("copied");
+      setTimeout(() => setState("idle"), 1800);
+    } catch {
+      setState("error");
+      setTimeout(() => setState("idle"), 1800);
+    }
+  };
+
+  const label =
+    state === "copied" ? "Copied" : state === "error" ? "Empty / Error" : "Copy NAV";
+  const Icon = state === "copied" ? Check : Landmark;
+  const tone =
+    state === "copied"
+      ? "border-emerald-500/30 text-emerald-200"
+      : state === "error"
+        ? "border-rose-500/30 text-rose-200"
+        : "border-surface-border text-ink-muted hover:border-brand/40 hover:text-ink";
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={`inline-flex items-center gap-1.5 rounded-md border bg-white/[0.04] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] transition ${tone}`}
+      title="Скопировать JSON в формате PUT /admin/portfolio/composition Криптофонда — символы BTC/ETH/BNB/SOL/OKB/MNT/HYPE/TON, проценты 0-100, сумма ровно 100. Sleeve превращается в CASH USDT."
+    >
+      <Icon size={11} className={state === "copied" ? "text-emerald-300" : undefined} />
+      <span>{label}</span>
     </button>
   );
 }

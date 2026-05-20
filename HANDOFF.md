@@ -1,21 +1,22 @@
 # Handoff — Pifagor Fund · Кабинет аналитики
 
-**Дата сохранения**: 2026-05-19. **Финальное состояние.** Этап 4 закрыт — всё, что можно было сделать без новых API ключей и внешних провайдеров, реализовано. Билд exit 0, `/portfolio` 50.1 kB / 155 kB First Load.
+**Дата сохранения**: 2026-05-20. **Production-ready state.** Этап 5 закрыт — добавлены NAV-экспорт в Криптофонд, unit-тесты математики, E2E через Playwright. Билд exit 0, `/portfolio` 51.8 kB / 156 kB First Load.
 
 GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
 ---
 
-## Где мы — статус «полный MVP»
+## Где мы — статус «production-ready»
 
-Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с четырьмя законченными итерациями:
+Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с пятью законченными итерациями:
 
 - ✅ **Этап 1** — Data Quality, Calmar/Ulcer/β, Modes, Rebalance Plan, Confidence
 - ✅ **Этап 2** — HRP, MaxDiv, Cluster Analysis, Rotation, Model Contribution
 - ✅ **Этап 3** — Watchlist, Why narrative, Momentum, Kelly, Vol Target, Walk-forward
 - ✅ **Этап 4** — Liquidity Layer, Resampled Markowitz, polish
+- ✅ **Этап 5** — NAV-экспорт в Криптофонд, vitest unit-suite (77 тестов), Playwright E2E (6 сценариев)
 
-В итоге: **14 моделей построения портфеля**, **8 advisory модулей**, полный Recommended Tab дашборд.
+В итоге: **14 моделей**, **8 advisory модулей**, **NAV bridge**, **83 проходящих теста** (77 unit + 6 E2E).
 
 ---
 
@@ -53,6 +54,50 @@ UI: `LiquidityCard` в Recommended Tab — таблица с per-asset tier, max
 
 - Pre-existing ESLint warning `react-hooks/exhaustive-deps` в `ChartHost.tsx:190` исправлен через захват `indicatorSeriesRef.current` в начале эффекта (стандартный React-паттерн).
 - README обновлён: список из 14 моделей, описание новых блоков Recommended Tab.
+
+---
+
+## Что добавил этап 5
+
+### NAV-экспорт в Криптофонд (`navExport.ts`)
+
+`buildNavExport({ weights, symbols, sleeveFraction })` собирает JSON в формате `PUT /admin/portfolio/composition` Криптофонда:
+- Маппит trading-chart-mvp тикеры (`BTCUSDT`) в фундовые (`BTC`)
+- Drops неподдерживаемые тикеры с warning'ом (whitelist: BTC/ETH/BNB/SOL/OKB/MNT/HYPE/TON/USDT)
+- Sleeve → CASH USDT row автоматически
+- Renormalize до точной суммы 100% (backend tolerance ±0.01)
+- Drops dust < 0.05% чтобы payload не превышал 50-item cap
+- Сортировка: SPOT desc, CASH last
+
+UI: новая кнопка **«Copy NAV»** в Recommended Tab рядом с Copy JSON и Print. Direct cross-domain POST не делаем (admin-cookie живёт на домене фонда) — operator копирует JSON и вставляет в админ-форму или вызывает curl с admin-cookie.
+
+### Vitest unit-suite (16 файлов, 77 тестов)
+
+Все критические math модули покрыты:
+- `riskCaps.test.ts` — caps clipping, core floor, dq ceiling
+- `dataQuality.test.ts` — статусные пороги (good/limited/very-limited/no-data)
+- `hrp.test.ts` — HRP + Max Diversification
+- `momentum.test.ts`, `kelly.test.ts`, `resampledMarkowitz.test.ts` — три новые стратегии
+- `clusters.test.ts` — таксономия фонда
+- `rotation.test.ts` — все 4 driver'а (dq / cluster / core-deficit / liquidity)
+- `liquidity.test.ts` — tier classification, max ticket, basket score
+- `confidence.test.ts` — 8 факторов
+- `walkForward.test.ts` — out-of-sample HRP equity
+- `watchlist.test.ts`, `volTarget.test.ts`, `modelContribution.test.ts`, `navExport.test.ts`
+- `strategies.integration.test.ts` — end-to-end 14-strategy bundle
+
+Запуск: `npm test` → ~1 секунду. Конфиг в `vitest.config.ts`.
+
+### Playwright E2E (3 файла, 6 сценариев)
+
+Sweet spot tests, не unit-equivalent:
+- `portfolio-load.spec.ts` — shell + tab switching
+- `recommended-tab.spec.ts` — все advisory блоки + Copy NAV + Recommendation Modes
+- `rebalance-plan.spec.ts` — current weight input → state propagation
+
+**Mock /api/ohlcv** (через `e2e/helpers/ohlcvMock.ts`) с детерминированной синтетикой — обходит timeout на api.binance.com (он недоступен из этой сети). Это даёт стабильный CI без зависимости от внешнего API. Cодержит per-symbol profile-ы (BTC-like, ETH-like, etc.) и `lcg` seed → реалистичные веса.
+
+Запуск: `npm run test:e2e` → ~15 секунд при `reuseExistingServer`. Конфиг в `playwright.config.ts`, target = `localhost:3001` (старый dev на 3000 был корраптнут после долгой incremental compile сессии).
 
 ---
 
@@ -132,10 +177,30 @@ header (eyebrow + title + JSON copy + Print button)
 
 ```powershell
 cd "C:\Users\pifag\OneDrive\Тестер стратегий\trading-chart-mvp"
-npm run dev                # http://localhost:3000
+npm run dev                # http://localhost:3000 (auto-fallback to 3001)
 npm run build              # exit 0 expected
+npm test                   # vitest unit suite (~1s, 77 tests)
+npm run test:coverage      # с покрытием v8
+npm run test:e2e           # Playwright (~15s, 6 tests)
 git log --oneline -10
 ```
+
+При смене dev port:
+- `npm run dev` сам подхватывает 3001 если 3000 занят
+- Playwright config указывает на 3001 (см. `playwright.config.ts`)
+- Если нужен реальный data flow в E2E — `unset PW_START_DEV` чтобы переиспользовать локальный dev
+
+NAV export workflow:
+1. На `/portfolio` → Recommended Tab → кнопка **Copy NAV** (рядом с Copy JSON / Print)
+2. JSON copied в clipboard
+3. Открыть Криптофонд админку → Composition → вставить
+4. ИЛИ через curl с admin-cookie:
+   ```
+   curl -X PUT https://pifagor-fund.example.com/admin/portfolio/composition \
+     -H "Cookie: admin_jwt=$ADMIN_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d "$NAV_JSON"
+   ```
 
 ---
 
