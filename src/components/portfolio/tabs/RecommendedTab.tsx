@@ -43,6 +43,13 @@ import {
 } from "@/lib/portfolio/liquidity";
 import { buildNavExport } from "@/lib/portfolio/navExport";
 import type { ViewInput } from "@/lib/portfolio/strategyTypes";
+import type { RecommendationMode } from "@/lib/portfolio/recommendationModes";
+import { recordRun } from "@/lib/portfolio/engineRuns";
+import {
+  deltaVsLive,
+  useLiveFundComposition,
+  type FundDelta,
+} from "@/lib/portfolio/fundBridge";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -66,6 +73,12 @@ interface Props {
   onCurrentWeightsChange?: (next: Record<string, number>) => void;
   /** Active Black-Litterman views — needed for the Why narrative. */
   views?: ViewInput[];
+  /** Метаданные текущего расчёта engine — для записи в Journal при Copy NAV. */
+  engineMeta?: {
+    paramsHash: string;
+    mode: RecommendationMode;
+    liveMarketCapsUsed: boolean;
+  };
 }
 
 const SPOT_PALETTE = [
@@ -100,6 +113,7 @@ export function RecommendedTab({
   currentWeights,
   onCurrentWeightsChange,
   views,
+  engineMeta,
 }: Props) {
   const sleeveTotalPct = ((botSleeve + manualSleeve) * 100).toFixed(0);
   const cvarPct = (cvarDefenseThreshold * 100).toFixed(1);
@@ -261,6 +275,8 @@ export function RecommendedTab({
             weights={strategy.weights}
             symbols={symbols}
             sleeveFraction={botSleeve + manualSleeve}
+            engineMeta={engineMeta}
+            confidenceScore={confidence?.score}
           />
           <PrintButton />
         </div>
@@ -292,6 +308,27 @@ export function RecommendedTab({
 
       {clusterExposures.length > 0 && (
         <ClusterExposureCard exposures={clusterExposures} />
+      )}
+
+      {strategy && (
+        <FundBridgeCard
+          targetWeights={
+            // strategy.weights — это number[]; собираем в Record по symbol
+            (() => {
+              const out: Record<string, number> = {};
+              for (let i = 0; i < symbols.length; i++) {
+                out[symbols[i]] = strategy.weights[i] ?? 0;
+              }
+              return out;
+            })()
+          }
+          onImportCurrent={
+            onCurrentWeightsChange
+              ? (weights) => onCurrentWeightsChange(weights)
+              : undefined
+          }
+          basketSymbols={symbols}
+        />
       )}
 
       {strategy && onCurrentWeightsChange && (
@@ -871,10 +908,18 @@ function CopyNavExportButton({
   weights,
   symbols,
   sleeveFraction,
+  engineMeta,
+  confidenceScore,
 }: {
   weights: number[];
   symbols: string[];
   sleeveFraction: number;
+  engineMeta?: {
+    paramsHash: string;
+    mode: RecommendationMode;
+    liveMarketCapsUsed: boolean;
+  };
+  confidenceScore?: number;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
 
@@ -905,6 +950,28 @@ function CopyNavExportButton({
         ta.select();
         document.execCommand("copy");
         document.body.removeChild(ta);
+      }
+      // Auto-record в Engine Run Journal: snapshot params + выданных весов.
+      // Делаем fire-and-forget — clipboard уже отработал, ошибка записи не
+      // должна влиять на UX. Без engineMeta (например, в тестах) не пишем.
+      if (engineMeta && engineMeta.paramsHash) {
+        const weightsBySymbol: Record<string, number> = {};
+        for (let i = 0; i < symbols.length; i++) {
+          if (typeof weights[i] === "number" && Number.isFinite(weights[i])) {
+            weightsBySymbol[symbols[i]] = weights[i];
+          }
+        }
+        recordRun({
+          paramsHash: engineMeta.paramsHash,
+          mode: engineMeta.mode,
+          assets: [...symbols],
+          weights: weightsBySymbol,
+          confidence: typeof confidenceScore === "number" ? confidenceScore : 0,
+          liveMarketCapsUsed: engineMeta.liveMarketCapsUsed,
+          publishedAt: Date.now(),
+        }).catch(() => {
+          // tracked locally; journal will reflect this on next reload
+        });
       }
       setState("copied");
       setTimeout(() => setState("idle"), 1800);
@@ -2013,6 +2080,166 @@ function ModelContributionCard({
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+/**
+ * Δ vs Live Fund — read-only мост к Криптофонду.
+ *
+ * Если PIFAGOR_FUND_API_URL не задан или фонд недоступен — блок ничего не
+ * рендерит (graceful: research работает standalone, без зависимости от
+ * фонда). При успешном fetch — таблица target vs live + кнопка Import
+ * current → заполняет Rebalance Plan актуальными весами фонда.
+ *
+ * Конвенция: target = что engine рекомендует сейчас; live = что в фонде
+ * (после последнего Copy NAV + ручного PUT оператора). Δ = target - live;
+ * BUY если положительная (надо докупить), SELL если отрицательная.
+ */
+function FundBridgeCard({
+  targetWeights,
+  basketSymbols,
+  onImportCurrent,
+}: {
+  targetWeights: Record<string, number>;
+  basketSymbols: string[];
+  onImportCurrent?: (weights: Record<string, number>) => void;
+}) {
+  const { data, loading, error, refresh } = useLiveFundComposition();
+  const deltas = useMemo<FundDelta[]>(
+    () => deltaVsLive(targetWeights, data, { band: 0.01 }),
+    [targetWeights, data],
+  );
+
+  // Skip block entirely if fund API не сконфигурирован — это норма для
+  // локальной разработки. Показываем только если есть ошибка-кроме-503
+  // или live-data есть.
+  if (!loading && !data && !error) return null;
+  if (
+    !loading &&
+    !data &&
+    error &&
+    error.includes("недоступен или не сконфигурирован")
+  ) {
+    // Тихо скрываем — фонд не подключён, не отвлекаем оператора.
+    return null;
+  }
+
+  const handleImport = () => {
+    if (!data || !onImportCurrent) return;
+    const next: Record<string, number> = {};
+    for (const item of data.items) {
+      if (basketSymbols.includes(item.symbol)) {
+        next[item.symbol] = item.weight;
+      }
+    }
+    onImportCurrent(next);
+  };
+
+  return (
+    <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
+      <header className="flex flex-wrap items-baseline justify-between gap-3 border-b border-surface-border pb-3">
+        <div className="flex items-center gap-2">
+          <Landmark size={14} className="text-brand" />
+          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
+            Δ vs Live Fund
+          </h3>
+          {data?.fundUrl && (
+            <span className="font-mono text-[10px] text-ink-faint">
+              ← {new URL(data.fundUrl).host}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {onImportCurrent && data && (
+            <button
+              type="button"
+              onClick={handleImport}
+              className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-white/[0.04] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink"
+              title="Скопировать live composition фонда в Rebalance Plan → текущие веса"
+            >
+              Import current
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-md border border-surface-border bg-white/[0.04] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-muted transition hover:border-brand/40 hover:text-ink disabled:opacity-40"
+          >
+            {loading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+      </header>
+
+      {error && !error.includes("недоступен или не сконфигурирован") && (
+        <p className="mt-3 text-xs text-rose-300">{error}</p>
+      )}
+
+      {data && (
+        <>
+          <p className="mt-2 font-mono text-[10px] text-ink-faint">
+            {data.lastChangedAt
+              ? `last change: ${new Date(data.lastChangedAt).toISOString().slice(0, 16).replace("T", " ")} UTC · `
+              : ""}
+            band ±1pp ⇒ HOLD; вне диапазона — BUY/SELL
+          </p>
+          <table className="mt-3 w-full text-xs">
+            <thead className="text-[10px] uppercase tracking-[0.18em] text-ink-faint">
+              <tr className="border-b border-surface-border">
+                <th className="py-1.5 text-left font-medium">Symbol</th>
+                <th className="py-1.5 text-right font-medium">Target</th>
+                <th className="py-1.5 text-right font-medium">Live</th>
+                <th className="py-1.5 text-right font-medium">Δ</th>
+                <th className="py-1.5 text-right font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="font-mono">
+              {deltas.map((d) => (
+                <tr key={d.symbol} className="border-b border-surface-border/60">
+                  <td className="py-1.5 text-ink">{prettySymbol(d.symbol)}</td>
+                  <td className="py-1.5 text-right text-ink-muted">
+                    {(d.target * 100).toFixed(2)}%
+                  </td>
+                  <td className="py-1.5 text-right text-ink-muted">
+                    {(d.live * 100).toFixed(2)}%
+                  </td>
+                  <td
+                    className={`py-1.5 text-right ${
+                      d.action === "HOLD"
+                        ? "text-ink-faint"
+                        : d.delta > 0
+                          ? "text-emerald-300"
+                          : "text-rose-300"
+                    }`}
+                  >
+                    {d.delta > 0 ? "+" : ""}
+                    {(d.delta * 100).toFixed(2)}pp
+                  </td>
+                  <td className="py-1.5 text-right">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.18em] ${
+                        d.action === "BUY"
+                          ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : d.action === "SELL"
+                            ? "border border-rose-500/30 bg-rose-500/10 text-rose-200"
+                            : "border border-surface-border text-ink-faint"
+                      }`}
+                    >
+                      {d.action}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.items.length === 0 && (
+            <p className="mt-3 text-xs text-ink-faint">
+              Фонд вернул пустую композицию.
+            </p>
+          )}
+        </>
+      )}
     </section>
   );
 }

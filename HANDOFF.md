@@ -1,6 +1,6 @@
 # Handoff — Pifagor Fund · Кабинет аналитики
 
-**Дата сохранения**: 2026-05-20. **Production-ready state.** Этап 6 закрыт — multi-source OHLCV (Binance + OKX + CoinGecko), MNT в universe, защита alignSeries от свежих листингов. Билд exit 0, `/portfolio` 52.5 kB / 157 kB First Load.
+**Дата сохранения**: 2026-05-20. **Production-ready state.** Этап 7 закрыт — Engine Run Journal (локальный audit-trail) + Read-only мост к Криптофонду (`Δ vs Live Fund` + Import current). Билд exit 0, `/portfolio` 56.9 kB / 162 kB First Load.
 
 GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
@@ -8,7 +8,7 @@ GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
 ## Где мы — статус «production-ready»
 
-Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с шестью законченными итерациями:
+Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с семью законченными итерациями:
 
 - ✅ **Этап 1** — Data Quality, Calmar/Ulcer/β, Modes, Rebalance Plan, Confidence
 - ✅ **Этап 2** — HRP, MaxDiv, Cluster Analysis, Rotation, Model Contribution
@@ -16,8 +16,9 @@ GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 - ✅ **Этап 4** — Liquidity Layer, Resampled Markowitz, polish
 - ✅ **Этап 5** — NAV-экспорт в Криптофонд, vitest unit-suite (77 тестов), Playwright E2E (6 сценариев)
 - ✅ **Этап 6** — Multi-source OHLCV (Binance + OKX + CoinGecko), MNT в universe, alignSeries guard, 26 новых тестов
+- ✅ **Этап 7** — Engine Run Journal + Read-only Fund Bridge (Δ vs Live Fund + Import current weights), 32 новых теста
 
-В итоге: **14 моделей**, **8 advisory модулей**, **NAV bridge**, **3 OHLCV-источника**, **109 проходящих тестов** (103 unit + 6 E2E).
+В итоге: **14 моделей**, **8 advisory модулей**, **NAV bridge**, **3 OHLCV-источника**, **Read-only Fund bridge**, **Engine journal**, **141 проходящий тест** (135 unit + 6 E2E).
 
 ---
 
@@ -151,6 +152,69 @@ MNT на Binance Spot есть (листинг 2023, ≥1000 дней истор
 
 ---
 
+## Что добавил этап 7
+
+### Engine Run Journal — локальный audit-trail
+
+Каждый расчёт engine получает детерминированный `paramsHash` (SHA-256 над canonicalized JSON параметров: assets/caps/views/mode/cvar/rf/sims/historyDays). Snapshot записывается:
+
+- **localStorage** — мгновенный, основа правды для UI: до 50 записей
+- **server disk** `.cache-disk/engine-runs/<id>.json` — durable, до 200 записей; fire-and-forget POST не блокирует clipboard
+
+Запись происходит **автоматически** при нажатии Copy NAV в Recommended Tab (поле `publishedAt` помечается timestamp'ом).
+
+UI — отдельный sub-tab **Journal** (рядом с Recommended):
+- Таблица последних 100 runs (local + server merge, local wins для edited notes)
+- Per-row: date / mode badge / published badge / hash / confidence / top-5 weights
+- Inline-редактирование note (до 500 символов)
+- **Compare two runs** — diff таблица «before/after/Δpp» по каждому символу
+
+Файлы:
+- [engineRuns.ts](src/lib/portfolio/engineRuns.ts) — core (hash, recordRun, updateRunNote, diffWeights)
+- [api/engine-runs/route.ts](src/app/api/engine-runs/route.ts) — POST/GET
+- [api/engine-runs/[id]/route.ts](src/app/api/engine-runs/[id]/route.ts) — PATCH (note/publishedAt)
+- [tabs/JournalTab.tsx](src/components/portfolio/tabs/JournalTab.tsx) — UI
+
+### Read-only Fund Bridge
+
+Research-tool и фонд работают отдельно (architecturally correct — operator-mediated через Copy NAV). Этап 7 добавляет **read-only** связи без нарушения отдельности:
+
+- `GET /api/portfolio/public` Криптофонда → проксим через [api/fund/composition/route.ts](src/app/api/fund/composition/route.ts), кешируем in-memory 60 сек
+- Если `PIFAGOR_FUND_API_URL` env не задан — server отдаёт 503, клиент graceful скрывает блок (back-compat для локальной разработки без фонда)
+
+UI — новый блок **«Δ vs Live Fund»** в Recommended Tab (между Cluster Exposure и Rebalance Plan):
+- Таблица target vs live + Δpp + action (BUY/SELL/HOLD, band ±1pp)
+- Кнопка **Refresh** — повторный GET с инвалидацией кеша
+- Кнопка **Import current** — копирует live composition фонда в `currentWeights` state Rebalance Plan'а (замена ручного ввода)
+- Mapping bare→exchange ticker через `exchangeSymbolFromBare()` (reverse от navExport SYMBOL_MAP)
+
+Файлы:
+- [fundBridge.ts](src/lib/portfolio/fundBridge.ts) — fetcher + useLiveFundComposition hook + deltaVsLive + ticker mapping
+- [api/fund/composition/route.ts](src/app/api/fund/composition/route.ts) — server proxy
+- В [RecommendedTab.tsx](src/components/portfolio/tabs/RecommendedTab.tsx) — компонент FundBridgeCard
+
+### Архитектурное решение: отдельные платформы
+
+Research (trading-chart-mvp) и Fund (Криптофонд) — два независимых деплоя:
+
+```
+Research → operator-mediated → Fund
+(read-only) → JSON через буфер → (writer)
+              + Δ vs Live Fund (read-only)
+              + Engine Run Journal (local-only)
+```
+
+Engine **никогда** не пишет напрямую в фонд: «operator-as-gate» защищает от багов в research-tool, попадающих в реальный NAV. Все write-операции идут через ручное подтверждение оператора.
+
+### Тесты (32 новых, всего 141)
+
+- [engineRuns.test.ts](src/lib/portfolio/__tests__/engineRuns.test.ts) — 16 тестов: canonicalize (порядок ключей, nesting), computeParamsHash (детерминизм, sensitivity), diffWeights (union, sort, missing), localStorage round-trip
+- [fundBridge.test.ts](src/lib/portfolio/__tests__/fundBridge.test.ts) — 16 тестов: exchangeSymbolFromBare (mapping + fallback), deltaVsLive (BUY/SELL/HOLD, sort, union, null live), fetchLiveFundComposition (mocked fetch, error paths, filtering)
+
+E2E расширен: проверка 6-го sub-tab (Journal) в `portfolio-load.spec.ts`.
+
+---
+
 ## Что **не сделал** и почему
 
 | Пункт | Причина |
@@ -228,11 +292,18 @@ header (eyebrow + title + JSON copy + Print button)
 cd "C:\Users\pifag\OneDrive\Тестер стратегий\trading-chart-mvp"
 npm run dev                # http://localhost:3000 (auto-fallback to 3001)
 npm run build              # exit 0 expected
-npm test                   # vitest unit suite (~1s, 103 tests)
+npm test                   # vitest unit suite (~1s, 135 tests)
 npm run test:coverage      # с покрытием v8
-PW_START_DEV=1 npm run test:e2e   # Playwright (~50s with managed dev server)
+PW_START_DEV=1 npm run test:e2e   # Playwright (~20s with managed dev server)
 # Если уже запущен `npm run dev -- --port 3001` — просто `npm run test:e2e`
 git log --oneline -10
+```
+
+### Env vars (опциональные)
+
+```
+PIFAGOR_FUND_API_URL=https://pifagor.fund   # для Δ vs Live Fund блока; без него блок скрыт
+PERSISTENT_DISK_ROOT=/data                  # для prod (Render); локально → ./.cache-disk
 ```
 
 При смене dev port:

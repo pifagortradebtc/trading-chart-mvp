@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  BookOpen,
   ChartCandlestick,
   Crown,
   Layers,
@@ -22,6 +23,8 @@ import { StrategiesTab } from "./tabs/StrategiesTab";
 import { RiskCapsTab } from "./tabs/RiskCapsTab";
 import { StressTestTab } from "./tabs/StressTestTab";
 import { RecommendedTab } from "./tabs/RecommendedTab";
+import { JournalTab } from "./tabs/JournalTab";
+import { computeParamsHash, type EngineRunParams } from "@/lib/portfolio/engineRuns";
 import {
   alignSeries,
   fetchPortfolioCloses,
@@ -97,7 +100,7 @@ const PIN_COLOR_PALETTE = [
   "#d63ec8",
 ];
 
-type TabId = "sim" | "strategies" | "caps" | "stress" | "recommended";
+type TabId = "sim" | "strategies" | "caps" | "stress" | "recommended" | "journal";
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: "sim", label: "Simulation", icon: ChartCandlestick },
@@ -105,6 +108,7 @@ const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: numbe
   { id: "caps", label: "Risk Caps & Views", icon: ShieldAlert },
   { id: "stress", label: "Stress Test", icon: TrendingDown },
   { id: "recommended", label: "Recommended", icon: Crown },
+  { id: "journal", label: "Journal", icon: BookOpen },
 ];
 
 export function MPTSimulator() {
@@ -263,6 +267,45 @@ export function MPTSimulator() {
     },
     []
   );
+
+  // Engine params snapshot — детерминированный hash используется для:
+  //   - identification повторных запусков с теми же параметрами в Journal
+  //   - привязки Copy NAV-snapshot к точно тому configu, который его выдал
+  const engineParams = useMemo<EngineRunParams>(
+    () => ({
+      assets,
+      riskCaps,
+      aggregateRules,
+      views,
+      cvarDefenseThreshold,
+      mode: recommendationMode ?? "balanced",
+      riskFreeRate,
+      simulations,
+      historyDays,
+    }),
+    [
+      assets,
+      riskCaps,
+      aggregateRules,
+      views,
+      cvarDefenseThreshold,
+      recommendationMode,
+      riskFreeRate,
+      simulations,
+      historyDays,
+    ],
+  );
+
+  const [paramsHash, setParamsHash] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    computeParamsHash(engineParams).then((h) => {
+      if (!cancelled) setParamsHash(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [engineParams]);
 
   useEffect(() => {
     setBounds((prev) => syncBounds(prev, assets));
@@ -813,8 +856,15 @@ export function MPTSimulator() {
             currentWeights={currentWeights}
             onCurrentWeightsChange={setCurrentWeights}
             views={views}
+            engineMeta={{
+              paramsHash,
+              mode: recommendationMode ?? "balanced",
+              liveMarketCapsUsed: !!liveMarketCaps,
+            }}
           />
         )}
+
+        {tab === "journal" && <JournalTab />}
 
         <footer className="border-t border-surface-border pt-4">
           <p className="fund-disclaimer">
