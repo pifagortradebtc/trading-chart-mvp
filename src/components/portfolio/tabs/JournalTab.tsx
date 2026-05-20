@@ -184,11 +184,18 @@ function RunRow({
     if (isEditingNote) setDraft(run.note ?? "");
   }, [isEditingNote, run.note]);
 
-  const topWeights = useMemo(() => {
+  // Показываем все активы с заметным весом (> 0.1%), отсортированные desc.
+  // У нас universe ≤10 тикеров, обрезку top-N не делаем — лучше видеть всю
+  // композицию сразу, чем «...+2» без понимания что внутри.
+  const allWeights = useMemo(() => {
     return Object.entries(run.weights)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5);
+      .filter(([, w]) => w >= 0.001)
+      .sort(([, a], [, b]) => b - a);
   }, [run.weights]);
+  const dustCount = useMemo(
+    () => Object.values(run.weights).filter((w) => w > 0 && w < 0.001).length,
+    [run.weights],
+  );
 
   const created = new Date(run.createdAt);
   const published = run.publishedAt ? new Date(run.publishedAt) : null;
@@ -220,14 +227,19 @@ function RunRow({
             )}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-0.5 font-mono text-xs text-ink-muted">
-            {topWeights.map(([sym, w]) => (
+            {allWeights.map(([sym, w]) => (
               <span key={sym}>
                 <span className="text-ink">{prettySymbol(sym)}</span>{" "}
                 <span className="text-ink-faint">{(w * 100).toFixed(1)}%</span>
               </span>
             ))}
-            {Object.keys(run.weights).length > 5 && (
-              <span className="text-ink-faint">…+{Object.keys(run.weights).length - 5}</span>
+            {dustCount > 0 && (
+              <span
+                className="text-ink-faint/60"
+                title="Активы с весом < 0.1% — числовой шум после CVaR-защиты и risk caps"
+              >
+                +{dustCount} dust
+              </span>
             )}
           </div>
         </div>
