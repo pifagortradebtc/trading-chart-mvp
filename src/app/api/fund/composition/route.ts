@@ -31,6 +31,20 @@ interface FundPublicResponse {
   lastChangedAt?: string | null;
 }
 
+/**
+ * Backend фонда отдаёт `weight` как string ("100", "12.5"), не number —
+ * Prisma Decimal обычно сериализуется в JSON именно так. Принудительно
+ * приводим к number; non-numeric или отрицательные отфильтровываем.
+ */
+function coerceWeight(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return null;
+}
+
 interface CachedPayload {
   body: {
     items: FundPublicItem[];
@@ -103,14 +117,20 @@ export async function GET(): Promise<NextResponse> {
     );
   }
 
-  const items = Array.isArray(json?.items)
-    ? json.items.filter(
-        (it): it is FundPublicItem =>
-          !!it &&
-          typeof it.symbol === "string" &&
-          typeof it.weight === "number" &&
-          Number.isFinite(it.weight),
-      )
+  const items: FundPublicItem[] = Array.isArray(json?.items)
+    ? json.items.flatMap((it) => {
+        if (!it || typeof it.symbol !== "string") return [];
+        const w = coerceWeight(it.weight);
+        if (w === null) return [];
+        return [
+          {
+            symbol: it.symbol,
+            name: it.name,
+            weight: w,
+            category: it.category,
+          },
+        ];
+      })
     : [];
 
   const body = {
