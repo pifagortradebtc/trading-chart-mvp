@@ -138,6 +138,44 @@ describe("fetchCoinGeckoDailyServer", () => {
     expect(r.oldestAvailableMs).toBeNull();
   });
 
+  it("кэпит days в 365 (free tier CoinGecko после 2025)", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ prices: [], market_caps: [], total_volumes: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Просим 3 года → должно быть капнуто до 365
+    const endMs = Date.UTC(2026, 4, 20);
+    const startMs = endMs - 3 * 365 * 86_400_000;
+    await fetchCoinGeckoDailyServer({
+      symbol: "HYPEUSDT",
+      startMs,
+      endMs,
+    });
+    const calledUrl = fetchMock.mock.calls[0]![0] as string;
+    expect(calledUrl).toMatch(/[?&]days=365(&|$)/);
+    expect(calledUrl).not.toMatch(/[?&]days=max/);
+  });
+
+  it("использует requested days если меньше 365", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ prices: [], market_caps: [], total_volumes: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const endMs = Date.UTC(2026, 4, 20);
+    const startMs = endMs - 90 * 86_400_000;
+    await fetchCoinGeckoDailyServer({
+      symbol: "HYPEUSDT",
+      startMs,
+      endMs,
+    });
+    const calledUrl = fetchMock.mock.calls[0]![0] as string;
+    expect(calledUrl).toMatch(/[?&]days=90(&|$)/);
+  });
+
   it("propagates HTTP errors", async () => {
     vi.stubGlobal(
       "fetch",

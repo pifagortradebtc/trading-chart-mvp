@@ -83,11 +83,20 @@ export async function fetchCoinGeckoDailyServer(opts: {
   const { symbol, startMs, endMs } = opts;
   const coinId = coingeckoIdFromSymbol(symbol);
 
+  // CoinGecko free tier (since 2025) ограничивает `market_chart` 365 днями
+  // истории — `days=max` возвращает 401 с error_code 10012. Кэп просим то,
+  // что реально влезает в free tier; для активов вроде HYPE (~17 месяцев
+  // на 2026-05) этого достаточно — мы получим почти всю историю с листинга.
+  // Для активов с более длинной историей (например, BTC через CoinGecko)
+  // потеряем хвост — но в нашем universe такие тикеры идут через Binance.
+  const requestedDays = Math.max(1, Math.ceil((endMs - startMs) / 86_400_000));
+  const days = Math.min(365, requestedDays);
+
   const url = new URL(
     `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`,
   );
   url.searchParams.set("vs_currency", "usd");
-  url.searchParams.set("days", "max");
+  url.searchParams.set("days", String(days));
   url.searchParams.set("interval", "daily");
 
   const res = await fetch(url.toString());
