@@ -85,7 +85,10 @@ function StrategyCard({
   onHover: (id: string | null) => void;
   onClick: () => void;
 }) {
-  const top = topWeights(strategy.weights, symbols, 3);
+  // Все веса ≥ 1% (значимые позиции), отсортированы desc. У нас universe
+  // обычно ≤10 тикеров — показываем всё, чтобы оператор не гадал «что в
+  // оставшихся 7%». Активы < 1% — числовой шум после CVaR/renormalize.
+  const top = topWeights(strategy.weights, symbols, 0.01);
   const isFinal = strategy.id === "finalFund";
 
   const ring =
@@ -356,11 +359,15 @@ function ComparisonTable({
   );
 }
 
-function topWeights(weights: number[], symbols: string[], k: number) {
+/**
+ * Возвращает все веса >= minWeight, отсортированные desc. minWeight=0.01
+ * отбрасывает numerical noise (< 1%) после CVaR-защиты и renormalize.
+ */
+function topWeights(weights: number[], symbols: string[], minWeight: number) {
   return weights
     .map((w, i) => ({ weight: w, symbol: symbols[i] ?? `#${i}` }))
-    .sort((a, b) => b.weight - a.weight)
-    .slice(0, k);
+    .filter((r) => r.weight >= minWeight)
+    .sort((a, b) => b.weight - a.weight);
 }
 
 function Th({ label, tip }: { label: string; tip?: string }) {
