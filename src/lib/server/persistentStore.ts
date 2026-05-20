@@ -34,10 +34,21 @@ export function safeOhlcvFileId(symbol: string, interval: string, startMs: numbe
   return `${symbol}_${interval}_${h}.json`;
 }
 
-/** Стабильное имя файла: одна серия на пару + TF + глубину лет (без startMs/endMs). */
-export function stableOhlcvFileName(symbol: string, interval: string, yearsBack: number): string {
+/**
+ * Стабильное имя файла: одна серия на пару + TF + глубину лет (без startMs/endMs).
+ *
+ * `sourcePrefix` (e.g. "okx_", "coingecko_") разделяет кеши по источнику —
+ * без префикса (default "") сохраняем обратную совместимость с уже лежащими
+ * Binance-кешами. См. `sourceFilenamePrefix()` в `ohlcvSource.ts`.
+ */
+export function stableOhlcvFileName(
+  symbol: string,
+  interval: string,
+  yearsBack: number,
+  sourcePrefix = "",
+): string {
   const sym = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  return `v2_${sym}_${interval}_y${yearsBack}.json`;
+  return `v2_${sourcePrefix}${sym}_${interval}_y${yearsBack}.json`;
 }
 
 export async function readJsonFile<T>(fullPath: string): Promise<T | null> {

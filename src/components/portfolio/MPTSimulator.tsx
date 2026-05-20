@@ -22,7 +22,11 @@ import { StrategiesTab } from "./tabs/StrategiesTab";
 import { RiskCapsTab } from "./tabs/RiskCapsTab";
 import { StressTestTab } from "./tabs/StressTestTab";
 import { RecommendedTab } from "./tabs/RecommendedTab";
-import { alignSeries, fetchPortfolioCloses } from "@/lib/portfolio/market-data";
+import {
+  alignSeries,
+  fetchPortfolioCloses,
+  prefilterByHistoryLength,
+} from "@/lib/portfolio/market-data";
 import { computeMetrics } from "@/lib/portfolio/mpt";
 import { useMPTWorker } from "@/lib/portfolio/use-mpt-worker";
 import {
@@ -120,6 +124,10 @@ export function MPTSimulator() {
   const [priceSeries, setPriceSeries] = useState<PriceSeries[] | null>(null);
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [warningSymbols, setWarningSymbols] = useState<string[]>([]);
+  /** Активы, у которых данные пришли, но история слишком короткая на фоне остальных — в watchlist. */
+  const [pendingSymbols, setPendingSymbols] = useState<
+    { symbol: string; length: number; maxLength: number }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -286,6 +294,7 @@ export function MPTSimulator() {
     setLoading(true);
     setDurationMs(null);
     setWarningSymbols([]);
+    setPendingSymbols([]);
     try {
       const fetched = await Promise.allSettled(
         assets.map(async (symbol) => {
@@ -313,7 +322,26 @@ export function MPTSimulator() {
         );
       }
 
-      const aligned = alignSeries(ok);
+      // Защита от «короткий тянет вниз»: если один актив втрое короче
+      // остальных, alignSeries обрежет всех под него и dataQuality пометит
+      // даже BTC как `limited`. Лучше короткого временно вынести в watchlist.
+      const { kept, dropped } = prefilterByHistoryLength(ok);
+      if (dropped.length > 0) {
+        setPendingSymbols(
+          dropped.map((d) => ({
+            symbol: d.symbol,
+            length: d.length,
+            maxLength: d.maxLength,
+          })),
+        );
+      }
+      if (kept.length < 2) {
+        throw new Error(
+          "После фильтра по длине истории осталось <2 активов. Удалите свежие листинги или дождитесь накопления истории.",
+        );
+      }
+
+      const aligned = alignSeries(kept);
       if ((aligned[0]?.times.length ?? 0) < 30) {
         throw new Error(
           "Слишком мало общих торговых дней между активами. Уменьшите окно или замените активы."
@@ -681,8 +709,25 @@ export function MPTSimulator() {
           <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />
             <span>
-              Нет данных по: {warningSymbols.map(prettySymbol).join(", ")}. Эти
-              активы исключены из расчёта (limited data).
+              Не удалось загрузить котировки: {warningSymbols.map(prettySymbol).join(", ")}.
+              Возможные причины: пары нет на источнике, сетевая ошибка, или тикер
+              не маппится. Активы временно исключены из расчёта.
+            </span>
+          </div>
+        )}
+
+        {pendingSymbols.length > 0 && (
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>
+              В watchlist (мало истории для участия в портфеле):{" "}
+              {pendingSymbols
+                .map(
+                  (p) =>
+                    `${prettySymbol(p.symbol)} (${p.length}д из ${p.maxLength}д у длиннейшего)`,
+                )
+                .join(", ")}
+              . Появятся в расчёте, когда наберут хотя бы половину истории длиннейшего актива.
             </span>
           </div>
         )}

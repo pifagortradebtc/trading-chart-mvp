@@ -1,6 +1,6 @@
 # Handoff — Pifagor Fund · Кабинет аналитики
 
-**Дата сохранения**: 2026-05-20. **Production-ready state.** Этап 5 закрыт — добавлены NAV-экспорт в Криптофонд, unit-тесты математики, E2E через Playwright. Билд exit 0, `/portfolio` 51.8 kB / 156 kB First Load.
+**Дата сохранения**: 2026-05-20. **Production-ready state.** Этап 6 закрыт — multi-source OHLCV (Binance + OKX + CoinGecko), MNT в universe, защита alignSeries от свежих листингов. Билд exit 0, `/portfolio` 52.5 kB / 157 kB First Load.
 
 GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
@@ -8,15 +8,16 @@ GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
 ## Где мы — статус «production-ready»
 
-Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с пятью законченными итерациями:
+Кабинет аналитики Pifagor Fund (`/portfolio`) реализован как полнофункциональный Allocation Decision Engine с шестью законченными итерациями:
 
 - ✅ **Этап 1** — Data Quality, Calmar/Ulcer/β, Modes, Rebalance Plan, Confidence
 - ✅ **Этап 2** — HRP, MaxDiv, Cluster Analysis, Rotation, Model Contribution
 - ✅ **Этап 3** — Watchlist, Why narrative, Momentum, Kelly, Vol Target, Walk-forward
 - ✅ **Этап 4** — Liquidity Layer, Resampled Markowitz, polish
 - ✅ **Этап 5** — NAV-экспорт в Криптофонд, vitest unit-suite (77 тестов), Playwright E2E (6 сценариев)
+- ✅ **Этап 6** — Multi-source OHLCV (Binance + OKX + CoinGecko), MNT в universe, alignSeries guard, 26 новых тестов
 
-В итоге: **14 моделей**, **8 advisory модулей**, **NAV bridge**, **83 проходящих теста** (77 unit + 6 E2E).
+В итоге: **14 моделей**, **8 advisory модулей**, **NAV bridge**, **3 OHLCV-источника**, **109 проходящих тестов** (103 unit + 6 E2E).
 
 ---
 
@@ -101,13 +102,61 @@ Sweet spot tests, не unit-equivalent:
 
 ---
 
+## Что добавил этап 6
+
+### Multi-source OHLCV
+
+Проблема: универс фонда (BTC/ETH/SOL/BNB/HYPE/TON/OKB/MNT) частично не торгуется на Binance Spot — **OKB живёт на OKX**, **HYPE (Hyperliquid)** не листится на Binance, агрегатор — CoinGecko. Когда такие активы попадают в `/api/ohlcv?symbol=OKBUSDT`, Binance отдаёт пустоту, актив выкидывается с misleading-сообщением «limited data».
+
+Решение — авто-маршрутизация по тикеру в [route.ts](src/app/api/ohlcv/route.ts):
+
+| Тикер | Источник | Реализация |
+|---|---|---|
+| OKBUSDT | OKX (`/api/v5/market/history-candles`) | [okxKlines.ts](src/lib/server/okxKlines.ts) |
+| HYPEUSDT | CoinGecko (`/api/v3/coins/hyperliquid/market_chart`) | [coingeckoHistory.ts](src/lib/server/coingeckoHistory.ts) |
+| Остальное | Binance Spot (как раньше) | [binanceKlines.ts](src/lib/server/binanceKlines.ts) |
+
+Router: [ohlcvSource.ts](src/lib/server/ohlcvSource.ts) — single source of truth, маппинг через `pickOhlcvSource(symbol)`. Кеш на диск разделён по источнику через `sourceFilenamePrefix()` — Binance-кеши лежат как `v2_*.json`, OKX как `v2_okx_*.json`, CoinGecko как `v2_coingecko_*.json`. Старые Binance-кеши не пересекаются с новыми источниками.
+
+CoinGecko синтезирует OHLC из daily-closes: `open = prev_close`, `high = max(open, close)`, `low = min(open, close)` — это компромисс (H/L под-репортятся), но фонд работает на close-to-close returns, влияния на математику нет. Volume конвертируется из USD → base-asset units (`vol_usd / close`), чтобы [liquidity.ts](src/lib/portfolio/liquidity.ts) (`close * volume`) реконструировал USD volume корректно.
+
+### MNT в universe (cluster: exchange)
+
+Добавлен Mantle:
+- [clusters.ts](src/lib/portfolio/clusters.ts) — `MNTUSDT` в `exchange` (исторически BitDAO/Bybit-связан, counterparty к платформе)
+- [AssetSelector.tsx](src/components/portfolio/AssetSelector.tsx) — quick-pick с blurb
+- [marketCaps.ts](src/lib/portfolio/marketCaps.ts) — snapshot 2.5B USD
+- [defaultViews.ts](src/lib/portfolio/defaultViews.ts) — BL view +25%, conf 0.35, max 3%
+- [marketcaps/route.ts](src/app/api/marketcaps/route.ts) — CoinGecko id `mantle`
+- E2E mock — профиль (startPrice 0.8, drift 0.05, daily vol 4.5%)
+
+MNT на Binance Spot есть (листинг 2023, ≥1000 дней истории), идёт через дефолтный Binance branch.
+
+### alignSeries hardening: `prefilterByHistoryLength`
+
+Архитектурный нюанс: `alignSeries` берёт **пересечение** timestamps. Если короткий актив проходит фильтр >30 свечей, он обрезает всех остальных до своей длины — BTC с 1000д становится `limited` (max 5%). Это spurious downgrade.
+
+Новая функция [prefilterByHistoryLength](src/lib/portfolio/market-data.ts) выбрасывает активы, которые короче в 2 раза от максимального И короче абсолютного floor (90д), ПЕРЕД alignSeries. Если все активы коротки в одном порядке — никого не выкидывает (dataQuality сам поставит cap). Если все исчезают (pathological case) — возвращает оригинал.
+
+В [MPTSimulator](src/components/portfolio/MPTSimulator.tsx) добавлен новый state `pendingSymbols` и баннер «В watchlist (мало истории для участия в портфеле): X (200д из 1000д у длиннейшего)». Текст старого warning'а сменён с misleading «limited data» на честное «Не удалось загрузить котировки: ...».
+
+### Тесты (26 новых, всего 109)
+
+- [ohlcvSource.test.ts](src/lib/server/__tests__/ohlcvSource.test.ts) — 6 тестов: routing OKB/HYPE/MNT, case-insensitivity, filename prefix back-compat
+- [okxKlines.test.ts](src/lib/server/__tests__/okxKlines.test.ts) — 7 тестов: instId mapping, парсинг ответа, реверс newest-first, error path, pagination stop
+- [coingeckoHistory.test.ts](src/lib/server/__tests__/coingeckoHistory.test.ts) — 6 тестов: id mapping, OHLC synthesis, intraday → start-of-UTC-day collapse, USD→base volume conversion, error handling
+- [marketData.test.ts](src/lib/portfolio/__tests__/marketData.test.ts) — 7 тестов: prefilter behavior under uniform/mixed/pathological inputs
+
+Все 109 проходят (`npm test && npm run test:e2e`).
+
+---
+
 ## Что **не сделал** и почему
 
 | Пункт | Причина |
 |---|---|
 | **On-chain / Fundamental Score** | Требует external API keys (Glassnode/Coinmetrics/Token Terminal). Хардкод данных = ложь инвестору. Без проплаченного провайдера не делать. |
-
-Это единственный пункт исходного roadmap-а, который объективно невозможен без внешнего commitment. Если будет API key — это отдельный модуль уровня `liquidity.ts`, по той же архитектуре (load on initial fetch, share via priceSeries-like state, consume via UI block).
+| **Bayesian shrinkage для коротких активов** | После multi-source у всех 8 целевых тикеров `good` история. Понадобится только при добавлении свежего листинга, где история <365д. Архитектурный паттерн: cov/μ priors из cluster median, posterior update через sample-данные. Отложено до этапа 7. |
 
 ---
 
@@ -179,9 +228,10 @@ header (eyebrow + title + JSON copy + Print button)
 cd "C:\Users\pifag\OneDrive\Тестер стратегий\trading-chart-mvp"
 npm run dev                # http://localhost:3000 (auto-fallback to 3001)
 npm run build              # exit 0 expected
-npm test                   # vitest unit suite (~1s, 77 tests)
+npm test                   # vitest unit suite (~1s, 103 tests)
 npm run test:coverage      # с покрытием v8
-npm run test:e2e           # Playwright (~15s, 6 tests)
+PW_START_DEV=1 npm run test:e2e   # Playwright (~50s with managed dev server)
+# Если уже запущен `npm run dev -- --port 3001` — просто `npm run test:e2e`
 git log --oneline -10
 ```
 

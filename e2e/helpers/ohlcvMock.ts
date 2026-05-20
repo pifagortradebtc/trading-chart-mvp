@@ -47,6 +47,7 @@ export async function mockMarketData(page: Page): Promise<void> {
           HYPE: 12_000_000_000,
           TON: 16_000_000_000,
           OKB: 4_500_000_000,
+          MNT: 2_500_000_000,
         },
         cachedAt: new Date().toISOString(),
       }),
@@ -70,6 +71,7 @@ function profileFor(symbol: string): Profile {
     HYPEUSDT: { startPrice: 25, drift: 0.4, dailyVol: 0.08, baseVolume: 5_000 },
     TONUSDT: { startPrice: 6, drift: 0.0, dailyVol: 0.05, baseVolume: 30_000 },
     OKBUSDT: { startPrice: 50, drift: -0.05, dailyVol: 0.04, baseVolume: 8_000 },
+    MNTUSDT: { startPrice: 0.8, drift: 0.05, dailyVol: 0.045, baseVolume: 25_000 },
   };
   return map[symbol] ?? { startPrice: 1, drift: 0, dailyVol: 0.05, baseVolume: 1_000 };
 }

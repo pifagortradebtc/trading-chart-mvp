@@ -27,6 +27,7 @@ export const MARKET_CAP_SNAPSHOT: Record<string, number> = {
   HYPEUSDT: 12_000_000_000,
   TONUSDT: 15_000_000_000,
   OKBUSDT: 4_000_000_000,
+  MNTUSDT: 2_500_000_000,
 };
 
 export interface MarketCapWeightResult {

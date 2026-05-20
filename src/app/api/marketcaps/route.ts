@@ -41,6 +41,7 @@ const COINGECKO_IDS: Record<string, string> = {
   TONUSDT: "the-open-network",
   HYPEUSDT: "hyperliquid",
   OKBUSDT: "okb",
+  MNTUSDT: "mantle",
 };
 
 interface CachedPayload {

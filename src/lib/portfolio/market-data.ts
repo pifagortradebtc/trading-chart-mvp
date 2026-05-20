@@ -94,3 +94,70 @@ function intersection<T>(a: Set<T>, b: Set<T>): Set<T> {
   for (const v of small) if (big.has(v)) out.add(v);
   return out;
 }
+
+/**
+ * Отбраковывает активы, история которых короче половины от самого длинного
+ * И короче абсолютного порога `minBars`. Защита от ситуации «один свежий
+ * листинг тянет всю корзину вниз по `alignSeries` (intersection-of-dates)».
+ *
+ * Пример: BTC 1000д + HYPE 200д → alignSeries даст 200д общих, и dataQuality
+ * пометит BTC как `limited` (max 5%), что неправильно. Лучше HYPE временно
+ * вынести в watchlist, а BTC оставить с полной историей.
+ *
+ * Если же все активы короткие в одном порядке (например, все 250-300 дней),
+ * никого не выбрасываем — dataQuality сам поставит cap на short-history
+ * активы, и фонд будет работать с консервативным risk budget.
+ *
+ * Соглашение: возвращаем `{ kept, dropped }`. `dropped[i].reason` пригоден
+ * для прямого показа оператору.
+ */
+export interface PrefilteredSeries {
+  kept: { symbol: string; klines: Kline[] }[];
+  dropped: {
+    symbol: string;
+    length: number;
+    maxLength: number;
+    reason: string;
+  }[];
+}
+
+export function prefilterByHistoryLength(
+  series: { symbol: string; klines: Kline[] }[],
+  opts: { minBars?: number; minRatio?: number } = {},
+): PrefilteredSeries {
+  const minBars = opts.minBars ?? 90;
+  const minRatio = opts.minRatio ?? 0.5;
+
+  if (series.length === 0) return { kept: [], dropped: [] };
+
+  const maxLength = series.reduce(
+    (acc, s) => Math.max(acc, s.klines.length),
+    0,
+  );
+  const threshold = Math.max(minBars, Math.floor(maxLength * minRatio));
+
+  const kept: PrefilteredSeries["kept"] = [];
+  const dropped: PrefilteredSeries["dropped"] = [];
+
+  for (const s of series) {
+    if (s.klines.length >= threshold) {
+      kept.push(s);
+    } else {
+      dropped.push({
+        symbol: s.symbol,
+        length: s.klines.length,
+        maxLength,
+        reason: `${s.klines.length} дней истории — слишком коротко на фоне ${maxLength}д у других активов. В watchlist, пока не накопится.`,
+      });
+    }
+  }
+
+  // Edge case: если threshold отбраковал всех (например, два актива одной
+  // длины × edge-case rounding), возвращаем оригинал — лучше один длинный,
+  // чем пустота.
+  if (kept.length === 0) {
+    return { kept: series, dropped: [] };
+  }
+
+  return { kept, dropped };
+}

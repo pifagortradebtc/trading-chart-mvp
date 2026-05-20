@@ -80,6 +80,7 @@ export const CLUSTERS: ClusterDef[] = [
     symbols: new Set([
       "BNBUSDT",
       "OKBUSDT",
+      "MNTUSDT",
       "BGBUSDT",
       "KCSUSDT",
       "CROUSDT",

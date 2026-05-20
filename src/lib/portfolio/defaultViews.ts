@@ -16,6 +16,7 @@ export const DEFAULT_VIEWS: ViewInput[] = [
   { symbol: "HYPEUSDT", expectedReturn: 0.60, confidence: 0.35, maxWeight: 0.05 },
   { symbol: "TONUSDT", expectedReturn: 0.30, confidence: 0.40, maxWeight: 0.04 },
   { symbol: "OKBUSDT", expectedReturn: 0.20, confidence: 0.40, maxWeight: 0.03 },
+  { symbol: "MNTUSDT", expectedReturn: 0.25, confidence: 0.35, maxWeight: 0.03 },
 ];
 
 /**

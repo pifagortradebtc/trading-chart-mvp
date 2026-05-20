@@ -6,6 +6,16 @@ import {
   fetchBinanceKlinesServer,
 } from "@/lib/server/binanceKlines";
 import {
+  fetchOkxKlinesServer,
+  fetchOkxKlinesForward,
+} from "@/lib/server/okxKlines";
+import { fetchCoinGeckoDailyServer } from "@/lib/server/coingeckoHistory";
+import {
+  pickOhlcvSource,
+  sourceFilenamePrefix,
+  type OhlcvSource,
+} from "@/lib/server/ohlcvSource";
+import {
   binanceIntervalToMs,
   filterCandlesToRange,
   mergeCandlesSorted,
@@ -105,7 +115,48 @@ export async function GET(req: Request) {
     return handleLegacyV1(symbol, interval, startMs, endMs);
   }
 
-  return handleStableV2(symbol, interval, startMs, endMs, yearsBack);
+  const { source, note } = pickOhlcvSource(symbol);
+  return handleStableV2(symbol, interval, startMs, endMs, yearsBack, source, note);
+}
+
+/**
+ * Адаптер «один интерфейс для всех источников». CoinGecko игнорирует interval
+ * (только daily через market_chart); OKX ему следует, Binance — primary.
+ */
+async function fetchFromSource(
+  source: OhlcvSource,
+  opts: { symbol: string; interval: string; startMs: number; endMs: number },
+): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string }> {
+  if (source === "okx") return fetchOkxKlinesServer(opts);
+  if (source === "coingecko") {
+    if (opts.interval !== "1d") {
+      throw new Error("CoinGecko-источник поддерживает только daily (interval=1d).");
+    }
+    return fetchCoinGeckoDailyServer({
+      symbol: opts.symbol,
+      startMs: opts.startMs,
+      endMs: opts.endMs,
+    });
+  }
+  return fetchBinanceKlinesServer(opts);
+}
+
+async function fetchForwardFromSource(
+  source: OhlcvSource,
+  opts: { symbol: string; interval: string; startMs: number; endMs: number },
+): Promise<Candle[]> {
+  if (source === "okx") return fetchOkxKlinesForward(opts);
+  if (source === "coingecko") {
+    // CoinGecko returns full daily history in one call — re-fetch and let
+    // mergeCandlesSorted dedupe with existing cache.
+    const r = await fetchCoinGeckoDailyServer({
+      symbol: opts.symbol,
+      startMs: opts.startMs,
+      endMs: opts.endMs,
+    });
+    return r.candles;
+  }
+  return fetchBinanceKlinesForward(opts);
 }
 
 async function handleLegacyV1(
@@ -181,13 +232,20 @@ async function handleStableV2(
   startMs: number,
   endMs: number,
   yearsBack: number,
+  source: OhlcvSource,
+  sourceNote: string | undefined,
 ): Promise<NextResponse> {
   const iv = binanceIntervalToMs(interval);
-  const fileName = stableOhlcvFileName(symbol, interval, yearsBack);
+  const fileName = stableOhlcvFileName(
+    symbol,
+    interval,
+    yearsBack,
+    sourceFilenamePrefix(source),
+  );
   const cachePath = path.join(ohlcvDir(), fileName);
 
   let merged: Candle[] = [];
-  let touchedBinance = false;
+  let touchedRemote = false;
   let oldestAvailableMs: number | null = null;
   let warning: string | undefined;
 
@@ -197,14 +255,8 @@ async function handleStableV2(
   }
 
   if (!merged.length) {
-    touchedBinance = true;
-    const r = await fetchBinanceKlinesServer({
-      symbol,
-      interval,
-      startMs,
-      endMs,
-      onChunk: undefined,
-    });
+    touchedRemote = true;
+    const r = await fetchFromSource(source, { symbol, interval, startMs, endMs });
     merged = r.candles;
     oldestAvailableMs = r.oldestAvailableMs ?? null;
     warning = r.warning;
@@ -213,9 +265,9 @@ async function handleStableV2(
     const { needBack, needFwd } = ohlcvCacheNeedsExtension(merged, startMs, endMs, iv);
 
     if (needBack) {
-      touchedBinance = true;
+      touchedRemote = true;
       const firstMs = merged[0]!.time * 1000;
-      const back = await fetchBinanceKlinesServer({
+      const back = await fetchFromSource(source, {
         symbol,
         interval,
         startMs,
@@ -230,9 +282,9 @@ async function handleStableV2(
     merged = mergeCandlesSorted([], merged);
 
     if (needFwd) {
-      touchedBinance = true;
+      touchedRemote = true;
       const lastAfter = merged[merged.length - 1]!.time * 1000;
-      const fwd = await fetchBinanceKlinesForward({
+      const fwd = await fetchForwardFromSource(source, {
         symbol,
         interval,
         startMs: Math.max(startMs, lastAfter + 1),
@@ -249,9 +301,12 @@ async function handleStableV2(
     }
 
     if (merged.length && merged[0]!.time * 1000 > startMs + 60_000) {
-      warning = `Биржа отдала данные только с ${new Date(merged[0]!.time * 1000).toISOString().slice(0, 10)}; запрошенный период начинался раньше.`;
+      warning = `${sourceLabel(source)} отдал данные только с ${new Date(merged[0]!.time * 1000).toISOString().slice(0, 10)}; запрошенный период начинался раньше.`;
     }
   }
+
+  // Surface the routing reason to the operator (e.g. "OKB живёт на OKX").
+  if (sourceNote && !warning) warning = sourceNote;
 
   const trimmed = filterCandlesToRange(merged, startMs, endMs);
 
@@ -273,7 +328,7 @@ async function handleStableV2(
   }
 
   return NextResponse.json({
-    source: touchedBinance ? "binance" : "disk",
+    source: touchedRemote ? source : "disk",
     symbol,
     interval,
     startMs,
@@ -283,4 +338,10 @@ async function handleStableV2(
     warning,
     cachedAt: payload.cachedAt,
   });
+}
+
+function sourceLabel(s: OhlcvSource): string {
+  if (s === "okx") return "OKX";
+  if (s === "coingecko") return "CoinGecko";
+  return "Биржа";
 }
