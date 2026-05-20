@@ -8,6 +8,10 @@ export const metadata = {
     "Кабинет аналитики Pifagor Fund — портфельные модели Markowitz / Black-Litterman + DCA-бэктест стратегий фонда.",
 };
 
+// Force dynamic rendering — иначе Next.js prerender'ит страницу, и CDN
+// раздаёт её с `x-nextjs-cache: HIT` БЕЗ запуска middleware (Basic Auth).
+export const dynamic = "force-dynamic";
+
 /**
  * Landing-страница кабинета аналитики. Видна по адресу `/` — первое, что
  * получает инвестор. Минималистичная: шапка фонда, hero с фразой про
