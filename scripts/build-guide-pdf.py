@@ -24,6 +24,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
+    Image,
     NextPageTemplate,
     PageBreak,
     PageTemplate,
@@ -403,7 +404,43 @@ def stop(text: str) -> Paragraph:
     return Paragraph(f"🔴  {text}", stop_signal)
 
 
-def screen(label: str, height: float = 5 * cm) -> ScreenshotPlaceholder:
+def screen(label: str, height: float = 5 * cm):
+    """
+    Если в `docs/images/<имя-файла>` лежит реальный скрин — возвращаем его
+    как reportlab Image. Имя файла извлекается из label: формат либо
+    "12-name.png — описание", либо просто описание (для legacy placeholders).
+    Иначе fallback на серую рамку с подсказкой.
+    """
+    # Попытка извлечь имя файла из метки (до первого пробела или " —")
+    candidate_filename: str | None = None
+    head = label.split(" —", 1)[0].split(" -", 1)[0].strip()
+    if head.lower().endswith(".png"):
+        candidate_filename = head
+
+    if candidate_filename:
+        path = Path(__file__).resolve().parent.parent / "docs" / "images" / candidate_filename
+        if path.is_file():
+            # Скейлим до фиксированной ширины content area; высота — пропорциональная.
+            # reportlab разместит на странице как один flowable, переносом на новую
+            # страницу если не влезает по высоте.
+            try:
+                from PIL import Image as PILImage
+                pil = PILImage.open(str(path))
+                pw, ph = pil.size
+                target_w = CONTENT_W
+                target_h = target_w * ph / pw
+                # Ограничим максимальную высоту: один скрин не больше 20см,
+                # иначе отдельные большие куски делать руками (split на части).
+                max_h = 20 * cm
+                if target_h > max_h:
+                    target_h = max_h
+                    target_w = target_h * pw / ph
+                img = Image(str(path), width=target_w, height=target_h, kind="proportional")
+                img.hAlign = "CENTER"
+                return img
+            except Exception:
+                pass  # fallback на placeholder
+
     return ScreenshotPlaceholder(label, height=height)
 
 
