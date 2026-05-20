@@ -20,3 +20,12 @@ services:
         value: "20"
       - key: PERSISTENT_DISK_ROOT
         value: /var/data
+      # Базовый пароль на всю платформу (HTTP Basic Auth через middleware).
+      # Задаётся в Render Dashboard вручную (sync:false = не из Blueprint).
+      # Пустое значение = auth disabled (для локальной разработки).
+      - key: RESEARCH_PASSWORD
+        sync: false
+      # URL Криптофонда для блока «Δ vs Live Fund» в Recommended Tab.
+      # Задаётся в Render Dashboard. Без него блок просто не рендерится.
+      - key: PIFAGOR_FUND_API_URL
+        sync: false

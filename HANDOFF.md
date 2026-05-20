@@ -152,6 +152,38 @@ MNT на Binance Spot есть (листинг 2023, ≥1000 дней истор
 
 ---
 
+## Что добавил этап 8
+
+### HTTP Basic Auth — пароль на весь сайт
+
+Этап 8 закрывает пробел в безопасности: до этого `/portfolio` был доступен любому без аутентификации. Теперь — единый пароль на весь сайт через Next.js middleware.
+
+**Файл**: [src/middleware.ts](src/middleware.ts)
+
+**Поведение**:
+- Если env-var `RESEARCH_PASSWORD` **задана** → middleware требует HTTP Basic Auth. Браузер показывает native dialog «введите пароль» при первом заходе. Кешируется до закрытия вкладки.
+- Если **не задана** → middleware пропускает всё (для локальной разработки без overhead'а).
+
+**Защищены**: все страницы (`/`, `/portfolio`, `/backtest`, `/chart`) + все API-routes (`/api/ohlcv`, `/api/engine-runs`, `/api/fund/composition`, и т.д.).
+
+**НЕ защищены**: `_next/static/*`, `_next/image/*`, `favicon.ico`, `fonts/*`, `images/*`, `public/*` — иначе браузер не сможет загрузить ассеты для 401-страницы.
+
+**Безопасность**:
+- Constant-time string compare (защита от timing attacks).
+- Single-password setup (имя пользователя игнорируется) — для команды 3-5 человек проще общий пароль, чем per-user accounts.
+
+**Setup на Render**:
+1. Dashboard → `trading-chart-mvp` → Environment → Add Environment Variable
+2. Key: `RESEARCH_PASSWORD`, Value: твой пароль
+3. Save → auto-redeploy ~2 минуты
+4. После redeploy любой заход на сайт требует пароль
+
+**Setup для команды**: один общий пароль, передавать через защищённый канал (1Password, Bitwarden, и т.д.). Не пересылать в открытом Telegram/email.
+
+**Migration path к per-user accounts** (если когда-нибудь понадобится): NextAuth.js или интеграция с Telegram OIDC Криптофонда. Сейчас single-password — это not over-engineered MVP, легко мигрировать.
+
+---
+
 ## Что добавил этап 7
 
 ### Engine Run Journal — локальный audit-trail
