@@ -294,14 +294,14 @@ export function RecommendedTab({
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <AllocationCard
-          title="Spot allocation"
-          subtitle="Прямые позиции в крипте (без бот/manual слоёв)"
+          title="Раскладка спот-куска"
+          subtitle={`Веса внутри ${(spotScale * 100).toFixed(0)}%-ной спот-аллокации фонда. Строки суммируются до 100% внутри спота — не до 100% фонда.`}
           rows={spotRows.map((r) => ({ ...r, label: prettySymbol(r.symbol) }))}
           highlight
         />
         <AllocationCard
-          title="Total fund allocation"
-          subtitle={`Spot × ${(spotScale * 100).toFixed(0)}% + Bot ${(botSleeve * 100).toFixed(0)}% + Manual ${(manualSleeve * 100).toFixed(0)}%`}
+          title="Полный портфель фонда"
+          subtitle={`Spot ${(spotScale * 100).toFixed(0)}% × состав слева + Bot ${(botSleeve * 100).toFixed(0)}% + Manual ${(manualSleeve * 100).toFixed(0)}% = 100% фонда.`}
           rows={totalRows}
         />
       </section>
