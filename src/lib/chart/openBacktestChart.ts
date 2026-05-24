@@ -17,10 +17,31 @@ export interface BacktestChartHandoff {
   candles?: Candle[];
 }
 
+/**
+ * Лимит safety: если payload > 4MB, localStorage в Chrome/Safari обычно
+ * кидает QuotaExceededError. На /chart всё равно fallback к /api/ohlcv,
+ * так что candles в handoff не передаём — только метаданные и trades.
+ */
+const HANDOFF_MAX_BYTES = 4 * 1024 * 1024;
+
 function stashHandoff(payload: BacktestChartHandoff): void {
   if (typeof window === "undefined") return;
+  // Защитная стратегия: candles тяжёлые (1000+ баров × ~150 байт/каждая),
+  // вместе с большой trade-таблицей легко превышаем 5MB-квоту. На /chart
+  // BacktestChartHandoffBootstrap всё равно делает fallback fetch
+  // на /api/ohlcv по `fetchParams`, поэтому свечи здесь не нужны.
+  const slim: BacktestChartHandoff = { ...payload, candles: undefined };
+  let serialized = JSON.stringify(slim);
+  if (serialized.length > HANDOFF_MAX_BYTES) {
+    // Большой объём trades (>10k) — берём только первые 5k для разметки графика
+    const trimmedTrades = slim.sessionTrades.slice(0, 5000);
+    serialized = JSON.stringify({ ...slim, sessionTrades: trimmedTrades });
+    console.warn(
+      `openBacktestChart: trades trimmed ${slim.sessionTrades.length} → ${trimmedTrades.length} для соблюдения localStorage quota`,
+    );
+  }
   try {
-    localStorage.setItem(HANDOFF_KEY, JSON.stringify(payload));
+    localStorage.setItem(HANDOFF_KEY, serialized);
   } catch (e) {
     console.error("openBacktestChart: stash failed", e);
   }
