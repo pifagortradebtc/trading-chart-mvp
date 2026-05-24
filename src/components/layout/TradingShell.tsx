@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ArrowRight, BarChart3 } from "lucide-react";
 import { TopBar } from "@/components/panels/TopBar";
 import { LeftToolbar } from "@/components/panels/LeftToolbar";
 import { RightSidebar } from "@/components/panels/RightSidebar";
@@ -11,6 +12,44 @@ import { ChartOverlaySync } from "@/components/chart/ChartOverlaySync";
 import { IndicatorSettingsModal } from "@/components/modals/IndicatorSettingsModal";
 import { useIndicatorStore } from "@/store/useIndicatorStore";
 import { useBacktestOverlayStore } from "@/store/useBacktestOverlayStore";
+
+/**
+ * Empty-state для /chart, когда нет активной handoff-сессии бэктеста.
+ * Раньше тут показывался дефолтный мок (BTC-USD 100→110), вводя оператора
+ * в заблуждение — теперь явное сообщение, что страница — только для
+ * просмотра графика конкретного бэктеста.
+ */
+function ChartRouteEmptyState() {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center bg-tv-bg px-6 py-12">
+      <div className="max-w-xl rounded-2xl border border-tv-border bg-tv-panel/60 p-8 text-center backdrop-blur-xl">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10">
+          <BarChart3 size={22} className="text-amber-300" />
+        </div>
+        <h2 className="mt-5 font-display text-xl font-semibold text-tv-text">
+          График сделок не выбран
+        </h2>
+        <p className="mt-3 text-sm leading-relaxed text-tv-text/70">
+          Эта страница рендерит свечи и разметку конкретного бэктеста. Чтобы её
+          использовать — открой страницу бэктеста, запусти прогон, и нажми
+          кнопку{" "}
+          <span className="font-mono text-emerald-300">«График со сделками»</span>{" "}
+          в шапке результатов (или иконку графика в строке отдельной сделки).
+        </p>
+        <p className="mt-2 text-xs text-tv-text/50">
+          Здесь только свечи и разметка — никакого режима standalone-чарта нет.
+        </p>
+        <Link
+          href="/backtest"
+          className="mt-6 inline-flex items-center gap-2 rounded-md border border-amber-400/40 bg-amber-400/10 px-4 py-2 font-mono text-xs uppercase tracking-[0.18em] text-amber-200 transition hover:border-amber-400/60 hover:bg-amber-400/15"
+        >
+          Перейти на бэктест
+          <ArrowRight size={12} />
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export function TradingShell() {
   const pathname = usePathname();
@@ -63,7 +102,11 @@ export function TradingShell() {
               </button>
             </div>
           ) : null}
-          <ChartWorkspace />
+          {chartRouteOnly && !metaTitle ? (
+            <ChartRouteEmptyState />
+          ) : (
+            <ChartWorkspace />
+          )}
         </div>
         {!minimalChrome ? <RightSidebar /> : null}
       </div>
