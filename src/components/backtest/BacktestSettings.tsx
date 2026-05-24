@@ -5,6 +5,7 @@ import {
   DEFAULT_CHAIK,
   DEFAULT_PIFAGOR_ALTS,
   DEFAULT_PIFAGOR_DCA,
+  DEFAULT_PIVOT21,
 } from "@/lib/backtest/backtestDefaults";
 import { PORTFOLIO_ALTS_SYMBOL_COUNT } from "@/lib/backtest/portfolioAltsSymbols";
 import type { BacktestSettings } from "@/lib/backtest/types";
@@ -35,6 +36,11 @@ export function BacktestSettingsForm({
       ...settings,
       pifagorAlts: { ...settings.pifagorAlts, ...partial },
     });
+  const patchPv = (partial: Partial<BacktestSettings["pivot21"]>) =>
+    onChange({
+      ...settings,
+      pivot21: { ...settings.pivot21, ...partial },
+    });
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
@@ -59,6 +65,12 @@ export function BacktestSettingsForm({
                       },
                     ),
                   );
+                } else if (strategyKind === "pivot21") {
+                  onChange({
+                    ...settings,
+                    strategyKind,
+                    pivot21: { ...DEFAULT_PIVOT21, ...settings.pivot21 },
+                  });
                 } else {
                   onChange({ ...settings, strategyKind });
                 }
@@ -66,6 +78,7 @@ export function BacktestSettingsForm({
             >
               <option value="chaik_dca">V2_ЧайкКельт + DCA-сетка</option>
               <option value="pifagor_alts">Pifagor ALTS 3.7 (лонг, без сетки)</option>
+              <option value="pivot21">Pifagor 21 (Pivot Magnet)</option>
             </select>
           </label>
           {settings.strategyKind === "pifagor_alts" ? (
@@ -415,6 +428,7 @@ export function BacktestSettingsForm({
       </section>
       ) : null}
 
+      {settings.strategyKind !== "pivot21" ? (
       <section
         className={`rounded-xl border border-[#2e3241] bg-[#131722] p-5 ${
           settings.strategyKind === "pifagor_alts" ? "lg:col-span-2" : ""
@@ -788,37 +802,248 @@ export function BacktestSettingsForm({
           )}
         </div>
       </section>
+      ) : null}
 
-      {settings.strategyKind === "chaik_dca" ? (
+      {settings.strategyKind === "pivot21" ? (
+        <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+              Pifagor 21 (Pivot Magnet)
+            </h3>
+            <button
+              type="button"
+              className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
+              title="Все поля блока — значения из Pine по умолчанию"
+              onClick={() => patchPv({ ...DEFAULT_PIVOT21 })}
+            >
+              Как в Pine (дефолты)
+            </button>
+          </div>
+          <p className="mb-4 max-w-2xl text-xs leading-relaxed text-[#787b86]">
+            Каждый период `pivotTf` создаёт магнит = (H+L+C)/3 предыдущего периода. При flat — лимит-ордер на каждом
+            валидном зрелом магните (LONG ниже close, SHORT выше). TP/SL — % от entry. Reversal: при касании магнита
+            противоположной стороны переоткрываемся. Мартингейл размера: после стопа +step, после прибыли — сброс.
+          </p>
+          <div className="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-3">
+            <label className="flex flex-col gap-1">
+              <span>
+                Pivot TF
+                <Tip>Таймфрейм для расчёта pivot (H+L+C)/3 предыдущего периода</Tip>
+              </span>
+              <select
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                value={settings.pivot21.pivotTf}
+                onChange={(e) => patchPv({ pivotTf: e.target.value })}
+              >
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+                <option value="1d">1D</option>
+                <option value="1w">1W</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                keepP
+                <Tip>Сколько последних магнитов держать (старые удаляются)</Tip>
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={490}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.keepP}
+                onChange={(e) => patchPv({ keepP: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                projBars
+                <Tip>Визуальная проекция магнита (только для UI, на торговлю не влияет)</Tip>
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.projBars}
+                onChange={(e) => patchPv({ projBars: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                minMagnetAge
+                <Tip>Минимум баров до того, как магнит можно торговать. Касание раньше = pre-invalid (gray).</Tip>
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.minMagnetAge}
+                onChange={(e) => patchPv({ minMagnetAge: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Take Profit %
+                <Tip>% от цены входа</Tip>
+              </span>
+              <input
+                type="number"
+                min={0.1}
+                max={20}
+                step={0.1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.tpPct}
+                onChange={(e) => patchPv({ tpPct: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Stop Loss %
+                <Tip>% от цены входа</Tip>
+              </span>
+              <input
+                type="number"
+                min={0.1}
+                max={20}
+                step={0.1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.slPct}
+                onChange={(e) => patchPv({ slPct: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Стартовый размер позиции %
+                <Tip>baseRiskPct — стартовая доля equity на сделку</Tip>
+              </span>
+              <input
+                type="number"
+                min={0.1}
+                max={100}
+                step={0.5}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.baseRiskPct}
+                onChange={(e) => patchPv({ baseRiskPct: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Макс. размер позиции %
+                <Tip>maxRiskPct — потолок при мартингейле</Tip>
+              </span>
+              <input
+                type="number"
+                min={0.1}
+                max={500}
+                step={0.5}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.maxRiskPct}
+                onChange={(e) => patchPv({ maxRiskPct: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Шаг увеличения после стопа %
+                <Tip>stepRiskPct — на сколько растёт размер позиции после каждого STOP</Tip>
+              </span>
+              <input
+                type="number"
+                min={0.1}
+                max={100}
+                step={0.5}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.stepRiskPct}
+                onChange={(e) => patchPv({ stepRiskPct: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Начальный капитал USDT
+                <Tip>initial_capital в Pine</Tip>
+              </span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.initialCapitalUsdt}
+                onChange={(e) => patchPv({ initialCapitalUsdt: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Комиссия % за сторону
+                <Tip>В Pine выключена (0). Тут — для what-if проверки fee impact.</Tip>
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.pivot21.feePctPerSide}
+                onChange={(e) => patchPv({ feePctPerSide: Number(e.target.value) })}
+              />
+            </label>
+            <div className="flex items-end gap-4">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.pivot21.allowLong}
+                  onChange={(e) => patchPv({ allowLong: e.target.checked })}
+                />
+                LONG
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.pivot21.allowShort}
+                  onChange={(e) => patchPv({ allowShort: e.target.checked })}
+                />
+                SHORT
+              </label>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {settings.strategyKind === "chaik_dca" || settings.strategyKind === "pivot21" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
           Исполнение
         </h3>
         <div className="flex flex-wrap gap-6 text-sm">
+          {settings.strategyKind === "chaik_dca" ? (
+            <label className="flex flex-col gap-1">
+              <span>
+                Вход
+                <Tip>
+                  LONG ОТКАТОМ: якорь и лимит/маркет первого ордера задаются как в Pine (не этим селектором). Ниже —
+                  только для SHORT: open следующей свечи или close сигнальной.
+                </Tip>
+              </span>
+              <select
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
+                value={settings.entryTiming}
+                onChange={(e) =>
+                  patch({
+                    entryTiming: e.target.value as BacktestSettings["entryTiming"],
+                  })
+                }
+              >
+                <option value="next_open">Open следующей свечи</option>
+                <option value="signal_close">Close сигнальной свечи</option>
+              </select>
+            </label>
+          ) : null}
           <label className="flex flex-col gap-1">
             <span>
-              Вход
-              <Tip>
-                LONG ОТКАТОМ: якорь и лимит/маркет первого ордера задаются как в Pine (не этим селектором). Ниже —
-                только для SHORT: open следующей свечи или close сигнальной.
-              </Tip>
-            </span>
-            <select
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
-              value={settings.entryTiming}
-              onChange={(e) =>
-                patch({
-                  entryTiming: e.target.value as BacktestSettings["entryTiming"],
-                })
-              }
-            >
-              <option value="next_open">Open следующей свечи</option>
-              <option value="signal_close">Close сигнальной свечи</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span>
-              Порядок при конфликте DCA/TP на одной свече
+              {settings.strategyKind === "pivot21"
+                ? "Порядок при конфликте TP/SL на одной свече"
+                : "Порядок при конфликте DCA/TP на одной свече"}
               <Tip>Консервативно — сначала худший для стратегии сценарий</Tip>
             </span>
             <select

@@ -1,5 +1,6 @@
 import type { BacktestSettings, ChaikKeltSettings, DcaBotSettings } from "./types";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
+import type { Pivot21Settings } from "./pivot21Types";
 
 /**
  * Стандартные input Pine `V2_ЧайкКельт` (значения по умолчанию в скрипте).
@@ -34,6 +35,23 @@ export const DEFAULT_CHAIK: ChaikKeltSettings = {
   limitRangeAtr: 0.3,
   useLimitTrend: false,
   limitTrendAtr: 0.15,
+};
+
+/** Pine `Pifagor 21 str` — default inputs (idemп. с pine-кодом). */
+export const DEFAULT_PIVOT21: Pivot21Settings = {
+  pivotTf: "1d",
+  keepP: 490,
+  projBars: 10,
+  minMagnetAge: 10,
+  tpPct: 1.0,
+  slPct: 1.0,
+  baseRiskPct: 10,
+  maxRiskPct: 100,
+  stepRiskPct: 10,
+  allowLong: true,
+  allowShort: true,
+  initialCapitalUsdt: 10_000,
+  feePctPerSide: 0,
 };
 
 /** Как в Pine input.time для окна DCA. */
@@ -155,11 +173,18 @@ export const DEFAULT_BACKTEST: BacktestSettings = {
   indicator: DEFAULT_CHAIK,
   dca: DEFAULT_DCA,
   pifagorAlts: DEFAULT_PIFAGOR_ALTS,
+  pivot21: DEFAULT_PIVOT21,
 };
+
+/** Допустимые значения BacktestStrategyKind для нормализации raw input. */
+function normalizeStrategyKind(raw: unknown): BacktestSettings["strategyKind"] {
+  if (raw === "pifagor_alts" || raw === "pivot21" || raw === "chaik_dca") return raw;
+  return "chaik_dca";
+}
 
 /** Слияние снимка / частичного JSON с актуальными дефолтами (новые поля стратегии Pifagor). */
 export function migrateBacktestSettings(raw: Partial<BacktestSettings>): BacktestSettings {
-  const sk = raw.strategyKind === "pifagor_alts" ? "pifagor_alts" : "chaik_dca";
+  const sk = normalizeStrategyKind(raw.strategyKind);
   const base: BacktestSettings = {
     ...DEFAULT_BACKTEST,
     ...raw,
@@ -171,6 +196,7 @@ export function migrateBacktestSettings(raw: Partial<BacktestSettings>): Backtes
     indicator: { ...DEFAULT_CHAIK, ...raw.indicator },
     dca: migrateDcaSettings({ ...DEFAULT_DCA, ...raw.dca }),
     pifagorAlts: { ...DEFAULT_PIFAGOR_ALTS, ...raw.pifagorAlts },
+    pivot21: { ...DEFAULT_PIVOT21, ...raw.pivot21 },
   };
   if (sk === "pifagor_alts") {
     return applyPifagorTvDefaults(base, {

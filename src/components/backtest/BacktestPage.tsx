@@ -523,6 +523,7 @@ export function BacktestPage() {
         startMs,
         dailyCandles,
         binanceIntervalToMs(interval),
+        interval,
       );
       window.clearInterval(progressTimer);
       setRunProgress(96);

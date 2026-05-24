@@ -4,8 +4,9 @@
 
 import type { Candle } from "@/types/candle";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
+import type { Pivot21Settings } from "./pivot21Types";
 
-export type BacktestStrategyKind = "chaik_dca" | "pifagor_alts";
+export type BacktestStrategyKind = "chaik_dca" | "pifagor_alts" | "pivot21";
 
 export type TradeDirection = "long" | "short";
 export type DirectionMode = "long" | "short" | "auto";
@@ -107,6 +108,8 @@ export interface BacktestSettings {
   dca: DcaBotSettings;
   /** Учитывается при strategyKind === "pifagor_alts". */
   pifagorAlts: PifagorAltsSettings;
+  /** Учитывается при strategyKind === "pivot21". */
+  pivot21: Pivot21Settings;
 }
 
 export interface DcaGridRow {

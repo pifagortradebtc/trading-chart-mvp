@@ -10,6 +10,7 @@ import type { Candle } from "@/types/candle";
 import { computeChaikSignals } from "./chaikKeltSignal";
 import { buildDcaGrid } from "./dcaGrid";
 import { runPifagorAltsBacktest } from "./pifagorAltsEngine";
+import { runPivot21Backtest } from "./pivot21Engine";
 import type {
   BacktestResult,
   BacktestSettings,
@@ -447,6 +448,8 @@ export function runBacktest(
   requestedFromMs: number,
   dailyCandles?: Candle[],
   chartIntervalMs?: number,
+  /** Интервал графика в Binance-формате (15m, 1h, ...) — Pifagor 21 использует его как fallback `pivotTf`. */
+  intervalLabel?: string,
 ): BacktestResult {
   if (settings.strategyKind === "pifagor_alts") {
     if (!dailyCandles?.length || chartIntervalMs == null) {
@@ -462,6 +465,19 @@ export function runBacktest(
       dailyCandles,
       chartIntervalMs,
     );
+  }
+
+  if (settings.strategyKind === "pivot21") {
+    const res = runPivot21Backtest(candles, settings.pivot21, {
+      executionOrder: settings.executionOrder,
+      symbol,
+      interval: intervalLabel ?? "",
+    });
+    // Подменим requestedFromMs (движок не знает его) — синхронизировано с шаблоном Pifagor ALTS.
+    return {
+      ...res,
+      dataRange: { ...res.dataRange, requestedFromMs },
+    };
   }
 
   const n = candles.length;

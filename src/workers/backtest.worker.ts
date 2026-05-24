@@ -13,10 +13,12 @@ type BacktestWorkerPayload = {
   symbol: string;
   settings: BacktestSettings;
   startMs: number;
+  /** Binance-формат таймфрейма (15m, 1h, ...) — для Pifagor 21 опц. fallback. */
+  intervalLabel?: string;
 };
 
 self.onmessage = (ev: MessageEvent<BacktestWorkerPayload>) => {
-  const { candles, dailyCandles, chartIntervalMs, symbol, settings, startMs } = ev.data;
+  const { candles, dailyCandles, chartIntervalMs, symbol, settings, startMs, intervalLabel } = ev.data;
   try {
     const full = runBacktest(
       candles,
@@ -25,6 +27,7 @@ self.onmessage = (ev: MessageEvent<BacktestWorkerPayload>) => {
       startMs,
       dailyCandles,
       chartIntervalMs,
+      intervalLabel,
     );
     const { candles: candlesOut, ...rest } = full;
     void candlesOut;
