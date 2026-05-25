@@ -77,6 +77,7 @@ const DEFAULT_ASSETS = [
   "HYPEUSDT",
   "TONUSDT",
   "OKBUSDT",
+  "MNTUSDT",
 ];
 const HISTORY_PRESETS = [
   { label: "1 год", days: 365 },
