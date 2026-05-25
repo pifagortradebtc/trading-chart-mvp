@@ -122,8 +122,11 @@ export function RecommendedTab({
       !strategy
         ? []
         : strategy.weights
+            // Раньше фильтровали `weight > 0.002` (выкидывали активы с 0%).
+            // По запросу оператора: «надо чтобы даже если ноль — всё равно
+            // отображалось». Все активы из universe видны в обоих donut'ах
+            // независимо от того, сколько им выделил engine.
             .map((w, i) => ({ symbol: symbols[i] ?? `#${i}`, weight: w }))
-            .filter((r) => r.weight > 0.002)
             .sort((a, b) => b.weight - a.weight),
     [strategy, symbols]
   );
