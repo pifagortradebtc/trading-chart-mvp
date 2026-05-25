@@ -51,13 +51,23 @@ const ASSET_BLURBS: Record<string, string> = {
 
 export function AssetSelector({ value, onChange, disabled }: Props) {
   const [input, setInput] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
 
   const add = (raw: string) => {
     const symbol = normalizeSymbol(raw);
-    if (!symbol) return;
-    if (value.includes(symbol)) return;
+    if (!symbol) {
+      setHint(
+        "Не распознан тикер. Используй латиницу: BTC, MNT, HYPE. Кириллица и спецсимволы не принимаются.",
+      );
+      return;
+    }
+    if (value.includes(symbol)) {
+      setHint(`${prettySymbol(symbol)} уже в портфеле.`);
+      return;
+    }
     onChange([...value, symbol]);
     setInput("");
+    setHint(null);
   };
 
   const remove = (symbol: string) => {
@@ -97,9 +107,12 @@ export function AssetSelector({ value, onChange, disabled }: Props) {
           <input
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value.toUpperCase())}
+            onChange={(e) => {
+              setInput(e.target.value.toUpperCase());
+              if (hint) setHint(null);
+            }}
             disabled={disabled}
-            placeholder="BTC или BTCUSDT"
+            placeholder="MNT, HYPE, BTC…"
             className="w-44 rounded-md border border-surface-border bg-white/[0.03] px-2 py-1 text-sm text-ink placeholder:text-ink-faint focus:border-brand/50 focus:outline-none disabled:opacity-40"
           />
           <button
@@ -112,6 +125,10 @@ export function AssetSelector({ value, onChange, disabled }: Props) {
           </button>
         </form>
       </div>
+
+      {hint && (
+        <p className="text-xs text-amber-200/90">{hint}</p>
+      )}
 
       {availableQuickPicks.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
