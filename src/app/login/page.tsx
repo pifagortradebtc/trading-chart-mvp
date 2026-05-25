@@ -67,9 +67,27 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inIframe, setInIframe] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Детект iframe-embed. Если платформа загружена внутри другого сайта
+    // (admin-hub фонда через iframe), браузер блокирует third-party cookies
+    // — auth не сработает. Делаем breakout: пытаемся переписать window.top,
+    // если cross-origin запрещает — показываем кнопку «Открыть в новой
+    // вкладке».
+    if (typeof window !== "undefined" && window.self !== window.top) {
+      setInIframe(true);
+      try {
+        // Same-origin iframe — можем выйти автоматически
+        if (window.top) {
+          window.top.location.href = window.location.href;
+          return;
+        }
+      } catch {
+        // Cross-origin — top.location недоступен. Покажем UI с кнопкой.
+      }
+    }
     inputRef.current?.focus();
   }, []);
 
@@ -116,6 +134,36 @@ function LoginForm() {
       setSubmitting(false);
     }
   };
+
+  // Платформа открыта в cross-origin iframe (admin-hub) — auth не сработает
+  // из-за блокировки third-party cookies. Показываем кнопку «Открыть в
+  // новой вкладке» вместо формы.
+  if (inIframe) {
+    return (
+      <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.04] p-8 backdrop-blur-xl shadow-card">
+        <h1 className="font-display text-2xl font-semibold tracking-display-tight text-ink">
+          Открой в{" "}
+          <span className="accent-serif text-brand-light">новой вкладке</span>
+        </h1>
+        <p className="mt-2 text-sm text-ink-muted">
+          Платформа загружена внутри другого сайта (iframe). Браузер блокирует
+          вход из-за политики безопасности (third-party cookies).
+        </p>
+        <p className="mt-2 text-sm text-ink-muted">
+          Нажми кнопку — откроется в отдельной вкладке, где вход работает.
+        </p>
+        <a
+          href={typeof window !== "undefined" ? window.location.href : "/login"}
+          target="_top"
+          rel="noopener"
+          className="mt-6 inline-flex items-center justify-center gap-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-4 py-2.5 font-mono text-xs uppercase tracking-[0.22em] text-amber-200 transition hover:border-amber-400/70 hover:bg-amber-400/20"
+        >
+          Открыть в новой вкладке
+          <ArrowRight size={12} />
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-surface-border bg-surface p-8 backdrop-blur-xl shadow-card">

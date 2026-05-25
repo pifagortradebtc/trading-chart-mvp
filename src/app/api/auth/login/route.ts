@@ -41,28 +41,32 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const token = await makeSessionToken(expected);
   const res = NextResponse.json({ ok: true });
-  // Ставим cookie двумя способами для надёжности:
-  // 1) Next.js API — res.cookies.set
-  // 2) Прямой Set-Cookie header через res.headers.append — гарантирует, что
-  //    cookie реально отправится клиенту, даже если NextResponse внутри
-  //    что-то странное с cookies.set() сделает (на Render с Cloudflare-edge
-  //    замечены случаи когда один способ молча игнорируется).
-  const secure = process.env.NODE_ENV === "production";
+  // SameSite=None + Secure — необходимо чтобы cookie работала когда
+  // платформу открывают в iframe (например, через admin-hub фонда).
+  // Без SameSite=None браузер обращается с cookie как third-party и
+  // блокирует. Secure обязателен с SameSite=None на проде (https).
+  // На локалке (NODE_ENV !== production) HTTP, Secure нельзя — fall back
+  // на SameSite=Lax (iframe-embed в dev обычно не нужен).
+  const isProd = process.env.NODE_ENV === "production";
+  const sameSite = isProd ? "None" : "Lax";
   const cookieParts = [
     `${SESSION_COOKIE_NAME}=${token}`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${sameSite}`,
     `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
   ];
-  if (secure) cookieParts.push("Secure");
+  if (isProd) cookieParts.push("Secure");
+  // Ставим cookie двумя способами для надёжности (Next.js API + прямой
+  // Set-Cookie header — на Render с Cloudflare-edge один способ может
+  // молча игнорироваться).
   res.headers.append("Set-Cookie", cookieParts.join("; "));
   res.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: token,
     httpOnly: true,
-    secure,
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
