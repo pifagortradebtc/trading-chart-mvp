@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Lock, ArrowRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,6 @@ function LoginFormFallback() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/portfolio";
 
@@ -83,6 +82,9 @@ function LoginForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
+        // Гарантируем, что Set-Cookie из ответа применяется к текущему origin.
+        credentials: "same-origin",
+        cache: "no-store",
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as {
@@ -92,9 +94,13 @@ function LoginForm() {
         setSubmitting(false);
         return;
       }
+      // Полный page reload — гарантирует что cookie применилась и
+      // middleware на следующем запросе её увидит. router.push давал
+      // race condition (cookie set, но Next.js RSC fetch уходил параллельно
+      // и иногда успевал ДО применения cookie → редирект обратно на /login,
+      // кнопка зависала на «Проверка…»).
       const safe = nextPath.startsWith("/") ? nextPath : "/portfolio";
-      router.push(safe);
-      router.refresh();
+      window.location.assign(safe);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Сетевая ошибка");
       setSubmitting(false);
