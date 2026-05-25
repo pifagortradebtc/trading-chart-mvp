@@ -28,8 +28,8 @@ const OVERRIDES: Record<string, SourceConfig> = {
     note: "HYPE (Hyperliquid) не торгуется на Binance Spot — история берётся с CoinGecko.",
   },
   MNTUSDT: {
-    source: "okx",
-    note: "MNT (Mantle) на Binance Spot отсутствует/делистнут — берём с OKX.",
+    source: "coingecko",
+    note: "MNT (Mantle) на Binance/OKX отсутствует — берём с CoinGecko (free tier ограничен 365 днями).",
   },
 };
 
