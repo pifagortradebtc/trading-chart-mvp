@@ -41,11 +41,27 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const token = await makeSessionToken(expected);
   const res = NextResponse.json({ ok: true });
+  // Ставим cookie двумя способами для надёжности:
+  // 1) Next.js API — res.cookies.set
+  // 2) Прямой Set-Cookie header через res.headers.append — гарантирует, что
+  //    cookie реально отправится клиенту, даже если NextResponse внутри
+  //    что-то странное с cookies.set() сделает (на Render с Cloudflare-edge
+  //    замечены случаи когда один способ молча игнорируется).
+  const secure = process.env.NODE_ENV === "production";
+  const cookieParts = [
+    `${SESSION_COOKIE_NAME}=${token}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
+  ];
+  if (secure) cookieParts.push("Secure");
+  res.headers.append("Set-Cookie", cookieParts.join("; "));
   res.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: token,
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_MAX_AGE_SECONDS,

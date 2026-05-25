@@ -101,6 +101,16 @@ function LoginForm() {
       // кнопка зависала на «Проверка…»).
       const safe = nextPath.startsWith("/") ? nextPath : "/portfolio";
       window.location.assign(safe);
+
+      // Фоллбек: если через 3 сек страница не сменилась — значит
+      // browser отверг cookie (private mode, content blocker, и т.д.).
+      // Сбрасываем кнопку и показываем ошибку.
+      setTimeout(() => {
+        setSubmitting(false);
+        setError(
+          "Браузер не принял cookie. Проверь настройки приватности или попробуй другой браузер.",
+        );
+      }, 3000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Сетевая ошибка");
       setSubmitting(false);
