@@ -27,6 +27,10 @@ const OVERRIDES: Record<string, SourceConfig> = {
     source: "coingecko",
     note: "HYPE (Hyperliquid) не торгуется на Binance Spot — история берётся с CoinGecko.",
   },
+  MNTUSDT: {
+    source: "okx",
+    note: "MNT (Mantle) на Binance Spot отсутствует/делистнут — берём с OKX.",
+  },
 };
 
 export function pickOhlcvSource(symbol: string): SourceConfig {
