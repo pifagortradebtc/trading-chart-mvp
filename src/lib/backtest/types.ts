@@ -9,6 +9,14 @@ import type {
   BuyForceSettings,
   SellForceSettings,
 } from "./buyForceSellForceSignals";
+import type {
+  AdxFilterSettings,
+  BollingerSettings,
+  EmaCrossSettings,
+  MacdSettings,
+  RsiThresholdSettings,
+  StochasticSettings,
+} from "./classicIndicatorSignals";
 
 /**
  * Внимание: `"chaik_dca"` (V2_ЧайкКельт) формально остался в enum для
@@ -30,13 +38,28 @@ export type BacktestStrategyKind =
   | "pifagor_alts"
   | "pivot21";
 
-/** Стратегии, которые могут быть слотом в composite (только сигнал-генераторы). */
-export type CompositeStrategyKind = "chaik_dca" | "buyforce_dca" | "sellforce_dca";
+/**
+ * Стратегии, которые могут быть слотом в composite.
+ * Сигнал-генераторы делятся на:
+ *   • «свои» (chaik_dca, buyforce_dca, sellforce_dca) — требуют свою инфраструктуру
+ *   • классические индикаторы технического анализа (MACD, RSI, EMA cross, и т.д.) —
+ *     считаются по OHLCV без внешних данных, простые edge-triggers
+ */
+export type CompositeStrategyKind =
+  | "chaik_dca"
+  | "buyforce_dca"
+  | "sellforce_dca"
+  | "macd"
+  | "rsi_threshold"
+  | "ema_cross"
+  | "bollinger"
+  | "stochastic"
+  | "adx_filter";
 
 /**
  * Один слот в composite: тип стратегии и её собственные параметры.
  * Хранятся inline — у каждого слота свой набор настроек (можно иметь
- * BuyForce #1 с zeroLevel=0 и BuyForce #2 с zeroLevel=0.1 в одном composite).
+ * MACD #1 с 12/26/9 и MACD #2 с 5/35/5 в одном composite).
  */
 export interface StrategySlot {
   id: string;
@@ -47,6 +70,13 @@ export interface StrategySlot {
   buyForce?: BuyForceSettings;
   /** Заполняется только когда kind === "sellforce_dca". */
   sellForce?: SellForceSettings;
+  /** Классические индикаторы: каждый имеет свой набор параметров. */
+  macd?: MacdSettings;
+  rsiThreshold?: RsiThresholdSettings;
+  emaCross?: EmaCrossSettings;
+  bollinger?: BollingerSettings;
+  stochastic?: StochasticSettings;
+  adxFilter?: AdxFilterSettings;
 }
 
 /** Правило объединения сигналов от нескольких слотов. */

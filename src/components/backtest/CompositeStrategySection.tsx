@@ -16,6 +16,14 @@ import {
   DEFAULT_SELLFORCE_SETTINGS,
 } from "@/lib/backtest/buyForceSellForceSignals";
 import { DEFAULT_CHAIK } from "@/lib/backtest/backtestDefaults";
+import {
+  DEFAULT_ADX_FILTER,
+  DEFAULT_BOLLINGER,
+  DEFAULT_EMA_CROSS,
+  DEFAULT_MACD,
+  DEFAULT_RSI_THRESHOLD,
+  DEFAULT_STOCHASTIC,
+} from "@/lib/backtest/classicIndicatorSignals";
 import type {
   BacktestSettings,
   CompositeRule,
@@ -35,7 +43,13 @@ function Tip({ children }: { children: React.ReactNode }) {
 function slotLabel(kind: CompositeStrategyKind): string {
   if (kind === "buyforce_dca") return "BuyForce (LONG)";
   if (kind === "sellforce_dca") return "SellForce (SHORT)";
-  return "V2_ЧайкКельт";
+  if (kind === "chaik_dca") return "V2_ЧайкКельт";
+  if (kind === "macd") return "MACD";
+  if (kind === "rsi_threshold") return "RSI (oversold/overbought)";
+  if (kind === "ema_cross") return "EMA Cross (golden/death)";
+  if (kind === "bollinger") return "Bollinger Bands";
+  if (kind === "stochastic") return "Stochastic %K";
+  return "ADX trend filter";
 }
 
 function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
@@ -45,6 +59,12 @@ function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
     chaikKelt: kind === "chaik_dca" ? { ...DEFAULT_CHAIK } : undefined,
     buyForce: kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS } : undefined,
     sellForce: kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS } : undefined,
+    macd: kind === "macd" ? { ...DEFAULT_MACD } : undefined,
+    rsiThreshold: kind === "rsi_threshold" ? { ...DEFAULT_RSI_THRESHOLD } : undefined,
+    emaCross: kind === "ema_cross" ? { ...DEFAULT_EMA_CROSS } : undefined,
+    bollinger: kind === "bollinger" ? { ...DEFAULT_BOLLINGER } : undefined,
+    stochastic: kind === "stochastic" ? { ...DEFAULT_STOCHASTIC } : undefined,
+    adxFilter: kind === "adx_filter" ? { ...DEFAULT_ADX_FILTER } : undefined,
   };
 }
 
@@ -81,6 +101,15 @@ export function CompositeStrategySection({
             kind === "sellforce_dca"
               ? s.sellForce ?? { ...DEFAULT_SELLFORCE_SETTINGS }
               : undefined,
+          macd: kind === "macd" ? s.macd ?? { ...DEFAULT_MACD } : undefined,
+          rsiThreshold:
+            kind === "rsi_threshold" ? s.rsiThreshold ?? { ...DEFAULT_RSI_THRESHOLD } : undefined,
+          emaCross: kind === "ema_cross" ? s.emaCross ?? { ...DEFAULT_EMA_CROSS } : undefined,
+          bollinger: kind === "bollinger" ? s.bollinger ?? { ...DEFAULT_BOLLINGER } : undefined,
+          stochastic:
+            kind === "stochastic" ? s.stochastic ?? { ...DEFAULT_STOCHASTIC } : undefined,
+          adxFilter:
+            kind === "adx_filter" ? s.adxFilter ?? { ...DEFAULT_ADX_FILTER } : undefined,
         };
       }),
     });
@@ -153,9 +182,21 @@ export function CompositeStrategySection({
                   changeSlotKind(slot.id, e.target.value as CompositeStrategyKind)
                 }
               >
-                <option value="buyforce_dca">{slotLabel("buyforce_dca")}</option>
-                <option value="sellforce_dca">{slotLabel("sellforce_dca")}</option>
-                <option value="chaik_dca">{slotLabel("chaik_dca")}</option>
+                <optgroup label="Pifagor сигналы">
+                  <option value="buyforce_dca">{slotLabel("buyforce_dca")}</option>
+                  <option value="sellforce_dca">{slotLabel("sellforce_dca")}</option>
+                  <option value="chaik_dca">{slotLabel("chaik_dca")}</option>
+                </optgroup>
+                <optgroup label="Классические индикаторы (LONG+SHORT)">
+                  <option value="macd">{slotLabel("macd")}</option>
+                  <option value="rsi_threshold">{slotLabel("rsi_threshold")}</option>
+                  <option value="ema_cross">{slotLabel("ema_cross")}</option>
+                  <option value="bollinger">{slotLabel("bollinger")}</option>
+                  <option value="stochastic">{slotLabel("stochastic")}</option>
+                </optgroup>
+                <optgroup label="Фильтры (не дают direction, только усиливают)">
+                  <option value="adx_filter">{slotLabel("adx_filter")}</option>
+                </optgroup>
               </select>
               <button
                 type="button"
@@ -272,33 +313,474 @@ export function CompositeStrategySection({
                 слота не сбросятся.
               </p>
             ) : null}
+
+            {slot.kind === "macd" && slot.macd ? (
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Fast EMA</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.macd.fastLen}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        macd: { ...slot.macd!, fastLen: Math.max(1, Number(e.target.value) || 1) },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Slow EMA</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.macd.slowLen}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        macd: { ...slot.macd!, slowLen: Math.max(1, Number(e.target.value) || 1) },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Signal EMA</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.macd.signalLen}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        macd: {
+                          ...slot.macd!,
+                          signalLen: Math.max(1, Number(e.target.value) || 1),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Cooldown</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.macd.cooldownBars}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        macd: {
+                          ...slot.macd!,
+                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "rsi_threshold" && slot.rsiThreshold ? (
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">RSI длина</span>
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.rsiThreshold.length}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        rsiThreshold: {
+                          ...slot.rsiThreshold!,
+                          length: Math.max(2, Number(e.target.value) || 14),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Oversold &lt;</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.rsiThreshold.oversoldThreshold}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        rsiThreshold: {
+                          ...slot.rsiThreshold!,
+                          oversoldThreshold: Number(e.target.value) || 30,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Overbought &gt;</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.rsiThreshold.overboughtThreshold}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        rsiThreshold: {
+                          ...slot.rsiThreshold!,
+                          overboughtThreshold: Number(e.target.value) || 70,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Cooldown</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.rsiThreshold.cooldownBars}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        rsiThreshold: {
+                          ...slot.rsiThreshold!,
+                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "ema_cross" && slot.emaCross ? (
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Fast EMA</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.emaCross.fastLen}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        emaCross: {
+                          ...slot.emaCross!,
+                          fastLen: Math.max(1, Number(e.target.value) || 50),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Slow EMA</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.emaCross.slowLen}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        emaCross: {
+                          ...slot.emaCross!,
+                          slowLen: Math.max(1, Number(e.target.value) || 200),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Cooldown</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.emaCross.cooldownBars}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        emaCross: {
+                          ...slot.emaCross!,
+                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "bollinger" && slot.bollinger ? (
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Длина SMA</span>
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.bollinger.length}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        bollinger: {
+                          ...slot.bollinger!,
+                          length: Math.max(2, Number(e.target.value) || 20),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Множитель σ</span>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.bollinger.stdDevMult}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        bollinger: {
+                          ...slot.bollinger!,
+                          stdDevMult: Number(e.target.value) || 2,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Cooldown</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.bollinger.cooldownBars}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        bollinger: {
+                          ...slot.bollinger!,
+                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "stochastic" && slot.stochastic ? (
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">%K длина</span>
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.stochastic.kLength}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        stochastic: {
+                          ...slot.stochastic!,
+                          kLength: Math.max(2, Number(e.target.value) || 14),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Сглаживание %K</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.stochastic.kSmooth}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        stochastic: {
+                          ...slot.stochastic!,
+                          kSmooth: Math.max(1, Number(e.target.value) || 3),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Oversold &lt;</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.stochastic.oversoldThreshold}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        stochastic: {
+                          ...slot.stochastic!,
+                          oversoldThreshold: Number(e.target.value) || 20,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Overbought &gt;</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.stochastic.overboughtThreshold}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        stochastic: {
+                          ...slot.stochastic!,
+                          overboughtThreshold: Number(e.target.value) || 80,
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "adx_filter" && slot.adxFilter ? (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">ADX длина</span>
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.adxFilter.length}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        adxFilter: {
+                          ...slot.adxFilter!,
+                          length: Math.max(2, Number(e.target.value) || 14),
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">ADX &gt; (трендовая сила)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.adxFilter.threshold}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        adxFilter: {
+                          ...slot.adxFilter!,
+                          threshold: Number(e.target.value) || 25,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <p className="col-span-2 text-[10px] text-[#6b7280]">
+                  ADX — фильтр силы тренда. Сигнал постоянный: «true» если ADX выше порога
+                  на этом баре. В AND-композите пропускает direction-сигналы других слотов
+                  только в трендовом рынке.
+                </p>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs text-[#787b86]">Добавить слот:</span>
-        <button
-          type="button"
-          onClick={() => addSlot("buyforce_dca")}
-          className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
-        >
-          + BuyForce
-        </button>
-        <button
-          type="button"
-          onClick={() => addSlot("sellforce_dca")}
-          className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/20"
-        >
-          + SellForce
-        </button>
-        <button
-          type="button"
-          onClick={() => addSlot("chaik_dca")}
-          className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
-        >
-          + ЧайкКельт
-        </button>
+      <div className="mt-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[#787b86]">+ Pifagor:</span>
+          <button
+            type="button"
+            onClick={() => addSlot("buyforce_dca")}
+            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+          >
+            BuyForce
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("sellforce_dca")}
+            className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/20"
+          >
+            SellForce
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("chaik_dca")}
+            className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
+          >
+            ЧайкКельт
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[#787b86]">+ Классические:</span>
+          <button
+            type="button"
+            onClick={() => addSlot("macd")}
+            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
+          >
+            MACD
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("rsi_threshold")}
+            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
+          >
+            RSI
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("ema_cross")}
+            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
+          >
+            EMA Cross
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("bollinger")}
+            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
+          >
+            Bollinger
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("stochastic")}
+            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
+          >
+            Stochastic
+          </button>
+          <button
+            type="button"
+            onClick={() => addSlot("adx_filter")}
+            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
+          >
+            ADX filter
+          </button>
+        </div>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">

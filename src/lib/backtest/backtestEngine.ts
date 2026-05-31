@@ -12,6 +12,20 @@ import {
   computeBuyForceSignals,
   computeSellForceSignals,
 } from "./buyForceSellForceSignals";
+import {
+  computeAdxFilterSignals,
+  computeBollingerSignals,
+  computeEmaCrossSignals,
+  computeMacdSignals,
+  computeRsiThresholdSignals,
+  computeStochasticSignals,
+  DEFAULT_ADX_FILTER,
+  DEFAULT_BOLLINGER,
+  DEFAULT_EMA_CROSS,
+  DEFAULT_MACD,
+  DEFAULT_RSI_THRESHOLD,
+  DEFAULT_STOCHASTIC,
+} from "./classicIndicatorSignals";
 import { combineCompositeSignals } from "./compositeSignal";
 import type { DepthBar } from "./depthTypes";
 import { buildDcaGrid } from "./dcaGrid";
@@ -587,6 +601,24 @@ export function runBacktest(
           slot.sellForce ?? settings.sellForce,
         );
         return { long: new Array<boolean>(n).fill(false), short: r.active };
+      }
+      if (slot.kind === "macd") {
+        return computeMacdSignals(candles, slot.macd ?? DEFAULT_MACD);
+      }
+      if (slot.kind === "rsi_threshold") {
+        return computeRsiThresholdSignals(candles, slot.rsiThreshold ?? DEFAULT_RSI_THRESHOLD);
+      }
+      if (slot.kind === "ema_cross") {
+        return computeEmaCrossSignals(candles, slot.emaCross ?? DEFAULT_EMA_CROSS);
+      }
+      if (slot.kind === "bollinger") {
+        return computeBollingerSignals(candles, slot.bollinger ?? DEFAULT_BOLLINGER);
+      }
+      if (slot.kind === "stochastic") {
+        return computeStochasticSignals(candles, slot.stochastic ?? DEFAULT_STOCHASTIC);
+      }
+      if (slot.kind === "adx_filter") {
+        return computeAdxFilterSignals(candles, slot.adxFilter ?? DEFAULT_ADX_FILTER);
       }
       // chaik_dca
       const r = computeChaikSignals(candles, slot.chaikKelt ?? settings.indicator);

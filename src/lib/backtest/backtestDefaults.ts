@@ -14,6 +14,14 @@ import {
   type BuyForceSettings,
   type SellForceSettings,
 } from "./buyForceSellForceSignals";
+import {
+  DEFAULT_ADX_FILTER,
+  DEFAULT_BOLLINGER,
+  DEFAULT_EMA_CROSS,
+  DEFAULT_MACD,
+  DEFAULT_RSI_THRESHOLD,
+  DEFAULT_STOCHASTIC,
+} from "./classicIndicatorSignals";
 
 /**
  * Стандартные input Pine `V2_ЧайкКельт` (значения по умолчанию в скрипте).
@@ -253,9 +261,18 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
       if (typeof slot !== "object" || slot == null) return null;
       const s = slot as Partial<StrategySlot>;
       const kind = s.kind;
-      if (kind !== "chaik_dca" && kind !== "buyforce_dca" && kind !== "sellforce_dca") {
-        return null;
-      }
+      const validKinds: StrategySlot["kind"][] = [
+        "chaik_dca",
+        "buyforce_dca",
+        "sellforce_dca",
+        "macd",
+        "rsi_threshold",
+        "ema_cross",
+        "bollinger",
+        "stochastic",
+        "adx_filter",
+      ];
+      if (!kind || !validKinds.includes(kind)) return null;
       return {
         id: typeof s.id === "string" && s.id ? s.id : `slot-${idx + 1}`,
         kind,
@@ -264,6 +281,17 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
           kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS, ...s.buyForce } : undefined,
         sellForce:
           kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS, ...s.sellForce } : undefined,
+        macd: kind === "macd" ? { ...DEFAULT_MACD, ...s.macd } : undefined,
+        rsiThreshold:
+          kind === "rsi_threshold"
+            ? { ...DEFAULT_RSI_THRESHOLD, ...s.rsiThreshold }
+            : undefined,
+        emaCross: kind === "ema_cross" ? { ...DEFAULT_EMA_CROSS, ...s.emaCross } : undefined,
+        bollinger: kind === "bollinger" ? { ...DEFAULT_BOLLINGER, ...s.bollinger } : undefined,
+        stochastic:
+          kind === "stochastic" ? { ...DEFAULT_STOCHASTIC, ...s.stochastic } : undefined,
+        adxFilter:
+          kind === "adx_filter" ? { ...DEFAULT_ADX_FILTER, ...s.adxFilter } : undefined,
       };
     })
     .filter((s): s is StrategySlot => s !== null);
