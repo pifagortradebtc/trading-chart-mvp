@@ -647,18 +647,18 @@ export function BacktestPage() {
         compositeNeedsDepth;
       if (isDepthStrategy) {
         /**
-         * Depth-данные доступны только на 1m/5m/15m/1h. Берём интервал графика
+         * Depth-данные доступны на 1m/5m/15m/1h/1d. Берём интервал графика
          * автоматически (раньше требовали ручную синхронизацию с settings.depthInterval —
          * это путало пользователя). Если ТФ графика 4h/1d/3d/1w — depth для него
          * не существует, остановимся с понятной ошибкой.
          */
-        const allowedDepthIntervals = ["1m", "5m", "15m", "1h"] as const;
+        const allowedDepthIntervals = ["1m", "5m", "15m", "1h", "1d"] as const;
         const isAllowedDepthInterval = (
           allowedDepthIntervals as readonly string[]
         ).includes(interval);
         if (!isAllowedDepthInterval) {
           throw new Error(
-            `BuyForce/SellForce: depth-данные есть только на интервалах 1m/5m/15m/1h. ` +
+            `BuyForce/SellForce: depth-данные есть только на интервалах 1m/5m/15m/1h/1d. ` +
               `Текущий ТФ графика — ${interval}. Переключите ТФ в загрузке OHLCV.`,
           );
         }

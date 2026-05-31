@@ -233,7 +233,7 @@ export interface BacktestSettings {
   /** Учитывается при strategyKind === "composite". Multi-strategy с правилом объединения. */
   composite: CompositeStrategyConfig;
   /** Таймфрейм depth-данных для buyforce/sellforce. Должен совпадать с интервалом OHLCV. */
-  depthInterval: "1m" | "5m" | "15m" | "1h";
+  depthInterval: "1m" | "5m" | "15m" | "1h" | "1d";
 }
 
 export interface DcaGridRow {

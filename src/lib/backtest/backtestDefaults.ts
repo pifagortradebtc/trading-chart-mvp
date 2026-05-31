@@ -312,11 +312,19 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
   };
 }
 
-/** Допустимые depth-таймфреймы. Pifagor VPS отдаёт только эти 4 уровня. */
+/** Допустимые depth-таймфреймы. Pifagor VPS отдаёт 5 уровней через TV-resolution. */
 function normalizeDepthInterval(
   raw: unknown,
 ): BacktestSettings["depthInterval"] {
-  if (raw === "1m" || raw === "5m" || raw === "15m" || raw === "1h") return raw;
+  if (
+    raw === "1m" ||
+    raw === "5m" ||
+    raw === "15m" ||
+    raw === "1h" ||
+    raw === "1d"
+  ) {
+    return raw;
+  }
   return "1h";
 }
 

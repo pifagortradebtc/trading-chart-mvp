@@ -496,7 +496,7 @@ export function CompositeStrategySection({
                     bid_{slot.bidAskSpread.bidRadiusPct}% − ask_{slot.bidAskSpread.askRadiusPct}%
                   </code>{" "}
                   (raw USDT, без нормирования). Требует depth-данные с Pifagor VPS
-                  (доступны 1m/5m/15m/1h, история с 25.05.2025).
+                  (доступны 1m/5m/15m/1h/1d, история с 25.05.2025).
                 </p>
                 <div className="grid grid-cols-3 gap-2">
                   <label className="flex flex-col gap-1">

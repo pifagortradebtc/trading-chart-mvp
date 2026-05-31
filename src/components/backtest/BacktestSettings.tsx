@@ -435,8 +435,8 @@ export function BacktestSettingsForm({
               <Tip>
                 Depth-данные ВСЕГДА подгружаются на том же ТФ, что выбран в загрузке OHLCV — это
                 поле теперь не редактируется, только показывает текущий выбор. Поддерживаются
-                интервалы 1m/5m/15m/1h. Pifagor VPS отдаёт depth с разной плотностью: на 1m
-                только последние ~9 дней полные, на 1h — год.
+                интервалы 1m/5m/15m/1h/1d. Pifagor VPS отдаёт depth с разной плотностью: на 1m
+                только последние ~9 дней полные, на 1h — год, на 1d — вся доступная история.
               </Tip>
             </span>
             <select
@@ -453,6 +453,7 @@ export function BacktestSettingsForm({
               <option value="5m">5m (умеренное за год)</option>
               <option value="15m">15m (хорошее за год)</option>
               <option value="1h">1h (стабильное за весь год)</option>
+              <option value="1d">1d (вся доступная история)</option>
             </select>
             <span className="text-[10px] text-[#6b7280]">
               При запуске бэктеста depth-данные грузятся на интервале графика. Чтобы изменить —

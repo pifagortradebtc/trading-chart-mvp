@@ -15,7 +15,7 @@
  *
  * GET-параметры:
  *   symbol     — e.g. BTCUSDT (uppercase, 4–32 alphanum)
- *   interval   — "1m" | "5m" | "15m" | "1h"  (allowlist под BuyForce/SellForce)
+ *   interval   — "1m" | "5m" | "15m" | "1h" | "1d"  (allowlist под BuyForce/SellForce)
  *   startMs    — unix ms, целое
  *   endMs      — unix ms, целое (endMs > startMs)
  *   yearsBack  — 1..12 для stable кеша
@@ -94,17 +94,20 @@ const VPS_TIMEOUT_MS = 30_000;
 
 /**
  * Мэппинг наших frontend-интервалов на Pifagor VPS `resolution` query-param.
- * VPS API ожидает значение в МИНУТАХ как число-строку (TV UDF convention).
+ * VPS API ожидает значение в МИНУТАХ как число-строку (TV UDF convention),
+ * либо специальные TV-метки «D» / «W» для дневных/недельных.
  *   1m  → "1"
  *   5m  → "5"
  *   15m → "15"
  *   1h  → "60"
+ *   1d  → "D" (стандартная TV-нотация для daily bucket)
  */
 const INTERVAL_TO_VPS_RESOLUTION: Record<string, string> = {
   "1m": "1",
   "5m": "5",
   "15m": "15",
   "1h": "60",
+  "1d": "D",
 };
 
 /** Длительность одного бара в миллисекундах (для пробельного контроля). */
@@ -113,6 +116,7 @@ const INTERVAL_TO_MS: Record<string, number> = {
   "5m": 300_000,
   "15m": 900_000,
   "1h": 3_600_000,
+  "1d": 86_400_000,
 };
 
 // ─── Валидация ────────────────────────────────────────────────────────────────

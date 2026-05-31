@@ -25,4 +25,4 @@ export interface DepthBar {
 }
 
 /** Поддерживаемые таймфреймы для BuyForce/SellForce backtest. */
-export type DepthInterval = "1m" | "5m" | "15m" | "1h";
+export type DepthInterval = "1m" | "5m" | "15m" | "1h" | "1d";
