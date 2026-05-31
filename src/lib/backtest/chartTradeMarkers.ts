@@ -38,8 +38,6 @@ function formatOrderUsdt(usdt: number): string {
  */
 export function buildBacktestChartMarkers(trades: TradeRecord[]): SeriesMarker<Time>[] {
   const out: SeriesMarker<Time>[] = [];
-  /** На одной сделке показываем любой выход; на всём прогоне — только TP, чтобы не засорять шкалу. */
-  const showNonTpExit = trades.length === 1;
 
   for (const t of trades) {
     const tSig = Math.floor(t.entrySignalTime / 1000) as Time;
@@ -69,22 +67,20 @@ export function buildBacktestChartMarkers(trades: TradeRecord[]): SeriesMarker<T
       }
     }
 
-    /** Висящую позицию (end_of_test) показываем ВСЕГДА — она одна на весь прогон. */
-    if (
-      t.exitReason === "tp" ||
-      t.exitReason === "signal" ||
-      t.exitReason === "end_of_test" ||
-      showNonTpExit
-    ) {
-      const tEx = Math.floor(t.exitTime / 1000) as Time;
-      out.push({
-        time: tEx,
-        position: t.side === "long" ? "aboveBar" : "belowBar",
-        color: exitMarkerColor(t.exitReason),
-        shape: "circle",
-        text: exitMarkerText(t),
-      });
-    }
+    /**
+     * Все exit-причины рисуем всегда — пользователю важно видеть где сделка закрылась,
+     * иначе создаётся впечатление что бот не закрывает позиции. Раньше в session-режиме
+     * (multi-trade) отрисовывались только tp/signal/end_of_test, а sl/liquidation
+     * молча скрывались — это вводило в заблуждение.
+     */
+    const tEx = Math.floor(t.exitTime / 1000) as Time;
+    out.push({
+      time: tEx,
+      position: t.side === "long" ? "aboveBar" : "belowBar",
+      color: exitMarkerColor(t.exitReason),
+      shape: "circle",
+      text: exitMarkerText(t),
+    });
   }
 
   out.sort((a, b) => (a.time as number) - (b.time as number));
