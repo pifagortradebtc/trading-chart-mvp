@@ -317,157 +317,259 @@ export function CompositeStrategySection({
             ) : null}
 
             {slot.kind === "macd" && slot.macd ? (
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="space-y-2 text-xs">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Fast EMA</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.macd.fastLen}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        macd: { ...slot.macd!, fastLen: Math.max(1, Number(e.target.value) || 1) },
-                      })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Slow EMA</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.macd.slowLen}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        macd: { ...slot.macd!, slowLen: Math.max(1, Number(e.target.value) || 1) },
-                      })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Signal EMA</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.macd.signalLen}
+                  <span className="text-[#787b86]">
+                    Сигнальный режим
+                    <Tip>
+                      Что считать триггером для LONG/SHORT. «Signal cross» — классика
+                      (MACD↑/↓ signal-line). «Zero cross» — медленнее, надёжнее. «Above
+                      zero gate» — постоянный фильтр (long пока MACD&gt;0, short пока &lt;0).
+                    </Tip>
+                  </span>
+                  <select
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                    value={slot.macd.signalMode}
                     onChange={(e) =>
                       patchSlot(slot.id, {
                         macd: {
                           ...slot.macd!,
-                          signalLen: Math.max(1, Number(e.target.value) || 1),
+                          signalMode: e.target.value as typeof slot.macd.signalMode,
                         },
                       })
                     }
-                  />
+                  >
+                    <option value="signal_cross">
+                      Cross signal line (long: MACD↑signal, short: ↓)
+                    </option>
+                    <option value="zero_cross">Zero cross (long: MACD↑0, short: ↓0)</option>
+                    <option value="above_zero_gate">
+                      Above/below zero (фильтр: long пока MACD&gt;0)
+                    </option>
+                  </select>
                 </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Cooldown</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.macd.cooldownBars}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        macd: {
-                          ...slot.macd!,
-                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
-                        },
-                      })
-                    }
-                  />
-                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Fast EMA</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.macd.fastLen}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          macd: {
+                            ...slot.macd!,
+                            fastLen: Math.max(1, Number(e.target.value) || 1),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Slow EMA</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.macd.slowLen}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          macd: {
+                            ...slot.macd!,
+                            slowLen: Math.max(1, Number(e.target.value) || 1),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Signal EMA</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.macd.signalLen}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          macd: {
+                            ...slot.macd!,
+                            signalLen: Math.max(1, Number(e.target.value) || 1),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Cooldown</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.macd.cooldownBars}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          macd: {
+                            ...slot.macd!,
+                            cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
               </div>
             ) : null}
 
             {slot.kind === "rsi_threshold" && slot.rsiThreshold ? (
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="space-y-2 text-xs">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">RSI длина</span>
-                  <input
-                    type="number"
-                    min="2"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.rsiThreshold.length}
+                  <span className="text-[#787b86]">
+                    Сигнальный режим
+                    <Tip>
+                      Exit zones — классика (long: RSI↑ из oversold). Enter zones — наоборот
+                      (long когда RSI заходит в oversold, ждём отскок). Midline — long при
+                      RSI↑50 (моментум). Inside zone — постоянный фильтр.
+                    </Tip>
+                  </span>
+                  <select
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                    value={slot.rsiThreshold.signalMode}
                     onChange={(e) =>
                       patchSlot(slot.id, {
                         rsiThreshold: {
                           ...slot.rsiThreshold!,
-                          length: Math.max(2, Number(e.target.value) || 14),
+                          signalMode: e.target.value as typeof slot.rsiThreshold.signalMode,
                         },
                       })
                     }
-                  />
+                  >
+                    <option value="exit_zones">
+                      Exit zones (long: RSI↑oversold, short: RSI↓overbought)
+                    </option>
+                    <option value="enter_zones">
+                      Enter zones (long: RSI↓oversold, short: RSI↑overbought)
+                    </option>
+                    <option value="midline_cross">
+                      Midline 50 (long: RSI↑50, short: RSI↓50)
+                    </option>
+                    <option value="inside_zone">
+                      Inside zone (фильтр: long пока RSI&lt;oversold)
+                    </option>
+                  </select>
                 </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Oversold &lt;</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.rsiThreshold.oversoldThreshold}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        rsiThreshold: {
-                          ...slot.rsiThreshold!,
-                          oversoldThreshold: Number(e.target.value) || 30,
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Overbought &gt;</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.rsiThreshold.overboughtThreshold}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        rsiThreshold: {
-                          ...slot.rsiThreshold!,
-                          overboughtThreshold: Number(e.target.value) || 70,
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Cooldown</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.rsiThreshold.cooldownBars}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        rsiThreshold: {
-                          ...slot.rsiThreshold!,
-                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
-                        },
-                      })
-                    }
-                  />
-                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">RSI длина</span>
+                    <input
+                      type="number"
+                      min="2"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.rsiThreshold.length}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          rsiThreshold: {
+                            ...slot.rsiThreshold!,
+                            length: Math.max(2, Number(e.target.value) || 14),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Oversold &lt;</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.rsiThreshold.oversoldThreshold}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          rsiThreshold: {
+                            ...slot.rsiThreshold!,
+                            oversoldThreshold: Number(e.target.value) || 30,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Overbought &gt;</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.rsiThreshold.overboughtThreshold}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          rsiThreshold: {
+                            ...slot.rsiThreshold!,
+                            overboughtThreshold: Number(e.target.value) || 70,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Cooldown</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.rsiThreshold.cooldownBars}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          rsiThreshold: {
+                            ...slot.rsiThreshold!,
+                            cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
               </div>
             ) : null}
 
             {slot.kind === "ema_cross" && slot.emaCross ? (
-              <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="space-y-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">
+                    Сигнальный режим
+                    <Tip>
+                      Cross event — edge: long на golden cross, short на death. Above/below —
+                      continuous фильтр: long пока fast EMA &gt; slow EMA.
+                    </Tip>
+                  </span>
+                  <select
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                    value={slot.emaCross.signalMode}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        emaCross: {
+                          ...slot.emaCross!,
+                          signalMode: e.target.value as typeof slot.emaCross.signalMode,
+                        },
+                      })
+                    }
+                  >
+                    <option value="cross_event">Cross event (golden/death)</option>
+                    <option value="above_below">
+                      Above/below (фильтр: long пока fast&gt;slow)
+                    </option>
+                  </select>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Fast EMA</span>
                   <input
@@ -522,11 +624,42 @@ export function CompositeStrategySection({
                     }
                   />
                 </label>
+                </div>
               </div>
             ) : null}
 
             {slot.kind === "bollinger" && slot.bollinger ? (
-              <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="space-y-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">
+                    Сигнальный режим
+                    <Tip>
+                      Touch band — mean reversion: long при пробое нижней полосы (жди отскок),
+                      short при пробое верхней. Breakout — наоборот, моментум: long при пробое
+                      верхней (импульс), short при пробое нижней.
+                    </Tip>
+                  </span>
+                  <select
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                    value={slot.bollinger.signalMode}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        bollinger: {
+                          ...slot.bollinger!,
+                          signalMode: e.target.value as typeof slot.bollinger.signalMode,
+                        },
+                      })
+                    }
+                  >
+                    <option value="touch_band">
+                      Touch band (mean reversion: long нижняя, short верхняя)
+                    </option>
+                    <option value="breakout">
+                      Breakout (моментум: long верхняя, short нижняя)
+                    </option>
+                  </select>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Длина SMA</span>
                   <input
@@ -581,11 +714,41 @@ export function CompositeStrategySection({
                     }
                   />
                 </label>
+                </div>
               </div>
             ) : null}
 
             {slot.kind === "stochastic" && slot.stochastic ? (
-              <div className="grid grid-cols-4 gap-2 text-xs">
+              <div className="space-y-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">
+                    Сигнальный режим
+                    <Tip>
+                      Exit zones — классика (long: %K↑oversold, short: %K↓overbought).
+                      Enter zones — наоборот (вход в зону, ждём разворот).
+                    </Tip>
+                  </span>
+                  <select
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                    value={slot.stochastic.signalMode}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        stochastic: {
+                          ...slot.stochastic!,
+                          signalMode: e.target.value as typeof slot.stochastic.signalMode,
+                        },
+                      })
+                    }
+                  >
+                    <option value="exit_zones">
+                      Exit zones (long: %K↑oversold, short: %K↓overbought)
+                    </option>
+                    <option value="enter_zones">
+                      Enter zones (long: %K↓oversold, short: %K↑overbought)
+                    </option>
+                  </select>
+                </label>
+                <div className="grid grid-cols-4 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">%K длина</span>
                   <input
@@ -660,6 +823,7 @@ export function CompositeStrategySection({
                     }
                   />
                 </label>
+                </div>
               </div>
             ) : null}
 
