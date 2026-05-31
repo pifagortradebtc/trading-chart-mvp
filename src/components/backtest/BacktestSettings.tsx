@@ -1,11 +1,14 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   applyPifagorTvDefaults,
+  DEFAULT_CHAIK,
   DEFAULT_PIFAGOR_ALTS,
   DEFAULT_PIFAGOR_DCA,
   DEFAULT_PIVOT21,
 } from "@/lib/backtest/backtestDefaults";
+import { buildDcaGrid } from "@/lib/backtest/dcaGrid";
 import { PORTFOLIO_ALTS_SYMBOL_COUNT } from "@/lib/backtest/portfolioAltsSymbols";
 import type { BacktestSettings } from "@/lib/backtest/types";
 
@@ -14,6 +17,145 @@ function Tip({ children }: { children: React.ReactNode }) {
     <span className="ml-1 cursor-help text-sky-400/90" title={String(children)}>
       ⓘ
     </span>
+  );
+}
+
+/**
+ * Превью DCA-сетки по текущим settings: компактная таблица всех ордеров +
+ * предупреждения. Использует тот же builder, что и движок бэктеста.
+ *
+ * Зачем: оператор видит сразу, какие реально цены и суммы ордеров получатся.
+ * «Первый ордер 20%» × 6 ордеров в режиме LONG = НЕ 120% депозита, а
+ * marginPerTrade распределяется по 6 ордерам через volumeFactor.
+ */
+function DcaGridPreview({ settings }: { settings: BacktestSettings }) {
+  const ANCHOR = 100;
+  // Если allowLong → long, иначе short.
+  const useShort = !settings.dca.allowLong && settings.dca.allowShort;
+
+  const grid = useMemo(() => {
+    try {
+      return buildDcaGrid(useShort ? "short" : "long", ANCHOR, settings.dca);
+    } catch {
+      return { side: "long" as const, firstEntryPrice: ANCHOR, rows: [] };
+    }
+  }, [settings.dca, useShort]);
+
+  const totalNotional = grid.rows.reduce((s, r) => s + r.qtyCoin * r.price, 0);
+  const lastRow = grid.rows[grid.rows.length - 1];
+  const margin = settings.dca.gridTotalNotionalUsdt ?? settings.dca.startDepositUsdt;
+  const ratio = margin > 0 ? totalNotional / margin : 0;
+  const overshoot = ratio > 1.001 ? (ratio - 1) * 100 : 0;
+  const drawdownAtFullFillPct = lastRow
+    ? useShort
+      ? ((lastRow.price - ANCHOR) / ANCHOR) * 100
+      : ((ANCHOR - lastRow.price) / ANCHOR) * 100
+    : 0;
+
+  if (grid.rows.length === 0) {
+    return (
+      <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+        ⚠ Сетка не строится — проверь «Перекрытие цены %» (&gt; 0),
+        «Сумма ордеров» (&gt; 0) и «Кол-во ордеров» (≥ 1).
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-[#2e3241] bg-[#0c0e14] p-3 text-[11px]">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="font-mono uppercase tracking-wide text-[#787b86]">
+          Превью сетки ({useShort ? "SHORT" : "LONG"} · {grid.rows.length} ордеров)
+        </span>
+        <span className="font-mono text-[10px] text-[#6b7280]">
+          anchor = 100, цены в %
+        </span>
+      </div>
+      <table className="w-full font-mono text-[10.5px]">
+        <thead className="text-[#787b86]">
+          <tr className="border-b border-[#1f2230]">
+            <th className="py-1 text-left">#</th>
+            <th className="py-1 text-right">Цена</th>
+            <th className="py-1 text-right">Δ entry</th>
+            <th className="py-1 text-right">USDT</th>
+            <th className="py-1 text-right">% депо</th>
+            <th className="py-1 text-right">Cum USDT</th>
+            <th className="py-1 text-right">Avg</th>
+            <th className="py-1 text-right">TP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grid.rows.map((r) => {
+            const orderUsdt = r.qtyCoin * r.price;
+            const dPct = ((r.price - ANCHOR) / ANCHOR) * 100;
+            const pctDepo = margin > 0 ? (orderUsdt / margin) * 100 : 0;
+            return (
+              <tr key={r.orderIndex} className="border-b border-[#1f2230]/60">
+                <td className="py-0.5 text-[#d1d4dc]">{r.orderIndex}</td>
+                <td className="py-0.5 text-right text-[#d1d4dc]">{r.price.toFixed(2)}</td>
+                <td
+                  className={`py-0.5 text-right ${
+                    dPct < 0 ? "text-rose-300" : dPct > 0 ? "text-emerald-300" : "text-[#787b86]"
+                  }`}
+                >
+                  {dPct >= 0 ? "+" : ""}
+                  {dPct.toFixed(2)}%
+                </td>
+                <td className="py-0.5 text-right text-[#d1d4dc]">{orderUsdt.toFixed(2)}</td>
+                <td className="py-0.5 text-right text-[#787b86]">{pctDepo.toFixed(1)}%</td>
+                <td className="py-0.5 text-right text-[#a8b3cf]">{r.cumNotionalUsdt.toFixed(2)}</td>
+                <td className="py-0.5 text-right text-violet-300">{r.avgPrice.toFixed(2)}</td>
+                <td className="py-0.5 text-right text-emerald-300">{r.takeProfitPrice.toFixed(2)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10.5px]">
+        <span className="text-[#787b86]">Сумма ордеров (USDT):</span>
+        <span className="text-right font-mono text-[#d1d4dc]">
+          {totalNotional.toFixed(2)} / {margin.toFixed(2)}
+        </span>
+        <span className="text-[#787b86]">Просадка при полной сетке:</span>
+        <span className="text-right font-mono text-rose-300">{drawdownAtFullFillPct.toFixed(2)}%</span>
+      </div>
+
+      {overshoot > 0 && (
+        <div className="mt-2 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[10.5px] text-rose-200">
+          ⚠ Сумма ордеров превышает депозит на {overshoot.toFixed(1)}%. Уменьши
+          «Сумма номиналов сетки» или включи плечо.
+        </div>
+      )}
+      {settings.dca.priceOverlapPct < 5 && (
+        <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10.5px] text-amber-100">
+          ⚠ Перекрытие {settings.dca.priceOverlapPct}% — сетка очень узкая,
+          сделки часто будут полностью заполняться и идти в SL/ликвидацию.
+        </div>
+      )}
+      {settings.dca.priceOverlapPct > 50 && (
+        <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10.5px] text-amber-100">
+          ⚠ Перекрытие {settings.dca.priceOverlapPct}% — глубокая сетка,
+          крайние ордера могут никогда не заполниться.
+        </div>
+      )}
+      {!useShort &&
+        Math.abs(settings.dca.volumeFactor - 1) < 0.01 &&
+        grid.rows.length > 1 && (
+          <div className="mt-1 rounded border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[10.5px] text-sky-100">
+            ℹ Volume factor = 1: все ордера одного размера (
+            {(100 / grid.rows.length).toFixed(1)}% депозита каждый). Параметр
+            «Первый ордер %» в LONG-режиме игнорируется — реальный размер
+            диктуется суммой сетки.
+          </div>
+        )}
+      {settings.dca.takeProfitPct < 0.5 && (
+        <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10.5px] text-amber-100">
+          ⚠ TP {settings.dca.takeProfitPct}% очень маленький — комиссия (
+          {(settings.dca.feePctPerSide * 2).toFixed(3)}%) может съесть значительную
+          часть прибыли.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -26,6 +168,8 @@ export function BacktestSettingsForm({
 }) {
   const patch = (partial: Partial<BacktestSettings>) =>
     onChange({ ...settings, ...partial });
+  const patchInd = (partial: Partial<BacktestSettings["indicator"]>) =>
+    onChange({ ...settings, indicator: { ...settings.indicator, ...partial } });
   const patchDca = (partial: Partial<BacktestSettings["dca"]>) =>
     onChange({ ...settings, dca: { ...settings.dca, ...partial } });
   const patchPif = (partial: Partial<BacktestSettings["pifagorAlts"]>) =>
@@ -38,11 +182,13 @@ export function BacktestSettingsForm({
       ...settings,
       pivot21: { ...settings.pivot21, ...partial },
     });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const patchBuy = (partial: Partial<BacktestSettings["buyForce"]>) =>
     onChange({
       ...settings,
       buyForce: { ...settings.buyForce, ...partial },
     });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const patchSell = (partial: Partial<BacktestSettings["sellForce"]>) =>
     onChange({
       ...settings,
@@ -83,6 +229,7 @@ export function BacktestSettingsForm({
                 }
               }}
             >
+              <option value="chaik_dca">V2_ЧайкКельт + DCA-сетка</option>
               <option value="buyforce_dca">Pifagor BuyForce + DCA (LONG)</option>
               <option value="sellforce_dca">Pifagor SellForce + DCA (SHORT)</option>
               <option value="pifagor_alts">Pifagor ALTS 3.7 (лонг, без сетки)</option>
@@ -116,6 +263,325 @@ export function BacktestSettingsForm({
         </div>
       </section>
 
+      {settings.strategyKind === "chaik_dca" ? (
+      <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+            Индикатор V2_ЧайкКельт
+          </h3>
+          <button
+            type="button"
+            className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
+            title="Все поля блока — значения из Pine по умолчанию (вход в сделку)"
+            onClick={() => patchInd({ ...DEFAULT_CHAIK })}
+          >
+            Как в Pine (дефолты входа)
+          </button>
+        </div>
+        <div className="grid gap-3 text-sm">
+          <label className="flex flex-col gap-1">
+            <span className="text-[#787b86]">
+              Фильтр направления Pine
+              <Tip>auto / только long / только short на уровне индикатора</Tip>
+            </span>
+            <select
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+              value={settings.indicator.directionFilter}
+              onChange={(e) =>
+                patchInd({
+                  directionFilter: e.target.value as BacktestSettings["indicator"]["directionFilter"],
+                })
+              }
+            >
+              <option value="auto">Auto</option>
+              <option value="long_only">Long only</option>
+              <option value="short_only">Short only</option>
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>Chaikin fast</span>
+              <input
+                type="number"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.chaikinFast}
+                onChange={(e) => patchInd({ chaikinFast: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>Chaikin slow</span>
+              <input
+                type="number"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.chaikinSlow}
+                onChange={(e) => patchInd({ chaikinSlow: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span>
+              ADX порог (боковик ≤)
+              <Tip>Выше — тренд, ниже или равно — боковик в логике сигнала</Tip>
+            </span>
+            <input
+              type="number"
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              value={settings.indicator.adxThreshold}
+              onChange={(e) => patchInd({ adxThreshold: Number(e.target.value) })}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>
+                RSI range long &lt;
+                <Tip>Порог RSI для LONG в боковике</Tip>
+              </span>
+              <input
+                type="number"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.rsiRangeThresholdLong}
+                onChange={(e) =>
+                  patchInd({ rsiRangeThresholdLong: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                RSI trend long &lt;
+                <Tip>Порог RSI для LONG в тренде</Tip>
+              </span>
+              <input
+                type="number"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.rsiTrendThresholdLong}
+                onChange={(e) =>
+                  patchInd({ rsiTrendThresholdLong: Number(e.target.value) })
+                }
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span>Длина EMA отката</span>
+            <input
+              type="number"
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              value={settings.indicator.emaPullbackLen}
+              onChange={(e) => patchInd({ emaPullbackLen: Number(e.target.value) })}
+            />
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>Keltner EMA</span>
+              <input
+                type="number"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.keltnerEmaLen}
+                onChange={(e) => patchInd({ keltnerEmaLen: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>Keltner ATR</span>
+              <input
+                type="number"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.keltnerAtrLen}
+                onChange={(e) => patchInd({ keltnerAtrLen: Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>Keltner mult</span>
+              <input
+                type="number"
+                step={0.1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.indicator.keltnerMult}
+                onChange={(e) => patchInd({ keltnerMult: Number(e.target.value) })}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1">
+            <span>Cooldown (баров)</span>
+            <input
+              type="number"
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              value={settings.indicator.cooldownBars}
+              onChange={(e) => patchInd({ cooldownBars: Number(e.target.value) })}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span>
+              ТФ Чайкина (метка Pine)
+              <Tip>
+                В Pine осциллятор на `request.security`; в веб-бэктесте ряд совпадает с загруженным ТФ графика.
+                Для сравнения с TV задайте тот же интервал на графике или совпадающий расчёт.
+              </Tip>
+            </span>
+            <input
+              type="text"
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              value={settings.indicator.chaikinTf}
+              onChange={(e) => patchInd({ chaikinTf: e.target.value })}
+            />
+          </label>
+          <div className="rounded-lg border border-[#2e3241] bg-[#0c0e14]/60 px-3 py-2">
+            <p className="mb-2 text-xs text-[#787b86]">
+              Якорь лонга (ОТКАТОМ БЭК V2): при лимите якорь = close − ATR×k, иначе close; ATR по длине Keltner ATR.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.indicator.useLimitRange}
+                  onChange={(e) => patchInd({ useLimitRange: e.target.checked })}
+                />
+                <span>Лимит в боковике</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>k ATR (боковик)</span>
+                <input
+                  type="number"
+                  step={0.01}
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.limitRangeAtr}
+                  onChange={(e) => patchInd({ limitRangeAtr: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.indicator.useLimitTrend}
+                  onChange={(e) => patchInd({ useLimitTrend: e.target.checked })}
+                />
+                <span>Лимит в тренде</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>k ATR (тренд)</span>
+                <input
+                  type="number"
+                  step={0.01}
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.limitTrendAtr}
+                  onChange={(e) => patchInd({ limitTrendAtr: Number(e.target.value) })}
+                />
+              </label>
+            </div>
+          </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              className="rounded border-[#2e3241]"
+              checked={settings.indicator.crossMode}
+              onChange={(e) => patchInd({ crossMode: e.target.checked })}
+            />
+            <span className="text-[#787b86]">
+              Только пересечение нуля Чайкина
+              <Tip>Pine cross_mode: сигнал на баре пересечения, а не пока осциллятор с нужной стороны нуля</Tip>
+            </span>
+          </label>
+          <details className="rounded-lg border border-[#2e3241] bg-[#0c0e14]/80 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-[#787b86]">
+              Остальные параметры входа (как в Pine)
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span>Период ADX</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.adxLength}
+                  onChange={(e) => patchInd({ adxLength: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Окно диапазона (баров)</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rangeBars}
+                  onChange={(e) => patchInd({ rangeBars: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Макс. позиция лонг %</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rangeMaxPctLong}
+                  onChange={(e) => patchInd({ rangeMaxPctLong: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Мин. позиция шорт %</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rangeMinPctShort}
+                  onChange={(e) => patchInd({ rangeMinPctShort: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Допуск отката к EMA %</span>
+                <input
+                  type="number"
+                  step={0.1}
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.pullbackPct}
+                  onChange={(e) => patchInd({ pullbackPct: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Баров для импульса (lookback)</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.divLookback}
+                  onChange={(e) => patchInd({ divLookback: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>Период RSI</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rsiLen}
+                  onChange={(e) => patchInd({ rsiLen: Number(e.target.value) })}
+                />
+              </label>
+              <label className="flex items-center gap-2 pt-6">
+                <input
+                  type="checkbox"
+                  checked={settings.indicator.rsiEnabled}
+                  onChange={(e) => patchInd({ rsiEnabled: e.target.checked })}
+                />
+                <span>RSI включён</span>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>RSI шорт боковик &gt;</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rsiRangeThresholdShort}
+                  onChange={(e) =>
+                    patchInd({ rsiRangeThresholdShort: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span>RSI шорт тренд &gt;</span>
+                <input
+                  type="number"
+                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                  value={settings.indicator.rsiTrendThresholdShort}
+                  onChange={(e) =>
+                    patchInd({ rsiTrendThresholdShort: Number(e.target.value) })
+                  }
+                />
+              </label>
+            </div>
+          </details>
+        </div>
+      </section>
+      ) : null}
 
       {settings.strategyKind === "buyforce_dca" ||
       settings.strategyKind === "sellforce_dca" ? (
@@ -216,10 +682,9 @@ export function BacktestSettingsForm({
             </select>
           </label>
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100">
-            ⚠️ Depth-данные тянутся с Pifagor VPS (`pifagor.153.80.192.107.nip.io`).
-            Live-collector пишет ~600k snapshots/мес для текущего месяца; за прошлое — tardis
-            archive ~20k/мес (1 snap каждые ~2 мин). На 1m прошлое будет с пропусками,
-            на 1h всё стабильно.
+            ⚠️ Depth-данные тянутся с Pifagor VPS. Live-collector пишет ~600k snapshots/мес
+            для текущего месяца; за прошлое — tardis archive ~20k/мес (1 snap каждые ~2 мин).
+            На 1m прошлое будет с пропусками, на 1h всё стабильно.
           </p>
         </div>
       </section>
@@ -235,7 +700,8 @@ export function BacktestSettingsForm({
           {settings.strategyKind === "pifagor_alts" ? "Капитал и размер входа" : "DCA-бот"}
         </h3>
         <div className="grid gap-3 text-sm">
-          {settings.strategyKind === "buyforce_dca" ||
+          {settings.strategyKind === "chaik_dca" ||
+          settings.strategyKind === "buyforce_dca" ||
           settings.strategyKind === "sellforce_dca" ? (
             <>
           <div className="grid grid-cols-2 gap-2">
@@ -524,6 +990,7 @@ export function BacktestSettingsForm({
               </select>
             </label>
           </div>
+          <DcaGridPreview settings={settings} />
             </>
           ) : (
             <>
@@ -808,7 +1275,8 @@ export function BacktestSettingsForm({
         </section>
       ) : null}
 
-      {settings.strategyKind === "buyforce_dca" ||
+      {settings.strategyKind === "chaik_dca" ||
+      settings.strategyKind === "buyforce_dca" ||
       settings.strategyKind === "sellforce_dca" ||
       settings.strategyKind === "pivot21" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
@@ -816,6 +1284,29 @@ export function BacktestSettingsForm({
           Исполнение
         </h3>
         <div className="flex flex-wrap gap-6 text-sm">
+          {settings.strategyKind === "chaik_dca" ? (
+            <label className="flex flex-col gap-1">
+              <span>
+                Вход
+                <Tip>
+                  LONG ОТКАТОМ: якорь и лимит/маркет первого ордера задаются как в Pine (не этим селектором). Ниже —
+                  только для SHORT: open следующей свечи или close сигнальной.
+                </Tip>
+              </span>
+              <select
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
+                value={settings.entryTiming}
+                onChange={(e) =>
+                  patch({
+                    entryTiming: e.target.value as BacktestSettings["entryTiming"],
+                  })
+                }
+              >
+                <option value="next_open">Open следующей свечи</option>
+                <option value="signal_close">Close сигнальной свечи</option>
+              </select>
+            </label>
+          ) : null}
           <label className="flex flex-col gap-1">
             <span>
               {settings.strategyKind === "pivot21"

@@ -69,10 +69,13 @@ export function BacktestStrategyDashboard({
   settings: BacktestSettings;
   interval: string;
 }) {
+  const ind = settings.indicator;
   const dca = settings.dca;
   const pif = settings.pifagorAlts;
   const isPifagor = settings.strategyKind === "pifagor_alts";
+  const isChaik = settings.strategyKind === "chaik_dca";
   const gridNotional = dca.gridTotalNotionalUsdt ?? dca.startDepositUsdt;
+  const atrLast = result.lastBarAtrKelt;
   const pos = result.openPositionAtDataEnd;
   const trades = result.trades;
   const closed = trades.filter((t) => t.exitReason !== "end_of_test");
@@ -153,6 +156,30 @@ export function BacktestStrategyDashboard({
               <Row k="Коэф. цены" v={dca.priceFactor.toFixed(2)} />
               <Row k="Мартингейл" v={dca.volumeFactor.toFixed(2)} />
               <Row k="TP" v={`${dca.takeProfitPct.toFixed(2)}%`} />
+              {isChaik ? (
+                <>
+                  <Row
+                    k="Вход боковик"
+                    v={
+                      ind.useLimitRange
+                        ? `${ind.limitRangeAtr.toFixed(2)} ATR`
+                        : "market"
+                    }
+                  />
+                  <Row
+                    k="Вход тренд"
+                    v={
+                      ind.useLimitTrend
+                        ? `${ind.limitTrendAtr.toFixed(2)} ATR`
+                        : "market"
+                    }
+                  />
+                  <Row
+                    k="ATR (посл. бар)"
+                    v={atrLast != null && Number.isFinite(atrLast) ? atrLast.toFixed(1) : "—"}
+                  />
+                </>
+              ) : null}
               <Row k="Покрытие сетки" v={`${dca.priceOverlapPct.toFixed(2)}%`} vClass="text-emerald-400" />
               <Row k="Σ USDT сетки" v={gridNotional.toFixed(1)} vClass="text-emerald-400" />
             </>
