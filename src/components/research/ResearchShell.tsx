@@ -1,9 +1,90 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { RESEARCH_TABS, type ResearchTabId } from "./types";
 import { ProgressBar } from "./ui";
 import { PifagorFundHeader } from "@/components/PifagorFundHeader";
+
+const SIDEBAR_DEFAULT = 220;
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_STORAGE = "rex-sidebar-width-v1";
+
+function useSidebarWidth(): [number, (w: number) => void, () => void] {
+  const [width, setWidthState] = useState<number>(SIDEBAR_DEFAULT);
+
+  useEffect(() => {
+    /** Восстановление из localStorage на mount (без SSR-проблем). */
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(SIDEBAR_STORAGE);
+    if (!saved) return;
+    const n = Number(saved);
+    if (Number.isFinite(n) && n >= SIDEBAR_MIN && n <= SIDEBAR_MAX) {
+      setWidthState(n);
+    }
+  }, []);
+
+  const setWidth = (w: number) => {
+    const clamped = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, w));
+    setWidthState(clamped);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SIDEBAR_STORAGE, String(clamped));
+    }
+  };
+
+  const reset = () => {
+    setWidthState(SIDEBAR_DEFAULT);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(SIDEBAR_STORAGE);
+    }
+  };
+
+  return [width, setWidth, reset];
+}
+
+/**
+ * Вертикальный «разделитель» между sidebar и main: drag → меняет ширину sidebar,
+ * dblclick → сброс к дефолту. Виден только когда sidebar виден (lg:block).
+ */
+function VerticalResizeHandle({
+  currentWidth,
+  onChange,
+  onReset,
+}: {
+  currentWidth: number;
+  onChange: (w: number) => void;
+  onReset: () => void;
+}) {
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = currentWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      onChange(startW + dx);
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      className="hidden w-1.5 shrink-0 cursor-col-resize bg-surface-border transition-colors hover:bg-brand/40 active:bg-brand lg:block"
+      onMouseDown={handleMouseDown}
+      onDoubleClick={onReset}
+      title="Перетащите чтобы изменить ширину панели. Двойной клик — сброс."
+    />
+  );
+}
 
 export function ResearchShell({
   tab,
@@ -35,12 +116,17 @@ export function ResearchShell({
     system: RESEARCH_TABS.filter((t) => t.group === "system"),
   };
 
+  const [sidebarWidth, setSidebarWidth, resetSidebarWidth] = useSidebarWidth();
+
   return (
     <div className="flex min-h-screen flex-col bg-[var(--bg-deep)] text-ink">
       <PifagorFundHeader />
 
       <div className="flex flex-1 min-h-0">
-        <aside className="rex-sidebar hidden w-[220px] shrink-0 flex-col border-r border-surface-border bg-[rgba(10,16,32,0.7)] backdrop-blur-xl lg:flex">
+        <aside
+          className="rex-sidebar hidden shrink-0 flex-col border-r border-surface-border bg-[rgba(10,16,32,0.7)] backdrop-blur-xl lg:flex"
+          style={{ width: `${sidebarWidth}px` }}
+        >
           <div className="border-b border-surface-border px-4 py-5">
             <div className="font-display font-semibold tracking-display-tight text-ink">
               Research
@@ -55,6 +141,12 @@ export function ResearchShell({
             <NavGroup title="System" items={grouped.system} active={tab} onSelect={onTab} />
           </nav>
         </aside>
+
+        <VerticalResizeHandle
+          currentWidth={sidebarWidth}
+          onChange={setSidebarWidth}
+          onReset={resetSidebarWidth}
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
           {/* ── Hero ── */}
