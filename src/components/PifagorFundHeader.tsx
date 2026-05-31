@@ -22,10 +22,13 @@ export function PifagorFundHeader() {
       className="sticky top-0 z-40 border-b border-surface-border bg-[rgba(6,10,16,0.78)] backdrop-blur-xl"
     >
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-8 sm:py-4">
-        {/* Brand */}
-        <Link
-          href="/backtest"
+        {/* Brand — clickable to public fund site */}
+        <a
+          href="https://pifagor.fund/"
+          target="_blank"
+          rel="noopener noreferrer"
           className="group flex items-center gap-3 transition-opacity hover:opacity-90"
+          title="Открыть публичный сайт криптофонда (pifagor.fund) в новой вкладке"
         >
           <span
             aria-hidden
@@ -43,12 +46,23 @@ export function PifagorFundHeader() {
               Закрытый криптофонд · Research
             </span>
           </span>
-        </Link>
+        </a>
 
-        {/* Tabs */}
-        <nav className="flex items-center gap-1 rounded-full border border-surface-border bg-white/[0.02] p-1">
-          <HeaderTab href="/backtest" label="Бэктест" active={isActive(pathname, "/backtest")} />
-          <HeaderTab href="/portfolio" label="Портфель" active={isActive(pathname, "/portfolio")} />
+        {/* Tabs + Fund button */}
+        <nav className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-full border border-surface-border bg-white/[0.02] p-1">
+            <HeaderTab href="/backtest" label="Бэктест" active={isActive(pathname, "/backtest")} />
+            <HeaderTab href="/portfolio" label="Портфель" active={isActive(pathname, "/portfolio")} />
+          </div>
+          <a
+            href="https://pifagor.fund/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border border-brand/50 bg-brand/15 px-4 py-1.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand/25 sm:text-[13px]"
+            title="Открыть публичный сайт криптофонда в новой вкладке"
+          >
+            На фонд ↗
+          </a>
         </nav>
       </div>
     </header>

@@ -198,16 +198,16 @@ export const DEFAULT_COMPOSITE: CompositeStrategyConfig = {
   slots: [
     {
       id: "slot-1",
-      kind: "buyforce_dca",
+      kind: "chaik_dca",
       joinRule: "and",
-      buyForce: DEFAULT_BUYFORCE_SETTINGS,
+      chaikKelt: DEFAULT_CHAIK,
     },
   ],
   confirmWindowBars: 5,
 };
 
 export const DEFAULT_BACKTEST: BacktestSettings = {
-  strategyKind: "buyforce_dca",
+  strategyKind: "composite",
   portfolioAltsMode: false,
   entryTiming: "next_open",
   executionOrder: "conservative",

@@ -471,9 +471,7 @@ export function BacktestSettingsForm({
 
       {settings.strategyKind !== "pivot21" ? (
       <section
-        className={`rounded-xl border border-[#2e3241] bg-[#131722] p-5 ${
-          settings.strategyKind === "pifagor_alts" ? "lg:col-span-2" : ""
-        }`}
+        className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2"
       >
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
           {settings.strategyKind === "pifagor_alts" ? "Капитал и размер входа" : "DCA-бот"}
