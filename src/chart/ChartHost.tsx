@@ -395,7 +395,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       const line = chart.addLineSeries({
         color: spec.color,
         lineWidth: spec.lineWidth,
-        lineStyle: LineStyle.Solid,
+        lineStyle: spec.lineStyle,
         priceScaleId: "right",
         lastValueVisible: false,
         priceLineVisible: false,
