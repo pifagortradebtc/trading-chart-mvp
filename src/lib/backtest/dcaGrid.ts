@@ -91,6 +91,11 @@ export function buildDcaGridPineOtkatomLong(anchorPrice: number, settings: DcaBo
     cumNotional += orderUsdt;
     const avgPrice = cumNotional / cumQty;
     const tpRaw = avgPrice * (1 + takeProfitPct / 100);
+    /** SL для LONG: ниже средней на stopLossPct% (если задан). */
+    const slRaw =
+      settings.stopLossPct != null && settings.stopLossPct > 0
+        ? avgPrice * (1 - settings.stopLossPct / 100)
+        : undefined;
     const liq = approxLiquidationPrice("long", avgPrice, liqLeverage);
     const drawdownFromFirstPct = ((anchorPrice - avgPrice) / anchorPrice) * 100;
     const marginUsed = cumNotional / leverage;
@@ -103,6 +108,7 @@ export function buildDcaGridPineOtkatomLong(anchorPrice: number, settings: DcaBo
       cumNotionalUsdt: cumNotional,
       avgPrice,
       takeProfitPrice: tpRaw,
+      stopLossPrice: slRaw,
       approxLiquidationPrice: liq,
       drawdownFromFirstPct,
       marginUsedUsdt: marginUsed,
@@ -191,6 +197,11 @@ function buildDcaGridLegacyShort(
     cumNotional += orderUsdt;
     const avgPrice = cumNotional / cumQty;
     const tpRaw = avgPrice * (1 - takeProfitPct / 100);
+    /** SL для SHORT: выше средней на stopLossPct%. */
+    const slRaw =
+      settings.stopLossPct != null && settings.stopLossPct > 0
+        ? avgPrice * (1 + settings.stopLossPct / 100)
+        : undefined;
     const liq = approxLiquidationPrice("short", avgPrice, liqLeverage);
     const drawdownFromFirstPct = ((avgPrice - firstEntryPrice) / firstEntryPrice) * 100;
     const marginUsed = cumNotional / leverage;
@@ -203,6 +214,7 @@ function buildDcaGridLegacyShort(
       cumNotionalUsdt: cumNotional,
       avgPrice,
       takeProfitPrice: tpRaw,
+      stopLossPrice: slRaw,
       approxLiquidationPrice: liq,
       drawdownFromFirstPct,
       marginUsedUsdt: marginUsed,

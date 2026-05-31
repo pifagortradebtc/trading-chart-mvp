@@ -5,7 +5,7 @@
 import { LineStyle, type LineWidth, type Time } from "lightweight-charts";
 import type { TradeRecord } from "./types";
 
-export type DcaSegmentKind = "entry" | "dca" | "avg" | "tp";
+export type DcaSegmentKind = "entry" | "dca" | "avg" | "tp" | "sl";
 
 export interface DcaSegmentSpec {
   t0: Time;
@@ -22,6 +22,7 @@ const DCA_COLORS = ["#f59e0b", "#fb923c", "#fbbf24", "#d97706", "#92400e", "#783
 /** Те же цвета, что и для горизонтальных уровней (см. chartOverlayLevels.ts). */
 const AVG_COLOR = "#a78bfa"; // светло-фиолетовый, видно поверх свечей
 const TP_COLOR = "#34d399"; // emerald — отдельный оттенок зелёного, не путать с entry
+const SL_COLOR = "#f87171"; // светло-красный — отличается от ликвидации (более тёмная)
 
 /** Макс. число сделок с отрисовкой сетки (последние по порядку в массиве), чтобы не завис график. */
 export const MAX_TRADES_FOR_DCA_SEGMENTS = 48;
@@ -90,6 +91,18 @@ export function buildDcaSegmentSpecs(trades: TradeRecord[]): DcaSegmentSpec[] {
         lineStyle: LineStyle.Dashed,
         kind: "tp",
       });
+      /** SL по фактической средней — только если стоп задан в настройках (stopLossPct > 0). */
+      if (actualRow.stopLossPrice != null && Number.isFinite(actualRow.stopLossPrice)) {
+        specs.push({
+          t0,
+          t1,
+          price: actualRow.stopLossPrice,
+          color: SL_COLOR,
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          kind: "sl",
+        });
+      }
     }
   }
 

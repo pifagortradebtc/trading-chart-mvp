@@ -245,6 +245,11 @@ export interface DcaGridRow {
   avgPrice: number;
   /** TP при гипотетическом исполнении ордеров 1…N: средняя после этих входов + takeProfitPct%. */
   takeProfitPrice: number;
+  /**
+   * SL по средней после исполнения ордеров 1…N. `undefined` если stopLossPct = null
+   * (стоп выключен). Для LONG: avg × (1 − slPct/100), для SHORT: avg × (1 + slPct/100).
+   */
+  stopLossPrice?: number;
   approxLiquidationPrice: number;
   drawdownFromFirstPct: number;
   marginUsedUsdt: number;
