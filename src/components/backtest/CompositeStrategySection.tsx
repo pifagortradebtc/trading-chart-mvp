@@ -31,6 +31,7 @@ import type {
   CompositeStrategyKind,
   StrategySlot,
 } from "@/lib/backtest/types";
+import { ChaikKeltSettingsForm } from "./ChaikKeltSettingsForm";
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -305,13 +306,14 @@ export function CompositeStrategySection({
               </div>
             ) : null}
 
-            {slot.kind === "chaik_dca" ? (
-              <p className="text-[11px] leading-relaxed text-[#6b7280]">
-                ЧайкКельт-слот в композите использует свой набор настроек. Чтобы тонко
-                его настроить — временно переключи режим на «V2_ЧайкКельт + DCA-сетка»
-                одиночно, отредактируй параметры, и вернись в композит. Параметры этого
-                слота не сбросятся.
-              </p>
+            {slot.kind === "chaik_dca" && slot.chaikKelt ? (
+              <ChaikKeltSettingsForm
+                value={slot.chaikKelt}
+                onChange={(partial) =>
+                  patchSlot(slot.id, { chaikKelt: { ...slot.chaikKelt!, ...partial } })
+                }
+                compact
+              />
             ) : null}
 
             {slot.kind === "macd" && slot.macd ? (
