@@ -727,16 +727,19 @@ export function BacktestSettingsForm({
               />
             </label>
           </div>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1 opacity-60">
             <span>
-              Таймфрейм depth-данных
+              Таймфрейм depth-данных (авто = ТФ графика)
               <Tip>
-                Должен совпадать с интервалом OHLCV в загрузке выше. Pifagor VPS отдаёт depth
-                с разной плотностью: на 1m только последние ~9 дней полные, на 1h — год.
+                Depth-данные ВСЕГДА подгружаются на том же ТФ, что выбран в загрузке OHLCV — это
+                поле теперь не редактируется, только показывает текущий выбор. Поддерживаются
+                интервалы 1m/5m/15m/1h. Pifagor VPS отдаёт depth с разной плотностью: на 1m
+                только последние ~9 дней полные, на 1h — год.
               </Tip>
             </span>
             <select
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+              disabled
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc] disabled:cursor-not-allowed"
               value={settings.depthInterval}
               onChange={(e) =>
                 patch({
@@ -747,13 +750,18 @@ export function BacktestSettingsForm({
               <option value="1m">1m (полное покрытие ~9 дней)</option>
               <option value="5m">5m (умеренное за год)</option>
               <option value="15m">15m (хорошее за год)</option>
-              <option value="1h">1h (стабильное за весь год) — рекомендуем</option>
+              <option value="1h">1h (стабильное за весь год)</option>
             </select>
+            <span className="text-[10px] text-[#6b7280]">
+              При запуске бэктеста depth-данные грузятся на интервале графика. Чтобы изменить —
+              переключи ТФ в загрузке OHLCV.
+            </span>
           </label>
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100">
             ⚠️ Depth-данные тянутся с Pifagor VPS. Live-collector пишет ~600k snapshots/мес
             для текущего месяца; за прошлое — tardis archive ~20k/мес (1 snap каждые ~2 мин).
-            На 1m прошлое будет с пропусками, на 1h всё стабильно.
+            На 1m прошлое будет с пропусками, на 1h всё стабильно. Допустимые ТФ для BuyForce/SellForce:
+            <strong className="text-amber-200"> 1m, 5m, 15m, 1h</strong> (4h/1d/1w не поддерживаются).
           </p>
         </div>
       </section>

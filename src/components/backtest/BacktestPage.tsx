@@ -243,6 +243,20 @@ export function BacktestPage() {
     }
     const eq =
       metrics != null ? settings.dca.startDepositUsdt + metrics.totalPnlUsdt : undefined;
+    /**
+     * Worst drawdown overall = MAX из трёх источников:
+     *   • maxEquityDrawdownPct — провал кривой equity (от пика, по закрытым сделкам)
+     *   • maxDrawdownPct       — худший внутри-сделочный underwater по всем закрытым
+     *   • openPositionAtDataEnd.maxDrawdownPct — текущая висящая позиция (если есть)
+     * При стратегии с 100% win rate equity-DD = 0, но внутри сделок и в открытой
+     * позиции просадка может быть очень глубокой — её и хотим видеть в хедлайне.
+     */
+    const openDd = result?.openPositionAtDataEnd?.maxDrawdownPct ?? 0;
+    const worstDd = Math.max(
+      metrics?.maxEquityDrawdownPct ?? 0,
+      metrics?.maxDrawdownPct ?? 0,
+      openDd,
+    );
     return {
       pair: effectiveSymbol.replace(/USDT$/, "/USDT"),
       interval,
@@ -250,7 +264,7 @@ export function BacktestPage() {
       deposit: settings.dca.startDepositUsdt,
       equity: eq,
       retPct: metrics?.totalReturnPct,
-      maxDdPct: metrics?.maxEquityDrawdownPct,
+      maxDdPct: metrics != null ? worstDd : undefined,
       trades: metrics?.trades,
     };
   }, [
@@ -260,6 +274,7 @@ export function BacktestPage() {
     interval,
     candles.length,
     settings.dca.startDepositUsdt,
+    result?.openPositionAtDataEnd,
     metrics,
   ]);
 
@@ -620,13 +635,23 @@ export function BacktestPage() {
         runSettings.strategyKind === "buyforce_dca" ||
         runSettings.strategyKind === "sellforce_dca";
       if (isDepthStrategy) {
-        const depthInterval = runSettings.depthInterval as DepthInterval;
-        if (interval !== depthInterval) {
+        /**
+         * Depth-данные доступны только на 1m/5m/15m/1h. Берём интервал графика
+         * автоматически (раньше требовали ручную синхронизацию с settings.depthInterval —
+         * это путало пользователя). Если ТФ графика 4h/1d/3d/1w — depth для него
+         * не существует, остановимся с понятной ошибкой.
+         */
+        const allowedDepthIntervals = ["1m", "5m", "15m", "1h"] as const;
+        const isAllowedDepthInterval = (
+          allowedDepthIntervals as readonly string[]
+        ).includes(interval);
+        if (!isAllowedDepthInterval) {
           throw new Error(
-            `BuyForce/SellForce: интервал графика (${interval}) должен совпадать с depthInterval (${depthInterval}). ` +
-              `Выберите ТФ ${depthInterval} в загрузке OHLCV, либо смените depthInterval в настройках.`,
+            `BuyForce/SellForce: depth-данные есть только на интервалах 1m/5m/15m/1h. ` +
+              `Текущий ТФ графика — ${interval}. Переключите ТФ в загрузке OHLCV.`,
           );
         }
+        const depthInterval = interval as DepthInterval;
         setLoadMsg("Загрузка depth-данных (Pifagor VPS)…");
         const depthRes = await loadDepthData({
           symbol: effectiveSymbol,
@@ -643,6 +668,10 @@ export function BacktestPage() {
               ` .. ${new Date(endMs).toISOString().slice(0, 10)}] нет depth-данных в БД Pifagor. ` +
               `Полное покрытие — только последние ~9 дней (с 2026-05-23); раньше — разрежённый tardis archive.`,
           );
+        }
+        /** Синхронизируем settings.depthInterval (для снимка и UI), чтобы не было рассинхрона. */
+        if (runSettings.depthInterval !== depthInterval) {
+          runSettings.depthInterval = depthInterval;
         }
       }
 
@@ -1138,7 +1167,7 @@ export function BacktestPage() {
               <PortfolioBacktestDashboard result={portfolioResult} />
             ) : (
               <>
-            <BacktestResults m={metrics} />
+            <BacktestResults m={metrics} openPosition={result?.openPositionAtDataEnd ?? null} />
             {result && metrics ? (
               <BacktestStrategyDashboard result={result} settings={settings} interval={interval} />
             ) : null}
