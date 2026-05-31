@@ -58,6 +58,7 @@ export function TradingShell() {
   const openSettings = useIndicatorStore((s) => s.openSettings);
   const metaTitle = useBacktestOverlayStore((s) => s.metaTitle);
   const cleanChartUi = useBacktestOverlayStore((s) => s.cleanChartUi);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const clearOverlay = useBacktestOverlayStore((s) => s.clear);
   const minimalChrome = cleanChartUi || chartRouteOnly;
 
@@ -70,17 +71,13 @@ export function TradingShell() {
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-sky-900/50 bg-sky-950/35 px-3 py-1.5 text-xs text-sky-100">
           <span className="truncate font-medium">{metaTitle}</span>
           <span className="flex shrink-0 items-center gap-2">
-            <span className="hidden text-sky-300/90 sm:inline">
-              {minimalChrome
-                ? "Жёлто-зелёный канал — ALTS (aaa1); стрелки — вход/выход; оранжевые отрезки — уровни DCA."
-                : "Зелёный — вход, оранжевый — DCA, зелёный TP, красный — ликвидация"}
-            </span>
             <button
               type="button"
-              onClick={() => clearOverlay()}
-              className="rounded bg-sky-900/80 px-2 py-0.5 hover:bg-sky-800"
+              onClick={() => window.location.reload()}
+              className="rounded bg-sky-900/80 px-2.5 py-0.5 font-medium hover:bg-sky-800"
+              title="Перечитать данные из последнего запуска бэктеста (применится новая стратегия / сделки)"
             >
-              Сбросить разметку
+              Обновить
             </button>
             <Link href="/backtest" className="text-sky-300 underline-offset-2 hover:text-white hover:underline">
               Бэктест

@@ -52,7 +52,11 @@ export function consumeBacktestChartHandoff(): BacktestChartHandoff | null {
   try {
     const raw = localStorage.getItem(HANDOFF_KEY);
     if (!raw) return null;
-    localStorage.removeItem(HANDOFF_KEY);
+    /**
+     * Не удаляем ключ после первого чтения — оставляем как «последний снапшот»
+     * чтобы кнопка «Обновить» на /chart могла перечитать его после window.location.reload().
+     * Перезаписывается при следующем запуске бэктеста (см. stashHandoff).
+     */
     return JSON.parse(raw) as BacktestChartHandoff;
   } catch {
     localStorage.removeItem(HANDOFF_KEY);
