@@ -11,6 +11,7 @@
  * слот «активным» если его сигнал был в [i-N+1..i].
  */
 
+import { useState } from "react";
 import {
   DEFAULT_BUYFORCE_SETTINGS,
   DEFAULT_SELLFORCE_SETTINGS,
@@ -52,6 +53,58 @@ function slotLabel(kind: CompositeStrategyKind): string {
   return "ADX (фильтр силы тренда)";
 }
 
+/**
+ * Цветовая палитра для слотов — циклическая по индексу. Применяется к
+ * левой накладке (border + bg badge), чтобы юзер визуально разделял слоты
+ * при просмотре стека.
+ */
+const SLOT_COLOR_PALETTE = [
+  {
+    border: "border-cyan-500/40",
+    accent: "bg-cyan-500/15 text-cyan-200 border-cyan-500/40",
+    leftBar: "bg-cyan-500/60",
+  },
+  {
+    border: "border-violet-500/40",
+    accent: "bg-violet-500/15 text-violet-200 border-violet-500/40",
+    leftBar: "bg-violet-500/60",
+  },
+  {
+    border: "border-emerald-500/40",
+    accent: "bg-emerald-500/15 text-emerald-200 border-emerald-500/40",
+    leftBar: "bg-emerald-500/60",
+  },
+  {
+    border: "border-amber-500/40",
+    accent: "bg-amber-500/15 text-amber-200 border-amber-500/40",
+    leftBar: "bg-amber-500/60",
+  },
+  {
+    border: "border-rose-500/40",
+    accent: "bg-rose-500/15 text-rose-200 border-rose-500/40",
+    leftBar: "bg-rose-500/60",
+  },
+  {
+    border: "border-sky-500/40",
+    accent: "bg-sky-500/15 text-sky-200 border-sky-500/40",
+    leftBar: "bg-sky-500/60",
+  },
+  {
+    border: "border-pink-500/40",
+    accent: "bg-pink-500/15 text-pink-200 border-pink-500/40",
+    leftBar: "bg-pink-500/60",
+  },
+  {
+    border: "border-lime-500/40",
+    accent: "bg-lime-500/15 text-lime-200 border-lime-500/40",
+    leftBar: "bg-lime-500/60",
+  },
+];
+
+function slotColors(idx: number): (typeof SLOT_COLOR_PALETTE)[number] {
+  return SLOT_COLOR_PALETTE[idx % SLOT_COLOR_PALETTE.length]!;
+}
+
 function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
   return {
     id: `slot-${Date.now()}-${idx}`,
@@ -77,6 +130,18 @@ export function CompositeStrategySection({
   onChange: (s: BacktestSettings) => void;
 }) {
   const config = settings.composite;
+
+  /** Какие слоты раскрыты с настройками; по умолчанию все закрыты (visual clean). */
+  const [expandedSlots, setExpandedSlots] = useState<Set<string>>(() => new Set());
+  const isExpanded = (id: string) => expandedSlots.has(id);
+  const toggleExpand = (id: string) => {
+    setExpandedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const patchComposite = (partial: Partial<CompositeStrategyConfig>) => {
     onChange({ ...settings, composite: { ...config, ...partial } });
@@ -170,7 +235,10 @@ export function CompositeStrategySection({
       </p>
 
       <div className="space-y-3">
-        {config.slots.map((slot, idx) => (
+        {config.slots.map((slot, idx) => {
+          const colors = slotColors(idx);
+          const opened = isExpanded(slot.id);
+          return (
           <div key={slot.id}>
             {idx > 0 ? (
               <div className="mb-2 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wide text-[#6b7280]">
@@ -185,10 +253,12 @@ export function CompositeStrategySection({
               </div>
             ) : null}
             <div
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] p-3"
+              className={`relative overflow-hidden rounded-lg border bg-[#0c0e14] p-3 ${colors.border}`}
             >
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">
+            {/* Левая цветная полоса для визуального разделения */}
+            <div className={`absolute inset-y-0 left-0 w-1 ${colors.leftBar}`} />
+            <div className="ml-1 flex flex-wrap items-center gap-2">
+              <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${colors.accent}`}>
                 #{idx + 1}
               </span>
               <select
@@ -214,6 +284,18 @@ export function CompositeStrategySection({
                   <option value="adx_filter">{slotLabel("adx_filter")}</option>
                 </optgroup>
               </select>
+              <button
+                type="button"
+                onClick={() => toggleExpand(slot.id)}
+                title={opened ? "Скрыть настройки слота" : "Показать настройки слота"}
+                className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  opened
+                    ? `${colors.accent}`
+                    : "border-[#2e3241] bg-[#131722] text-[#787b86] hover:bg-[#1a1e2a]"
+                }`}
+              >
+                ⚙ {opened ? "скрыть" : "настройки"}
+              </button>
               <button
                 type="button"
                 onClick={() => moveSlot(slot.id, -1)}
@@ -246,6 +328,10 @@ export function CompositeStrategySection({
                 ×
               </button>
             </div>
+
+            {opened ? (
+            <div className="ml-1 mt-3 border-t border-[#2e3241]/50 pt-3">
+            <div className="space-y-3">
 
             {slot.kind === "buyforce_dca" && slot.buyForce ? (
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -897,8 +983,12 @@ export function CompositeStrategySection({
               </div>
             ) : null}
             </div>
+            </div>
+            ) : null}
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-3 space-y-2">
