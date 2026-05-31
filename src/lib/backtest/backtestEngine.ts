@@ -726,6 +726,7 @@ export function runBacktest(
         tr.cumNotional > 0 ? (pnl / (tr.cumNotional / settings.dca.leverage)) * 100 : 0,
       feesUsdt: tr.feesUsdt,
       firstEntryKind: tr.firstEntryKind,
+      stopLossPct: settings.dca.stopLossPct,
       exitReason: exit,
       durationMs: tMs - entryT * 1000,
       comment: tr.comment,

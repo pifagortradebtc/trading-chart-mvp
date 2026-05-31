@@ -300,6 +300,12 @@ export interface TradeRecord {
   feesUsdt: number;
   /** Тип первого входа (для статистики Lim/Mkt). У старых снимков — неизвестно. */
   firstEntryKind?: FirstEntryKind;
+  /**
+   * Значение stopLossPct из настроек на момент сделки. Нужно для отрисовки
+   * SL-линии на графике (fallback если dcaGrid.rows[i].stopLossPrice пуст
+   * в старых снапшотах). null/отсутствует = стоп выключен.
+   */
+  stopLossPct?: number | null;
   exitReason: "tp" | "sl" | "liquidation" | "end_of_test" | "signal";
   durationMs: number;
   comment: string;

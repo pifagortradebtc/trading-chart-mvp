@@ -91,12 +91,36 @@ export function buildDcaSegmentSpecs(trades: TradeRecord[]): DcaSegmentSpec[] {
         lineStyle: LineStyle.Dashed,
         kind: "tp",
       });
-      /** SL по фактической средней — только если стоп задан в настройках (stopLossPct > 0). */
-      if (actualRow.stopLossPrice != null && Number.isFinite(actualRow.stopLossPrice)) {
+      /**
+       * SL по фактической средней. Источник цены:
+       *   1) Свежие снимки (после деплоя SL-фичи): actualRow.stopLossPrice
+       *   2) Fallback для старых снимков (или ALTS/Pivot21 без поля в rows):
+       *      вычисляем из t.avgEntryPrice × (1 ± t.stopLossPct/100) если
+       *      t.stopLossPct > 0 был сохранён.
+       */
+      let slPrice: number | null = null;
+      if (
+        actualRow.stopLossPrice != null &&
+        Number.isFinite(actualRow.stopLossPrice)
+      ) {
+        slPrice = actualRow.stopLossPrice;
+      } else if (
+        t.stopLossPct != null &&
+        t.stopLossPct > 0 &&
+        Number.isFinite(t.avgEntryPrice) &&
+        t.avgEntryPrice > 0
+      ) {
+        const frac = t.stopLossPct / 100;
+        slPrice =
+          t.side === "long"
+            ? t.avgEntryPrice * (1 - frac)
+            : t.avgEntryPrice * (1 + frac);
+      }
+      if (slPrice != null && Number.isFinite(slPrice)) {
         specs.push({
           t0,
           t1,
-          price: actualRow.stopLossPrice,
+          price: slPrice,
           color: SL_COLOR,
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
