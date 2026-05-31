@@ -186,6 +186,8 @@ export function CompositeStrategySection({
     patchComposite({ slots: config.slots.filter((s) => s.id !== id) });
   };
 
+  /** Добавление слотов теперь только через компактную формулу в шапке (CompositeFormulaRow). */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const addSlot = (kind: CompositeStrategyKind) => {
     patchComposite({
       slots: [...config.slots, makeSlot(kind, config.slots.length)],
@@ -991,77 +993,6 @@ export function CompositeStrategySection({
         })}
       </div>
 
-      <div className="mt-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[#787b86]">+ Pifagor:</span>
-          <button
-            type="button"
-            onClick={() => addSlot("buyforce_dca")}
-            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
-          >
-            BuyForce
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("sellforce_dca")}
-            className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/20"
-          >
-            SellForce
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("chaik_dca")}
-            className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
-          >
-            ЧайкКельт
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[#787b86]">+ Классические:</span>
-          <button
-            type="button"
-            onClick={() => addSlot("macd")}
-            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
-          >
-            MACD
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("rsi_threshold")}
-            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
-          >
-            RSI
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("ema_cross")}
-            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
-          >
-            EMA Cross
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("bollinger")}
-            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
-          >
-            Bollinger
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("stochastic")}
-            className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-500/20"
-          >
-            Stochastic
-          </button>
-          <button
-            type="button"
-            onClick={() => addSlot("adx_filter")}
-            className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
-          >
-            ADX (фильтр)
-          </button>
-        </div>
-      </div>
 
       <div className="mt-5">
         <label className="flex max-w-md flex-col gap-1">
