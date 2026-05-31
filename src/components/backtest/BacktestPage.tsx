@@ -636,7 +636,10 @@ export function BacktestPage() {
       const compositeNeedsDepth =
         runSettings.strategyKind === "composite" &&
         runSettings.composite.slots.some(
-          (s) => s.kind === "buyforce_dca" || s.kind === "sellforce_dca",
+          (s) =>
+            s.kind === "buyforce_dca" ||
+            s.kind === "sellforce_dca" ||
+            s.kind === "bidask_spread",
         );
       const isDepthStrategy =
         runSettings.strategyKind === "buyforce_dca" ||

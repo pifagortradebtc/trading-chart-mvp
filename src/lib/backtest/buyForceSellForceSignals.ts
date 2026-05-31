@@ -157,3 +157,177 @@ export function computeSellForceSignals(
     Math.max(0, Math.floor(settings.cooldownBars)),
   );
 }
+
+// ─── BidAsk Spread (классический индикатор из Pifagor Trade Limits) ─────────
+
+/**
+ * BidAsk Spread: простая разница объёмов стакана в радиусах X% и Y%.
+ *
+ * Формула в исходном TV-индикаторе (bid-ask.js, файл pifagor-trade-website-2):
+ *   value = bid_<bidRadius>%  −  ask_<askRadius>%     (в USDT, raw subtraction)
+ *
+ * Дефолты в Pifagor Trade Limits:
+ *   bidRadius = 1.5%   askRadius = 8%   threshold = 0
+ *
+ * Семантика:
+ *   value > threshold  → bid-сторона давит сильнее → BUY-сигнал (LONG)
+ *   value < threshold  → ask-сторона давит сильнее → SELL-сигнал (SHORT)
+ *
+ * Опционально: SMA-сглаживание по `smoothingLength` баров (отдельно для bid_X
+ * и ask_Y, потом разница) — повторяет логику TV-индикатора с 2-sided SMA.
+ */
+export type DepthRadius = 1.5 | 3 | 8;
+export type BidAskSpreadSignalMode = "long_above" | "short_above" | "both";
+
+export interface BidAskSpreadSettings {
+  /** Радиус bid-объёма в % от mid-price. Доступны те, что есть в DepthBar: 1.5 / 3 / 8. */
+  bidRadiusPct: DepthRadius;
+  /** Радиус ask-объёма в % от mid-price. */
+  askRadiusPct: DepthRadius;
+  /** Уровень порога в USDT (raw разность). По умолчанию 0. */
+  threshold: number;
+  /**
+   * SMA-сглаживание (длина в барах). 1 = без сглаживания. Применяется отдельно
+   * к bid- и ask-сериям до взятия разности (как в TV-индикаторе).
+   */
+  smoothingLength: number;
+  /**
+   * Что считать сигналом:
+   *  • long_above  — value > threshold → LONG (default)
+   *  • short_above — value > threshold → SHORT (инверсия для bear-формул)
+   *  • both        — > → LONG, < → SHORT (двусторонний для AUTO-режима)
+   */
+  signalMode: BidAskSpreadSignalMode;
+  cooldownBars: number;
+}
+
+export const DEFAULT_BIDASK_SPREAD: BidAskSpreadSettings = {
+  bidRadiusPct: 1.5,
+  askRadiusPct: 8,
+  threshold: 0,
+  smoothingLength: 1,
+  signalMode: "long_above",
+  cooldownBars: 1,
+};
+
+function depthFieldByRadius(b: DepthBar, side: "bid" | "ask", radius: DepthRadius): number {
+  if (side === "bid") {
+    if (radius === 1.5) return b.bid_1_5;
+    if (radius === 3) return b.bid_3;
+    return b.bid_8;
+  }
+  if (radius === 1.5) return b.ask_1_5;
+  if (radius === 3) return b.ask_3;
+  return b.ask_8;
+}
+
+/**
+ * Trailing SMA в окне `len`. На undefined/NaN — возвращает NaN.
+ * Используется для сглаживания bid/ask серии до взятия разности.
+ */
+function smaArray(values: number[], len: number): number[] {
+  const n = values.length;
+  const out = new Array<number>(n).fill(Number.NaN);
+  if (len <= 1) {
+    for (let i = 0; i < n; i++) out[i] = values[i]!;
+    return out;
+  }
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const v = values[i]!;
+    if (Number.isFinite(v)) {
+      sum += v;
+      count++;
+    }
+    if (i >= len) {
+      const drop = values[i - len]!;
+      if (Number.isFinite(drop)) {
+        sum -= drop;
+        count--;
+      }
+    }
+    if (count === len) out[i] = sum / len;
+  }
+  return out;
+}
+
+export interface BidAskSpreadSignals {
+  long: boolean[];
+  short: boolean[];
+  value: number[];
+  depthBarsAvailable: number;
+  missingDepth: number;
+}
+
+export function computeBidAskSpreadSignals(
+  candles: Candle[],
+  depthBars: DepthBar[],
+  settings: BidAskSpreadSettings,
+): BidAskSpreadSignals {
+  const byT = indexDepthByTime(depthBars);
+  const n = candles.length;
+  const bidSeries = new Array<number>(n).fill(Number.NaN);
+  const askSeries = new Array<number>(n).fill(Number.NaN);
+  let depthBarsAvailable = 0;
+  let missingDepth = 0;
+
+  for (let i = 0; i < n; i++) {
+    const candle = candles[i];
+    if (!candle) continue;
+    const depth = byT.get(candle.time);
+    if (!depth) {
+      missingDepth++;
+      continue;
+    }
+    depthBarsAvailable++;
+    bidSeries[i] = depthFieldByRadius(depth, "bid", settings.bidRadiusPct);
+    askSeries[i] = depthFieldByRadius(depth, "ask", settings.askRadiusPct);
+  }
+
+  const smoothLen = Math.max(1, Math.floor(settings.smoothingLength));
+  const bidSmoothed = smaArray(bidSeries, smoothLen);
+  const askSmoothed = smaArray(askSeries, smoothLen);
+  const value: number[] = bidSmoothed.map((b, i) => {
+    const a = askSmoothed[i]!;
+    if (!Number.isFinite(b) || !Number.isFinite(a)) return Number.NaN;
+    return b - a;
+  });
+
+  const long = new Array<boolean>(n).fill(false);
+  const short = new Array<boolean>(n).fill(false);
+  let prevVal = Number.NaN;
+  let lastLongIdx = -Infinity;
+  let lastShortIdx = -Infinity;
+  const cooldown = Math.max(0, Math.floor(settings.cooldownBars));
+
+  for (let i = 0; i < n; i++) {
+    const curr = value[i]!;
+    if (Number.isFinite(prevVal) && Number.isFinite(curr)) {
+      const crossUp = prevVal <= settings.threshold && curr > settings.threshold;
+      const crossDown = prevVal >= settings.threshold && curr < settings.threshold;
+      const mode = settings.signalMode;
+      if (crossUp && (mode === "long_above" || mode === "both")) {
+        if (i - lastLongIdx > cooldown) {
+          long[i] = true;
+          lastLongIdx = i;
+        }
+      }
+      if (crossUp && mode === "short_above") {
+        if (i - lastShortIdx > cooldown) {
+          short[i] = true;
+          lastShortIdx = i;
+        }
+      }
+      if (crossDown && mode === "both") {
+        if (i - lastShortIdx > cooldown) {
+          short[i] = true;
+          lastShortIdx = i;
+        }
+      }
+    }
+    if (Number.isFinite(curr)) prevVal = curr;
+  }
+
+  return { long, short, value, depthBarsAvailable, missingDepth };
+}

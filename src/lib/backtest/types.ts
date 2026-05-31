@@ -6,6 +6,7 @@ import type { Candle } from "@/types/candle";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
 import type { Pivot21Settings } from "./pivot21Types";
 import type {
+  BidAskSpreadSettings,
   BuyForceSettings,
   SellForceSettings,
 } from "./buyForceSellForceSignals";
@@ -49,6 +50,7 @@ export type CompositeStrategyKind =
   | "chaik_dca"
   | "buyforce_dca"
   | "sellforce_dca"
+  | "bidask_spread"
   | "macd"
   | "rsi_threshold"
   | "ema_cross"
@@ -87,6 +89,8 @@ export interface StrategySlot {
   buyForce?: BuyForceSettings;
   /** Заполняется только когда kind === "sellforce_dca". */
   sellForce?: SellForceSettings;
+  /** Заполняется только когда kind === "bidask_spread". */
+  bidAskSpread?: BidAskSpreadSettings;
   /** Классические индикаторы: каждый имеет свой набор параметров. */
   macd?: MacdSettings;
   rsiThreshold?: RsiThresholdSettings;

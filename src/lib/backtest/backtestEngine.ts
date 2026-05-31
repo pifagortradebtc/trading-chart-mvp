@@ -9,8 +9,10 @@
 import type { Candle } from "@/types/candle";
 import { computeChaikSignals, type ChaikComputedSeries } from "./chaikKeltSignal";
 import {
+  computeBidAskSpreadSignals,
   computeBuyForceSignals,
   computeSellForceSignals,
+  DEFAULT_BIDASK_SPREAD,
 } from "./buyForceSellForceSignals";
 import {
   computeAdxFilterSignals,
@@ -601,6 +603,14 @@ export function runBacktest(
           slot.sellForce ?? settings.sellForce,
         );
         return { long: new Array<boolean>(n).fill(false), short: r.active };
+      }
+      if (slot.kind === "bidask_spread") {
+        const r = computeBidAskSpreadSignals(
+          candles,
+          depthBars ?? [],
+          slot.bidAskSpread ?? DEFAULT_BIDASK_SPREAD,
+        );
+        return { long: r.long, short: r.short };
       }
       if (slot.kind === "macd") {
         return computeMacdSignals(candles, slot.macd ?? DEFAULT_MACD);

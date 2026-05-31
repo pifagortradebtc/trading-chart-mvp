@@ -9,6 +9,7 @@ import type {
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
 import type { Pivot21Settings } from "./pivot21Types";
 import {
+  DEFAULT_BIDASK_SPREAD,
   DEFAULT_BUYFORCE_SETTINGS,
   DEFAULT_SELLFORCE_SETTINGS,
   type BuyForceSettings,
@@ -266,6 +267,7 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
         "chaik_dca",
         "buyforce_dca",
         "sellforce_dca",
+        "bidask_spread",
         "macd",
         "rsi_threshold",
         "ema_cross",
@@ -285,6 +287,10 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
           kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS, ...s.buyForce } : undefined,
         sellForce:
           kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS, ...s.sellForce } : undefined,
+        bidAskSpread:
+          kind === "bidask_spread"
+            ? { ...DEFAULT_BIDASK_SPREAD, ...s.bidAskSpread }
+            : undefined,
         macd: kind === "macd" ? { ...DEFAULT_MACD, ...s.macd } : undefined,
         rsiThreshold:
           kind === "rsi_threshold"

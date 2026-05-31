@@ -10,6 +10,7 @@
  */
 
 import {
+  DEFAULT_BIDASK_SPREAD,
   DEFAULT_BUYFORCE_SETTINGS,
   DEFAULT_SELLFORCE_SETTINGS,
 } from "@/lib/backtest/buyForceSellForceSignals";
@@ -34,6 +35,7 @@ function shortLabel(kind: CompositeStrategyKind): string {
   if (kind === "buyforce_dca") return "BuyForce";
   if (kind === "sellforce_dca") return "SellForce";
   if (kind === "chaik_dca") return "ЧайкКельт";
+  if (kind === "bidask_spread") return "BidAsk Spread";
   if (kind === "macd") return "MACD";
   if (kind === "rsi_threshold") return "RSI";
   if (kind === "ema_cross") return "EMA Cross";
@@ -50,6 +52,7 @@ function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
     chaikKelt: kind === "chaik_dca" ? { ...DEFAULT_CHAIK } : undefined,
     buyForce: kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS } : undefined,
     sellForce: kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS } : undefined,
+    bidAskSpread: kind === "bidask_spread" ? { ...DEFAULT_BIDASK_SPREAD } : undefined,
     macd: kind === "macd" ? { ...DEFAULT_MACD } : undefined,
     rsiThreshold: kind === "rsi_threshold" ? { ...DEFAULT_RSI_THRESHOLD } : undefined,
     emaCross: kind === "ema_cross" ? { ...DEFAULT_EMA_CROSS } : undefined,
@@ -92,6 +95,10 @@ export function CompositeFormulaRow({
           sellForce:
             kind === "sellforce_dca"
               ? s.sellForce ?? { ...DEFAULT_SELLFORCE_SETTINGS }
+              : undefined,
+          bidAskSpread:
+            kind === "bidask_spread"
+              ? s.bidAskSpread ?? { ...DEFAULT_BIDASK_SPREAD }
               : undefined,
           macd: kind === "macd" ? s.macd ?? { ...DEFAULT_MACD } : undefined,
           rsiThreshold:
@@ -153,6 +160,7 @@ export function CompositeFormulaRow({
                 <optgroup label="Сигналы Pifagor">
                   <option value="buyforce_dca">{shortLabel("buyforce_dca")}</option>
                   <option value="sellforce_dca">{shortLabel("sellforce_dca")}</option>
+                  <option value="bidask_spread">{shortLabel("bidask_spread")}</option>
                   <option value="chaik_dca">{shortLabel("chaik_dca")}</option>
                 </optgroup>
                 <optgroup label="Классические">

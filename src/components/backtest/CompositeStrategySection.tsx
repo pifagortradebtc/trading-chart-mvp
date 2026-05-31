@@ -13,8 +13,10 @@
 
 import { useState } from "react";
 import {
+  DEFAULT_BIDASK_SPREAD,
   DEFAULT_BUYFORCE_SETTINGS,
   DEFAULT_SELLFORCE_SETTINGS,
+  type DepthRadius,
 } from "@/lib/backtest/buyForceSellForceSignals";
 import { DEFAULT_CHAIK } from "@/lib/backtest/backtestDefaults";
 import {
@@ -45,6 +47,7 @@ function slotLabel(kind: CompositeStrategyKind): string {
   if (kind === "buyforce_dca") return "BuyForce (LONG)";
   if (kind === "sellforce_dca") return "SellForce (SHORT)";
   if (kind === "chaik_dca") return "V2_ЧайкКельт";
+  if (kind === "bidask_spread") return "BidAsk Spread (стакан, Pifagor Trade Limits)";
   if (kind === "macd") return "MACD";
   if (kind === "rsi_threshold") return "RSI (перепроданность/перекупленность)";
   if (kind === "ema_cross") return "EMA Cross (золотой/мёртвый крест)";
@@ -113,6 +116,7 @@ function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
     chaikKelt: kind === "chaik_dca" ? { ...DEFAULT_CHAIK } : undefined,
     buyForce: kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS } : undefined,
     sellForce: kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS } : undefined,
+    bidAskSpread: kind === "bidask_spread" ? { ...DEFAULT_BIDASK_SPREAD } : undefined,
     macd: kind === "macd" ? { ...DEFAULT_MACD } : undefined,
     rsiThreshold: kind === "rsi_threshold" ? { ...DEFAULT_RSI_THRESHOLD } : undefined,
     emaCross: kind === "ema_cross" ? { ...DEFAULT_EMA_CROSS } : undefined,
@@ -166,6 +170,10 @@ export function CompositeStrategySection({
           sellForce:
             kind === "sellforce_dca"
               ? s.sellForce ?? { ...DEFAULT_SELLFORCE_SETTINGS }
+              : undefined,
+          bidAskSpread:
+            kind === "bidask_spread"
+              ? s.bidAskSpread ?? { ...DEFAULT_BIDASK_SPREAD }
               : undefined,
           macd: kind === "macd" ? s.macd ?? { ...DEFAULT_MACD } : undefined,
           rsiThreshold:
@@ -273,6 +281,7 @@ export function CompositeStrategySection({
                 <optgroup label="Сигналы Pifagor">
                   <option value="buyforce_dca">{slotLabel("buyforce_dca")}</option>
                   <option value="sellforce_dca">{slotLabel("sellforce_dca")}</option>
+                  <option value="bidask_spread">{slotLabel("bidask_spread")}</option>
                   <option value="chaik_dca">{slotLabel("chaik_dca")}</option>
                 </optgroup>
                 <optgroup label="Классические индикаторы (LONG и SHORT)">
@@ -417,6 +426,158 @@ export function CompositeStrategySection({
                 }
                 compact
               />
+            ) : null}
+
+            {slot.kind === "bidask_spread" && slot.bidAskSpread ? (
+              <div className="space-y-2 text-xs">
+                <p className="rounded border border-emerald-500/30 bg-emerald-500/5 px-2 py-1.5 text-[10.5px] leading-relaxed text-emerald-100/90">
+                  📊 Pifagor Trade Limits — индикатор BidAsk. Формула:{" "}
+                  <code className="rounded bg-black/30 px-1 font-mono">
+                    bid_{slot.bidAskSpread.bidRadiusPct}% − ask_{slot.bidAskSpread.askRadiusPct}%
+                  </code>{" "}
+                  (raw USDT, без нормирования). Требует depth-данные с Pifagor VPS
+                  (доступны 1m/5m/15m/1h, история с 25.05.2025).
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Радиус bid (%)
+                      <Tip>Глубина стакана со стороны bid. По умолчанию 1.5%.</Tip>
+                    </span>
+                    <select
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                      value={String(slot.bidAskSpread.bidRadiusPct)}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          bidAskSpread: {
+                            ...slot.bidAskSpread!,
+                            bidRadiusPct: Number(e.target.value) as DepthRadius,
+                          },
+                        })
+                      }
+                    >
+                      <option value="1.5">1.5%</option>
+                      <option value="3">3%</option>
+                      <option value="8">8%</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Радиус ask (%)
+                      <Tip>Глубина стакана со стороны ask. По умолчанию 8%.</Tip>
+                    </span>
+                    <select
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                      value={String(slot.bidAskSpread.askRadiusPct)}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          bidAskSpread: {
+                            ...slot.bidAskSpread!,
+                            askRadiusPct: Number(e.target.value) as DepthRadius,
+                          },
+                        })
+                      }
+                    >
+                      <option value="1.5">1.5%</option>
+                      <option value="3">3%</option>
+                      <option value="8">8%</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Порог (USDT)
+                      <Tip>
+                        Сигнал когда (bid_X − ask_Y) пересекает порог снизу вверх.
+                        По умолчанию 0 (bid начал перевешивать ask).
+                      </Tip>
+                    </span>
+                    <input
+                      type="number"
+                      step="1000"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.bidAskSpread.threshold}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          bidAskSpread: {
+                            ...slot.bidAskSpread!,
+                            threshold: Number(e.target.value) || 0,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Сглаживание SMA (баров)
+                      <Tip>
+                        Длина SMA для bid и ask серий до взятия разности. 1 = без сглаживания.
+                        5-14 — мягкое сглаживание (как Off/SMA/EMA в TV).
+                      </Tip>
+                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.bidAskSpread.smoothingLength}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          bidAskSpread: {
+                            ...slot.bidAskSpread!,
+                            smoothingLength: Math.max(1, Number(e.target.value) || 1),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Сторона сигнала
+                      <Tip>
+                        long_above — value↑порог даёт LONG (классика для bid-ask, дефолт).
+                        short_above — value↑порог даёт SHORT (для инвертированных формул).
+                        both — long на ↑, short на ↓ (двусторонний для AUTO-режима).
+                      </Tip>
+                    </span>
+                    <select
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1.5 font-mono text-[#d1d4dc]"
+                      value={slot.bidAskSpread.signalMode}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          bidAskSpread: {
+                            ...slot.bidAskSpread!,
+                            signalMode: e.target.value as typeof slot.bidAskSpread.signalMode,
+                          },
+                        })
+                      }
+                    >
+                      <option value="long_above">LONG при value &gt; порога</option>
+                      <option value="short_above">SHORT при value &gt; порога</option>
+                      <option value="both">Двусторонний (LONG ↑ / SHORT ↓)</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Задержка (баров)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.bidAskSpread.cooldownBars}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          bidAskSpread: {
+                            ...slot.bidAskSpread!,
+                            cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
             ) : null}
 
             {slot.kind === "macd" && slot.macd ? (
