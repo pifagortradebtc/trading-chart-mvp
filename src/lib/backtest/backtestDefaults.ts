@@ -204,7 +204,8 @@ export const DEFAULT_COMPOSITE: CompositeStrategyConfig = {
       chaikKelt: DEFAULT_CHAIK,
     },
   ],
-  confirmWindowBars: 5,
+  /** 1 = строго один и тот же бар. Юзер просил такой дефолт. */
+  confirmWindowBars: 1,
 };
 
 export const DEFAULT_BACKTEST: BacktestSettings = {
