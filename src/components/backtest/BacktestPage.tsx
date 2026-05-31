@@ -1036,7 +1036,7 @@ export function BacktestPage() {
                     type="button"
                     disabled={busy || autoOhlcvBusy || source !== "binance" || isPortfolioMode}
                     onClick={() => void loadData()}
-                    className="rounded-xl bg-emerald-600/90 px-5 py-2 font-medium text-white shadow-lg shadow-emerald-900/30 hover:bg-emerald-500 disabled:opacity-40"
+                    className="rounded-md bg-emerald-600/90 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
                   >
                     Загрузить OHLCV
                   </button>
