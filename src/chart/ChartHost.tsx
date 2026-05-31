@@ -47,8 +47,15 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
   /** Свечи + сделки без EMA/объёма/RSI: режим бэктеста или страница `/chart`. */
   const minimalChartMode = cleanChartUi || pathname === "/chart";
 
-  /** На длинных прогонах отрисовываем последние N сделок (как и отрезки DCA). */
-  const sessionTradesChart = useMemo(() => {
+  /**
+   * Только для DCA-отрезков (line series — тяжёлые: 176 trades × ~9 уровней = ~1.5k серий).
+   * Маркеры наоборот рисуем для ВСЕХ сделок — это дешёвые точки/стрелки, lightweight-charts
+   * рендерит только видимые при текущем зуме (см. tradeMarkers ниже).
+   *
+   * Раньше использовался один capped-массив на оба → пользователь видел маркеры только для
+   * последних 48 сделок, а #1-128 терялись в истории. Сейчас markers ходят на полный список.
+   */
+  const sessionTradesForDcaSegments = useMemo(() => {
     if (sessionTrades.length <= MAX_TRADES_FOR_DCA_SEGMENTS) return sessionTrades;
     return sessionTrades.slice(-MAX_TRADES_FOR_DCA_SEGMENTS);
   }, [sessionTrades]);
@@ -75,10 +82,10 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
 
   const tradeMarkers = useMemo(
     () =>
-      minimalChartMode && sessionTradesChart.length > 0
-        ? buildBacktestChartMarkers(sessionTradesChart)
+      minimalChartMode && sessionTrades.length > 0
+        ? buildBacktestChartMarkers(sessionTrades)
         : [],
-    [minimalChartMode, sessionTradesChart],
+    [minimalChartMode, sessionTrades],
   );
 
   const [ctx, setCtx] = useState<{
@@ -388,9 +395,9 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
     });
     dcaGridSeriesRef.current = [];
 
-    if (!minimalChartMode || sessionTradesChart.length === 0) return;
+    if (!minimalChartMode || sessionTradesForDcaSegments.length === 0) return;
 
-    const specs = buildDcaSegmentSpecs(sessionTradesChart);
+    const specs = buildDcaSegmentSpecs(sessionTradesForDcaSegments);
     for (const spec of specs) {
       const line = chart.addLineSeries({
         color: spec.color,
@@ -406,7 +413,7 @@ export function ChartHost({ children }: { children?: React.ReactNode }) {
       ]);
       dcaGridSeriesRef.current.push(line);
     }
-  }, [sessionTradesChart, candleData, minimalChartMode]);
+  }, [sessionTradesForDcaSegments, candleData, minimalChartMode]);
 
   /** Горизонтальные линии уровней из стора (обычно пусто в режиме бэктеста). */
   useEffect(() => {
