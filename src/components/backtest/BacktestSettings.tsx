@@ -166,6 +166,26 @@ export function BacktestSettingsForm({
   settings: BacktestSettings;
   onChange: (s: BacktestSettings) => void;
 }) {
+  /**
+   * Логика «будут ли реально такие сделки» совпадает с движком (backtestEngine.ts:92-94):
+   *   long  = allowLong  && (mode === "long"  || mode === "auto")
+   *   short = allowShort && (mode === "short" || mode === "auto")
+   * Используем для дизейбла полей, которые относятся только к одной стороне.
+   */
+  const willTradeLong =
+    settings.dca.allowLong &&
+    (settings.dca.mode === "long" || settings.dca.mode === "auto");
+  const willTradeShort =
+    settings.dca.allowShort &&
+    (settings.dca.mode === "short" || settings.dca.mode === "auto");
+  const isCrossMargin = settings.dca.marginMode === "cross";
+
+  /**
+   * Класс «поле не применяется в текущем режиме» — полупрозрачное + крестик при ховере + readonly.
+   * Не используем pointer-events-none, чтобы тултип «почему серое» оставался ховерабельным.
+   */
+  const inactiveClass = "opacity-40";
+
   const patch = (partial: Partial<BacktestSettings>) =>
     onChange({ ...settings, ...partial });
   const patchInd = (partial: Partial<BacktestSettings["indicator"]>) =>
@@ -720,53 +740,82 @@ export function BacktestSettingsForm({
                 }
               />
             </label>
-            <label className="flex flex-col gap-1">
+            <label
+              className={`flex flex-col gap-1 ${willTradeShort ? "" : inactiveClass}`}
+              title={
+                willTradeShort
+                  ? undefined
+                  : "В режиме «Только LONG» это поле не используется. LONG-сетка строится из «Сумма сетки» ниже (или из торгового депозита), а первый ордер выводится обратной формулой через volumeFactor."
+              }
+            >
               <span>
                 Первый ордер, % от торгового депозита
+                {!willTradeShort && (
+                  <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
+                    только SHORT
+                  </span>
+                )}
                 <Tip>
                   Первый ордер = торговый депозит × % / 100. Процент считается именно от торгового депозита, не от
-                  полного баланса кошелька.
+                  полного баланса кошелька. Используется ТОЛЬКО для SHORT-сетки; для LONG распределение задаётся
+                  «Сумма сетки» / депозитом и volumeFactor.
                 </Tip>
               </span>
               <input
                 type="number"
                 step={0.01}
                 min={0.01}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                disabled={!willTradeShort}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
                 value={settings.dca.firstOrderDepositPct}
                 onChange={(e) =>
                   patchDca({ firstOrderDepositPct: Number(e.target.value) })
                 }
               />
-              <span className="text-[10px] text-[#6b7280]">
-                ≈{" "}
-                {(
-                  (settings.dca.startDepositUsdt * settings.dca.firstOrderDepositPct) /
-                  100
-                ).toLocaleString("ru-RU", {
-                  maximumFractionDigits: 2,
-                })}{" "}
-                USDT при текущем торговом депозите
-              </span>
-              <span className="text-[10px] text-[#6b7280]">
-                Для LONG по сетке Pine сумма ордеров = «Сумма сетки» ниже (или депозит, если пусто); % первого ордера
-                в этом режиме не задаёт распределение лонг-сетки.
-              </span>
+              {willTradeShort ? (
+                <span className="text-[10px] text-[#6b7280]">
+                  ≈{" "}
+                  {(
+                    (settings.dca.startDepositUsdt * settings.dca.firstOrderDepositPct) /
+                    100
+                  ).toLocaleString("ru-RU", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  USDT — первый SHORT-ордер при текущем депозите
+                </span>
+              ) : (
+                <span className="text-[10px] text-[#6b7280]">
+                  Не применяется в LONG-режиме: размер LONG-ордеров диктуется «Сумма сетки» и volumeFactor.
+                </span>
+              )}
             </label>
           </div>
-          <label className="flex flex-col gap-1">
+          <label
+            className={`flex flex-col gap-1 ${willTradeLong ? "" : inactiveClass}`}
+            title={
+              willTradeLong
+                ? undefined
+                : "В режиме «Только SHORT» это поле не используется. SHORT-сетка строится от «Первый ордер %» × volumeFactor^i — сумма набегает свободно."
+            }
+          >
             <span>
               Сумма номиналов сетки USDT (Pine marginPerTrade)
+              {!willTradeLong && (
+                <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
+                  только LONG
+                </span>
+              )}
               <Tip>
                 Опционально: если задано, сумма USDT по всем ордерам лонг-сетки равна этому значению (как в Pine).
-                Пустое поле — используется торговый депозит.
+                Пустое поле — используется торговый депозит. Используется ТОЛЬКО для LONG-сетки.
               </Tip>
             </span>
             <input
               type="number"
               min={0}
               step={1}
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              disabled={!willTradeLong}
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
               value={settings.dca.gridTotalNotionalUsdt ?? ""}
               placeholder={`по умолчанию ${settings.dca.startDepositUsdt}`}
               onChange={(e) =>
@@ -778,6 +827,11 @@ export function BacktestSettingsForm({
                 })
               }
             />
+            {!willTradeLong && (
+              <span className="text-[10px] text-[#6b7280]">
+                Не применяется в SHORT-режиме: распределение SHORT-сетки идёт от «Первый ордер %» × volumeFactor.
+              </span>
+            )}
           </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
@@ -801,9 +855,21 @@ export function BacktestSettingsForm({
                 <option value="cross">Кросс</option>
               </select>
             </label>
-            <label className="flex flex-col gap-1">
+            <label
+              className={`flex flex-col gap-1 ${isCrossMargin ? "" : inactiveClass}`}
+              title={
+                isCrossMargin
+                  ? undefined
+                  : "В Isolated маржинальном режиме ликвидация считается только от торгового депозита, поле игнорируется."
+              }
+            >
               <span>
                 Баланс кошелька USDT (всего на счёте)
+                {!isCrossMargin && (
+                  <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
+                    только CROSS
+                  </span>
+                )}
                 <Tip>
                   Полный баланс аккаунта: торговый депозит + средства под поддерживающую маржу и общий залог при
                   кроссе. В сетку и первый ордер % заходит только торговый депозит; остальное — запас ликвидности
@@ -815,10 +881,16 @@ export function BacktestSettingsForm({
                 type="number"
                 min={0}
                 step={1}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                disabled={!isCrossMargin}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
                 value={settings.dca.walletBalanceUsdt}
                 onChange={(e) => patchDca({ walletBalanceUsdt: Number(e.target.value) })}
               />
+              {!isCrossMargin && (
+                <span className="text-[10px] text-[#6b7280]">
+                  Активно только в Cross-режиме: тогда отношение wallet/depo уменьшает эффективное плечо для ликвидации.
+                </span>
+              )}
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
