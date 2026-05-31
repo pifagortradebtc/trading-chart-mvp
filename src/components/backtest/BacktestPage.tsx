@@ -1118,12 +1118,6 @@ export function BacktestPage() {
                     Сохранять на сервер результат бэктеста (сделки, equity, настройки) — не сами свечи OHLCV
                   </span>
                 </label>
-                <p className="mt-2 text-[11px] leading-relaxed text-[var(--rex-muted)]">
-                  OHLCV кешируется отдельно: при Binance запрос идёт через{" "}
-                  <code className="rounded bg-white/5 px-1">/api/ohlcv</code> на persistent disk (если диск смонтирован
-                  на Render и не задано <code className="rounded bg-white/5 px-1">NEXT_PUBLIC_SERVER_DISK_CACHE=0</code>
-                  ).
-                </p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <button
                     type="button"
