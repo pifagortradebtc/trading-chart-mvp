@@ -16,13 +16,58 @@ import type {
  * UI dropdown и engine**: при попытке запустить runBacktest с этим
  * kind движок бросит ошибку. Миграция: `normalizeStrategyKind()`
  * автоматически переводит `chaik_dca` → `buyforce_dca`.
+ *
+ * `composite` — новый режим, объединяет несколько сигнал-генераторов
+ * (chaik / buyforce / sellforce) через AND / OR / N-of-M. ALTS и Pivot21
+ * остаются отдельными strategyKind — у них собственное управление позицией,
+ * в композит не входят.
  */
 export type BacktestStrategyKind =
   | "chaik_dca"
   | "buyforce_dca"
   | "sellforce_dca"
+  | "composite"
   | "pifagor_alts"
   | "pivot21";
+
+/** Стратегии, которые могут быть слотом в composite (только сигнал-генераторы). */
+export type CompositeStrategyKind = "chaik_dca" | "buyforce_dca" | "sellforce_dca";
+
+/**
+ * Один слот в composite: тип стратегии и её собственные параметры.
+ * Хранятся inline — у каждого слота свой набор настроек (можно иметь
+ * BuyForce #1 с zeroLevel=0 и BuyForce #2 с zeroLevel=0.1 в одном composite).
+ */
+export interface StrategySlot {
+  id: string;
+  kind: CompositeStrategyKind;
+  /** Заполняется только когда kind === "chaik_dca". */
+  chaikKelt?: ChaikKeltSettings;
+  /** Заполняется только когда kind === "buyforce_dca". */
+  buyForce?: BuyForceSettings;
+  /** Заполняется только когда kind === "sellforce_dca". */
+  sellForce?: SellForceSettings;
+}
+
+/** Правило объединения сигналов от нескольких слотов. */
+export type CompositeRule = "and" | "any" | "majority";
+
+export interface CompositeStrategyConfig {
+  slots: StrategySlot[];
+  /**
+   * AND — все слоты должны дать сигнал в окне; ANY — хотя бы один;
+   * MAJORITY — не менее `minSignalCount` слотов (по умолчанию >= половина).
+   */
+  rule: CompositeRule;
+  /** Используется только при rule === "majority". null = round(N/2) от количества слотов. */
+  minSignalCount: number | null;
+  /**
+   * Окно подтверждения: сигналы от разных стратегий редко приходят на одном баре.
+   * На каждом баре i считаем «есть ли сигнал у этой стратегии в [i-window..i]».
+   * 0 = строго один и тот же бар (почти никогда не сработает), 5 — мягко, 20 — очень мягко.
+   */
+  confirmWindowBars: number;
+}
 
 export type TradeDirection = "long" | "short";
 export type DirectionMode = "long" | "short" | "auto";
@@ -130,6 +175,8 @@ export interface BacktestSettings {
   buyForce: BuyForceSettings;
   /** Учитывается при strategyKind === "sellforce_dca". RO пересекает zero_level ↑ → short. */
   sellForce: SellForceSettings;
+  /** Учитывается при strategyKind === "composite". Multi-strategy с правилом объединения. */
+  composite: CompositeStrategyConfig;
   /** Таймфрейм depth-данных для buyforce/sellforce. Должен совпадать с интервалом OHLCV. */
   depthInterval: "1m" | "5m" | "15m" | "1h";
 }

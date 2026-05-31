@@ -11,6 +11,7 @@ import {
 import { buildDcaGrid } from "@/lib/backtest/dcaGrid";
 import { PORTFOLIO_ALTS_SYMBOL_COUNT } from "@/lib/backtest/portfolioAltsSymbols";
 import type { BacktestSettings } from "@/lib/backtest/types";
+import { CompositeStrategySection } from "./CompositeStrategySection";
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -298,6 +299,7 @@ export function BacktestSettingsForm({
                 }
               }}
             >
+              <option value="composite">★ Композит (стек стратегий, AND/OR)</option>
               <option value="chaik_dca">V2_ЧайкКельт + DCA-сетка</option>
               <option value="buyforce_dca">Pifagor BuyForce + DCA (LONG)</option>
               <option value="sellforce_dca">Pifagor SellForce + DCA (SHORT)</option>
@@ -331,6 +333,10 @@ export function BacktestSettingsForm({
           ) : null}
         </div>
       </section>
+
+      {settings.strategyKind === "composite" ? (
+        <CompositeStrategySection settings={settings} onChange={onChange} />
+      ) : null}
 
       {settings.strategyKind === "chaik_dca" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
@@ -779,7 +785,8 @@ export function BacktestSettingsForm({
         <div className="grid gap-3 text-sm">
           {settings.strategyKind === "chaik_dca" ||
           settings.strategyKind === "buyforce_dca" ||
-          settings.strategyKind === "sellforce_dca" ? (
+          settings.strategyKind === "sellforce_dca" ||
+          settings.strategyKind === "composite" ? (
             <>
           {/* Капитал и плечо — три простых поля как думает трейдер */}
           <div className="grid grid-cols-2 gap-2">
@@ -1430,6 +1437,7 @@ export function BacktestSettingsForm({
       {settings.strategyKind === "chaik_dca" ||
       settings.strategyKind === "buyforce_dca" ||
       settings.strategyKind === "sellforce_dca" ||
+      settings.strategyKind === "composite" ||
       settings.strategyKind === "pivot21" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">

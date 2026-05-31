@@ -12,6 +12,7 @@ import {
   computeBuyForceSignals,
   computeSellForceSignals,
 } from "./buyForceSellForceSignals";
+import { combineCompositeSignals } from "./compositeSignal";
 import type { DepthBar } from "./depthTypes";
 import { buildDcaGrid } from "./dcaGrid";
 import { runPifagorAltsBacktest } from "./pifagorAltsEngine";
@@ -549,6 +550,63 @@ export function runBacktest(
     shortActive = r.active;
     meta = new Array<SignalBarState | null>(n).fill(null);
     series = makeEmptySeries(n);
+  } else if (settings.strategyKind === "composite") {
+    /**
+     * Composite: считаем сигналы для каждого слота отдельно и сводим
+     * combineCompositeSignals (правило + окно подтверждения). Бот ниже работает
+     * как обычно — он не знает о слотах, только об агрегированных longActive/shortActive.
+     */
+    const config = settings.composite;
+    if (!config.slots.length) {
+      throw new Error("Composite: добавьте хотя бы одну стратегию в стек.");
+    }
+    const needsDepth = config.slots.some(
+      (s) => s.kind === "buyforce_dca" || s.kind === "sellforce_dca",
+    );
+    if (needsDepth && !depthBars?.length) {
+      throw new Error(
+        "Composite: один из слотов — BuyForce/SellForce, нужны depthBars. Включите load в BacktestPage.",
+      );
+    }
+    /** Для лимитного входа chaik (если есть chaik-слот) — серия с ATR от ПЕРВОГО chaik-слота. */
+    let chaikSeries: ChaikComputedSeries | null = null;
+    let chaikMeta: (SignalBarState | null)[] | null = null;
+    const slotSignals = config.slots.map((slot) => {
+      if (slot.kind === "buyforce_dca") {
+        const r = computeBuyForceSignals(
+          candles,
+          depthBars ?? [],
+          slot.buyForce ?? settings.buyForce,
+        );
+        return { long: r.active, short: new Array<boolean>(n).fill(false) };
+      }
+      if (slot.kind === "sellforce_dca") {
+        const r = computeSellForceSignals(
+          candles,
+          depthBars ?? [],
+          slot.sellForce ?? settings.sellForce,
+        );
+        return { long: new Array<boolean>(n).fill(false), short: r.active };
+      }
+      // chaik_dca
+      const r = computeChaikSignals(candles, slot.chaikKelt ?? settings.indicator);
+      if (chaikSeries == null) {
+        chaikSeries = r.series;
+        chaikMeta = r.meta;
+      }
+      return { long: r.longActive, short: r.shortActive };
+    });
+    const combined = combineCompositeSignals(
+      slotSignals,
+      config.rule,
+      config.confirmWindowBars,
+      config.minSignalCount,
+      n,
+    );
+    longActive = combined.longActive;
+    shortActive = combined.shortActive;
+    meta = chaikMeta ?? new Array<SignalBarState | null>(n).fill(null);
+    series = chaikSeries ?? makeEmptySeries(n);
   } else {
     // chaik_dca (V2_ЧайкКельт) — default дефолт для legacy/новых юзеров.
     const r = computeChaikSignals(candles, settings.indicator);

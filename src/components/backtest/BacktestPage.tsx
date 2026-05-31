@@ -629,11 +629,17 @@ export function BacktestPage() {
         });
       }
 
-      // Depth-серия для BuyForce / SellForce (Pifagor VPS API).
+      // Depth-серия для BuyForce / SellForce + composite (если в стеке есть BF/SF слот).
       let depthBars: DepthBar[] | undefined = undefined;
+      const compositeNeedsDepth =
+        runSettings.strategyKind === "composite" &&
+        runSettings.composite.slots.some(
+          (s) => s.kind === "buyforce_dca" || s.kind === "sellforce_dca",
+        );
       const isDepthStrategy =
         runSettings.strategyKind === "buyforce_dca" ||
-        runSettings.strategyKind === "sellforce_dca";
+        runSettings.strategyKind === "sellforce_dca" ||
+        compositeNeedsDepth;
       if (isDepthStrategy) {
         /**
          * Depth-данные доступны только на 1m/5m/15m/1h. Берём интервал графика

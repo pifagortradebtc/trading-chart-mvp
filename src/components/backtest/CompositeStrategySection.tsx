@@ -1,0 +1,409 @@
+"use client";
+
+/**
+ * UI для composite-режима: стек слотов + правило объединения + окно подтверждения.
+ *
+ * Каждый слот: dropdown (BuyForce/SellForce/ЧайкКельт) + inline-параметры (для BF/SF —
+ * zeroLevel/cooldown; для ЧайкКельт — намёк что используются глобальные настройки
+ * settings.indicator, чтобы не разворачивать 20-полевую панель в каждом слоте).
+ *
+ * Правило: AND (все), ANY (любая), MAJORITY (N из M). Окно: на каждом баре считаем
+ * слот «активным» если его сигнал был в [i-N+1..i].
+ */
+
+import {
+  DEFAULT_BUYFORCE_SETTINGS,
+  DEFAULT_SELLFORCE_SETTINGS,
+} from "@/lib/backtest/buyForceSellForceSignals";
+import { DEFAULT_CHAIK } from "@/lib/backtest/backtestDefaults";
+import type {
+  BacktestSettings,
+  CompositeRule,
+  CompositeStrategyConfig,
+  CompositeStrategyKind,
+  StrategySlot,
+} from "@/lib/backtest/types";
+
+function Tip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="ml-1 cursor-help text-sky-400/90" title={String(children)}>
+      ⓘ
+    </span>
+  );
+}
+
+function slotLabel(kind: CompositeStrategyKind): string {
+  if (kind === "buyforce_dca") return "BuyForce (LONG)";
+  if (kind === "sellforce_dca") return "SellForce (SHORT)";
+  return "V2_ЧайкКельт";
+}
+
+function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
+  return {
+    id: `slot-${Date.now()}-${idx}`,
+    kind,
+    chaikKelt: kind === "chaik_dca" ? { ...DEFAULT_CHAIK } : undefined,
+    buyForce: kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS } : undefined,
+    sellForce: kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS } : undefined,
+  };
+}
+
+export function CompositeStrategySection({
+  settings,
+  onChange,
+}: {
+  settings: BacktestSettings;
+  onChange: (s: BacktestSettings) => void;
+}) {
+  const config = settings.composite;
+
+  const patchComposite = (partial: Partial<CompositeStrategyConfig>) => {
+    onChange({ ...settings, composite: { ...config, ...partial } });
+  };
+
+  const patchSlot = (id: string, partial: Partial<StrategySlot>) => {
+    patchComposite({
+      slots: config.slots.map((s) => (s.id === id ? { ...s, ...partial } : s)),
+    });
+  };
+
+  const changeSlotKind = (id: string, kind: CompositeStrategyKind) => {
+    patchComposite({
+      slots: config.slots.map((s) => {
+        if (s.id !== id) return s;
+        return {
+          id: s.id,
+          kind,
+          chaikKelt: kind === "chaik_dca" ? s.chaikKelt ?? { ...DEFAULT_CHAIK } : undefined,
+          buyForce:
+            kind === "buyforce_dca" ? s.buyForce ?? { ...DEFAULT_BUYFORCE_SETTINGS } : undefined,
+          sellForce:
+            kind === "sellforce_dca"
+              ? s.sellForce ?? { ...DEFAULT_SELLFORCE_SETTINGS }
+              : undefined,
+        };
+      }),
+    });
+  };
+
+  const removeSlot = (id: string) => {
+    if (config.slots.length <= 1) return;
+    patchComposite({ slots: config.slots.filter((s) => s.id !== id) });
+  };
+
+  const addSlot = (kind: CompositeStrategyKind) => {
+    patchComposite({
+      slots: [...config.slots, makeSlot(kind, config.slots.length)],
+    });
+  };
+
+  const moveSlot = (id: string, dir: -1 | 1) => {
+    const idx = config.slots.findIndex((s) => s.id === id);
+    if (idx < 0) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= config.slots.length) return;
+    const arr = [...config.slots];
+    const a = arr[idx]!;
+    const b = arr[newIdx]!;
+    arr[idx] = b;
+    arr[newIdx] = a;
+    patchComposite({ slots: arr });
+  };
+
+  const needsLongInfo = config.slots.some((s) => s.kind === "buyforce_dca" || s.kind === "chaik_dca");
+  const needsShortInfo = config.slots.some(
+    (s) => s.kind === "sellforce_dca" || s.kind === "chaik_dca",
+  );
+  const needsDepth = config.slots.some(
+    (s) => s.kind === "buyforce_dca" || s.kind === "sellforce_dca",
+  );
+
+  return (
+    <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
+          Композит: стек сигнал-стратегий
+        </h3>
+        <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-cyan-200">
+          {config.slots.length} слот{config.slots.length === 1 ? "" : config.slots.length < 5 ? "а" : "ов"}
+        </span>
+      </div>
+
+      <p className="mb-4 text-xs leading-relaxed text-[#787b86]">
+        Бот стреляет, когда сигналы от слотов совпадают по правилу ниже (AND/OR/большинство).
+        Для каждого слота — своя стратегия и свои параметры. В композит идут только
+        сигнал-генераторы (BuyForce, SellForce, ЧайкКельт). ALTS и Pivot21 имеют собственный
+        position-management — они выбираются отдельно как одиночные стратегии.
+      </p>
+
+      <div className="space-y-3">
+        {config.slots.map((slot, idx) => (
+          <div
+            key={slot.id}
+            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] p-3"
+          >
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">
+                #{idx + 1}
+              </span>
+              <select
+                className="flex-1 rounded-md border border-[#2e3241] bg-[#131722] px-2 py-1.5 text-sm text-[#d1d4dc]"
+                value={slot.kind}
+                onChange={(e) =>
+                  changeSlotKind(slot.id, e.target.value as CompositeStrategyKind)
+                }
+              >
+                <option value="buyforce_dca">{slotLabel("buyforce_dca")}</option>
+                <option value="sellforce_dca">{slotLabel("sellforce_dca")}</option>
+                <option value="chaik_dca">{slotLabel("chaik_dca")}</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => moveSlot(slot.id, -1)}
+                disabled={idx === 0}
+                title="Переместить выше"
+                className="rounded-md border border-[#2e3241] bg-[#131722] px-2 py-1 text-xs text-[#787b86] hover:bg-[#1a1e2a] disabled:opacity-30"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => moveSlot(slot.id, 1)}
+                disabled={idx === config.slots.length - 1}
+                title="Переместить ниже"
+                className="rounded-md border border-[#2e3241] bg-[#131722] px-2 py-1 text-xs text-[#787b86] hover:bg-[#1a1e2a] disabled:opacity-30"
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                onClick={() => removeSlot(slot.id)}
+                disabled={config.slots.length <= 1}
+                title={
+                  config.slots.length <= 1
+                    ? "Должен оставаться хотя бы один слот"
+                    : "Удалить этот слот"
+                }
+                className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20 disabled:opacity-30"
+              >
+                ×
+              </button>
+            </div>
+
+            {slot.kind === "buyforce_dca" && slot.buyForce ? (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Уровень нуля</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.buyForce.zeroLevel}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        buyForce: { ...slot.buyForce!, zeroLevel: Number(e.target.value) },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Cooldown (баров)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.buyForce.cooldownBars}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        buyForce: {
+                          ...slot.buyForce!,
+                          cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "sellforce_dca" && slot.sellForce ? (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Уровень нуля</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.sellForce.zeroLevel}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        sellForce: { ...slot.sellForce!, zeroLevel: Number(e.target.value) },
+                      })
+                    }
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[#787b86]">Cooldown (баров)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    value={slot.sellForce.cooldownBars}
+                    onChange={(e) =>
+                      patchSlot(slot.id, {
+                        sellForce: {
+                          ...slot.sellForce!,
+                          cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {slot.kind === "chaik_dca" ? (
+              <p className="text-[11px] leading-relaxed text-[#6b7280]">
+                ЧайкКельт-слот в композите использует свой набор настроек. Чтобы тонко
+                его настроить — временно переключи режим на «V2_ЧайкКельт + DCA-сетка»
+                одиночно, отредактируй параметры, и вернись в композит. Параметры этого
+                слота не сбросятся.
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-[#787b86]">Добавить слот:</span>
+        <button
+          type="button"
+          onClick={() => addSlot("buyforce_dca")}
+          className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+        >
+          + BuyForce
+        </button>
+        <button
+          type="button"
+          onClick={() => addSlot("sellforce_dca")}
+          className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 hover:bg-rose-500/20"
+        >
+          + SellForce
+        </button>
+        <button
+          type="button"
+          onClick={() => addSlot("chaik_dca")}
+          className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
+        >
+          + ЧайкКельт
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div>
+          <span className="text-xs text-[#787b86]">
+            Правило объединения
+            <Tip>
+              AND: все слоты должны дать сигнал. ANY: любой один. Большинство: минимум N
+              из M (по умолчанию N = ceil(M/2)).
+            </Tip>
+          </span>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {(["and", "any", "majority"] as CompositeRule[]).map((r) => (
+              <label
+                key={r}
+                className={`cursor-pointer rounded-md border px-3 py-1.5 text-xs ${
+                  config.rule === r
+                    ? "border-cyan-500/60 bg-cyan-500/15 text-cyan-100"
+                    : "border-[#2e3241] bg-[#0c0e14] text-[#787b86] hover:bg-[#131722]"
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="sr-only"
+                  checked={config.rule === r}
+                  onChange={() => patchComposite({ rule: r })}
+                />
+                {r === "and" ? "AND (все)" : r === "any" ? "ANY (любой)" : "Большинство (N из M)"}
+              </label>
+            ))}
+          </div>
+          {config.rule === "majority" ? (
+            <label className="mt-2 flex items-center gap-2 text-xs text-[#787b86]">
+              <span>N из {config.slots.length}:</span>
+              <input
+                type="number"
+                min="1"
+                max={config.slots.length}
+                className="w-20 rounded border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono text-[#d1d4dc]"
+                value={config.minSignalCount ?? Math.ceil(config.slots.length / 2)}
+                onChange={(e) => {
+                  const v = Math.max(
+                    1,
+                    Math.min(config.slots.length, Math.floor(Number(e.target.value) || 1)),
+                  );
+                  patchComposite({ minSignalCount: v });
+                }}
+              />
+              <span className="text-[10px] text-[#6b7280]">
+                по умолчанию: {Math.ceil(config.slots.length / 2)}
+              </span>
+            </label>
+          ) : null}
+        </div>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-[#787b86]">
+            Окно подтверждения (баров)
+            <Tip>
+              На каждом баре считаем слот «активным» если его сигнал был в последние N
+              баров. 1 = строго один и тот же бар (почти никогда не сработает на AND).
+              5-10 — мягкое подтверждение. 20+ — очень мягкое.
+            </Tip>
+          </span>
+          <input
+            type="number"
+            min="1"
+            max="200"
+            className="w-32 rounded border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono text-sm text-[#d1d4dc]"
+            value={config.confirmWindowBars}
+            onChange={(e) =>
+              patchComposite({
+                confirmWindowBars: Math.max(
+                  1,
+                  Math.min(200, Math.floor(Number(e.target.value) || 1)),
+                ),
+              })
+            }
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-2 rounded-md border border-[#2e3241] bg-[#0c0e14] p-3 text-[11px]">
+        <span className="text-[#787b86]">Что бот будет торговать:</span>
+        <div className="flex flex-wrap items-center gap-2 font-mono">
+          {needsLongInfo ? (
+            <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
+              LONG: при{" "}
+              {config.rule === "and" ? "AND" : config.rule === "any" ? "ANY" : "большинство"} от
+              слотов LONG-типа
+            </span>
+          ) : null}
+          {needsShortInfo ? (
+            <span className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-rose-200">
+              SHORT: при{" "}
+              {config.rule === "and" ? "AND" : config.rule === "any" ? "ANY" : "большинство"} от
+              слотов SHORT-типа
+            </span>
+          ) : null}
+          {needsDepth ? (
+            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+              Нужны depth-данные (BuyForce/SellForce). ТФ графика ∈ &#123;1m,5m,15m,1h&#125;.
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
