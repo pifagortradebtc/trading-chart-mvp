@@ -85,6 +85,13 @@ export function BacktestPage() {
   const [customPair, setCustomPair] = useState("");
   const [interval, setInterval] = useState<(typeof INTERVALS)[number]>("15m");
   const [yearsBack, setYearsBack] = useState(8);
+  /**
+   * Опциональный пользовательский период бэктеста — срез внутри загруженных `yearsBack`.
+   * Формат: "YYYY-MM-DD" (UTC), пустая строка = «не задано».
+   * Сами свечи всё равно грузятся за yearsBack (кеш не ломаем), а в run() — фильтр.
+   */
+  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customEndDate, setCustomEndDate] = useState<string>("");
   const [source, setSource] = useState<"binance" | "csv">("binance");
   /** Включите, чтобы игнорировать IndexedDB и заново тянуть полный ряд (редко нужно). */
   const [forceOhlcvRefresh, setForceOhlcvRefresh] = useState(false);
@@ -126,6 +133,68 @@ export function BacktestPage() {
     const c = customPair.trim().toUpperCase().replace("/", "");
     return c.length >= 6 ? c : symbol;
   }, [customPair, symbol]);
+
+  /** ms от UTC-00:00 для start, UTC-23:59:59.999 для end. null = поле пустое. */
+  const customStartMs = useMemo(() => {
+    if (!customStartDate) return null;
+    const t = Date.parse(`${customStartDate}T00:00:00.000Z`);
+    return Number.isFinite(t) ? t : null;
+  }, [customStartDate]);
+  const customEndMs = useMemo(() => {
+    if (!customEndDate) return null;
+    const t = Date.parse(`${customEndDate}T23:59:59.999Z`);
+    return Number.isFinite(t) ? t : null;
+  }, [customEndDate]);
+
+  /** Фильтр свечей по выбранному пользователем окну (NoOp если оба поля пустые). */
+  const sliceCandlesByCustomRange = useCallback(
+    (input: Candle[]): Candle[] => {
+      if (!customStartMs && !customEndMs) return input;
+      return input.filter((c) => {
+        const t = c.time * 1000;
+        if (customStartMs && t < customStartMs) return false;
+        if (customEndMs && t > customEndMs) return false;
+        return true;
+      });
+    },
+    [customStartMs, customEndMs],
+  );
+
+  /** Подсказка под полями: что не так / какое реальное окно бэктеста после среза. */
+  const customRangeHint = useMemo(() => {
+    if (!customStartMs && !customEndMs) return null;
+    if (customStartMs && customEndMs && customStartMs >= customEndMs) {
+      return {
+        kind: "error" as const,
+        text: "Дата начала должна быть раньше даты окончания.",
+      };
+    }
+    if (!candles.length) return null;
+    const oldest = candles[0]!.time * 1000;
+    const newest = candles[candles.length - 1]!.time * 1000;
+    const tooEarly = customStartMs != null && customStartMs < oldest - 24 * 3600 * 1000;
+    const tooLate = customEndMs != null && customEndMs > newest + 24 * 3600 * 1000;
+    const sliced = sliceCandlesByCustomRange(candles);
+    if (sliced.length === 0) {
+      return {
+        kind: "error" as const,
+        text: "В выбранном окне нет свечей. Расширьте период или увеличьте «Глубина (лет)».",
+      };
+    }
+    const realFrom = new Date(sliced[0]!.time * 1000).toISOString().slice(0, 10);
+    const realTo = new Date(sliced[sliced.length - 1]!.time * 1000).toISOString().slice(0, 10);
+    let extra = "";
+    if (tooEarly) {
+      extra =
+        ` · загружено только с ${new Date(oldest).toISOString().slice(0, 10)}, увеличьте «Глубина (лет)»`;
+    } else if (tooLate) {
+      extra = ` · последний бар ${new Date(newest).toISOString().slice(0, 10)}`;
+    }
+    return {
+      kind: tooEarly ? ("warn" as const) : ("info" as const),
+      text: `Бэктест: ${realFrom} → ${realTo} · ${sliced.length} баров${extra}`,
+    };
+  }, [customStartMs, customEndMs, candles, sliceCandlesByCustomRange]);
 
   const advancedMetrics = useMemo(() => {
     if (!metrics || !result || !candles.length) return null;
@@ -343,12 +412,18 @@ export function BacktestPage() {
       setWarning("Сначала загрузите OHLCV.");
       return;
     }
+    /** Используем тот же срез, что и основной бэктест — иначе grid считает по другому окну. */
+    const runCandles = sliceCandlesByCustomRange(candles);
+    if (!runCandles.length) {
+      setWarning("В выбранном пользовательском окне нет свечей — расширь даты «с / по».");
+      return;
+    }
     setOptLoading(true);
     setOptProgress("…");
     try {
-      const startMs = candles[0]!.time * 1000;
+      const startMs = runCandles[0]!.time * 1000;
       const rows = await runMiniTpOverlapGrid(
-        candles,
+        runCandles,
         effectiveSymbol,
         settings,
         startMs,
@@ -361,24 +436,29 @@ export function BacktestPage() {
       setOptLoading(false);
       setOptProgress("");
     }
-  }, [candles, effectiveSymbol, settings]);
+  }, [candles, effectiveSymbol, settings, sliceCandlesByCustomRange]);
 
   const runStressTests = useCallback(async () => {
     if (!candles.length) {
       setWarning("Сначала загрузите OHLCV.");
       return;
     }
+    const runCandles = sliceCandlesByCustomRange(candles);
+    if (!runCandles.length) {
+      setWarning("В выбранном пользовательском окне нет свечей — расширь даты «с / по».");
+      return;
+    }
     setStressLoading(true);
     try {
-      const startMs = candles[0]!.time * 1000;
-      const rows = await runStressSuiteClient(candles, effectiveSymbol, settings, startMs);
+      const startMs = runCandles[0]!.time * 1000;
+      const rows = await runStressSuiteClient(runCandles, effectiveSymbol, settings, startMs);
       setStressRows(rows);
     } catch (e) {
       setWarning(e instanceof Error ? e.message : String(e));
     } finally {
       setStressLoading(false);
     }
-  }, [candles, effectiveSymbol, settings]);
+  }, [candles, effectiveSymbol, settings, sliceCandlesByCustomRange]);
 
   const loadData = async () => {
     ohlcvRestoreGeneration.current += 1;
@@ -494,7 +574,19 @@ export function BacktestPage() {
       setWarning("Сначала загрузите исторические данные.");
       return;
     }
-    const startMs = candles[0]!.time * 1000;
+    /**
+     * Если задан пользовательский период — режем массив свечей до запуска.
+     * dailyCandles и depthBars подтягиваются по startMs/endMs ниже, так что
+     * автоматически выровняются по окну.
+     */
+    const runCandles = sliceCandlesByCustomRange(candles);
+    if (!runCandles.length) {
+      setWarning(
+        "В выбранном пользовательском окне нет свечей. Проверь даты «с / по» или увеличь «Глубина (лет)».",
+      );
+      return;
+    }
+    const startMs = runCandles[0]!.time * 1000;
     setRunProgress(18);
     const progressTimer = window.setInterval(() => {
       setRunProgress((v) => {
@@ -504,13 +596,13 @@ export function BacktestPage() {
     }, 220);
     try {
       const runSettings = migrateBacktestSettings(settings);
-      const endMs = candles[candles.length - 1]!.time * 1000;
-      let dailyCandles = candles;
+      const endMs = runCandles[runCandles.length - 1]!.time * 1000;
+      let dailyCandles = runCandles;
       if (runSettings.strategyKind === "pifagor_alts" && interval !== "1d") {
         setLoadMsg("Загрузка дневных свечей (daily_multiple как в Pine)…");
         dailyCandles = await loadPifagorDailyCandles({
           chartInterval: interval,
-          chartCandles: candles,
+          chartCandles: runCandles,
           symbol: effectiveSymbol,
           startMs,
           endMs,
@@ -552,7 +644,7 @@ export function BacktestPage() {
       }
 
       const res = await runBacktestOffMainThread(
-        candles,
+        runCandles,
         effectiveSymbol,
         runSettings,
         startMs,
@@ -584,7 +676,9 @@ export function BacktestPage() {
             trades: res.trades,
             equity: res.equity,
             metrics: m,
-            candleCount: candles.length,
+            candleCount: runCandles.length,
+            customStartDateMs: customStartMs,
+            customEndDateMs: customEndMs,
           }),
         });
         if (!save.ok) {
@@ -662,6 +756,13 @@ export function BacktestPage() {
       }
       setInterval(iv);
       setYearsBack(yb);
+      /** Опц. поля — в старых снимках их нет, тогда сбрасываем (используем всю историю). */
+      setCustomStartDate(
+        snap.customStartDateMs ? new Date(snap.customStartDateMs).toISOString().slice(0, 10) : "",
+      );
+      setCustomEndDate(
+        snap.customEndDateMs ? new Date(snap.customEndDateMs).toISOString().slice(0, 10) : "",
+      );
       setMetrics(snap.metrics);
 
       setCandles(loaded);
@@ -894,6 +995,66 @@ export function BacktestPage() {
                   >
                     Загрузить OHLCV
                   </button>
+                </div>
+
+                <div
+                  className={`mt-4 flex flex-wrap items-end gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 ${
+                    isPortfolioMode ? "pointer-events-none opacity-40" : ""
+                  }`}
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--rex-muted)]">
+                      Период бэктеста (опц.)
+                    </span>
+                    <span className="text-[11px] text-[var(--rex-muted)]/80">
+                      Срез внутри загруженных {yearsBack} лет. Оставь пусто — бэктест по всей загруженной истории.
+                    </span>
+                  </div>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">С (UTC)</span>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      max={customEndDate || undefined}
+                      onChange={(e) => setCustomStartDate(e.target.value)}
+                      className={`${inp} w-44`}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--rex-muted)]">По (UTC)</span>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      min={customStartDate || undefined}
+                      onChange={(e) => setCustomEndDate(e.target.value)}
+                      className={`${inp} w-44`}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!customStartDate && !customEndDate}
+                    onClick={() => {
+                      setCustomStartDate("");
+                      setCustomEndDate("");
+                    }}
+                    className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-[var(--rex-muted)] hover:bg-white/[0.06] disabled:opacity-30"
+                    title="Сбросить пользовательский период — бэктест по всем загруженным барам"
+                  >
+                    Сбросить даты
+                  </button>
+                  {customRangeHint && (
+                    <p
+                      className={`w-full text-[11px] leading-snug ${
+                        customRangeHint.kind === "error"
+                          ? "text-rose-300"
+                          : customRangeHint.kind === "warn"
+                            ? "text-amber-200"
+                            : "text-cyan-300/90"
+                      }`}
+                    >
+                      {customRangeHint.text}
+                    </p>
+                  )}
                 </div>
 
                 {source === "csv" && (

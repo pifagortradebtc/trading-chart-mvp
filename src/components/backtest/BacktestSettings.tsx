@@ -182,13 +182,11 @@ export function BacktestSettingsForm({
       ...settings,
       pivot21: { ...settings.pivot21, ...partial },
     });
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const patchBuy = (partial: Partial<BacktestSettings["buyForce"]>) =>
     onChange({
       ...settings,
       buyForce: { ...settings.buyForce, ...partial },
     });
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const patchSell = (partial: Partial<BacktestSettings["sellForce"]>) =>
     onChange({
       ...settings,

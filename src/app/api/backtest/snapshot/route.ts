@@ -39,6 +39,14 @@ export async function POST(req: Request) {
       equity: body.equity as EquityPoint[],
       metrics: body.metrics as MetricsSummary,
       candleCount: Number(body.candleCount ?? 0),
+      customStartDateMs:
+        typeof body.customStartDateMs === "number" && Number.isFinite(body.customStartDateMs)
+          ? body.customStartDateMs
+          : null,
+      customEndDateMs:
+        typeof body.customEndDateMs === "number" && Number.isFinite(body.customEndDateMs)
+          ? body.customEndDateMs
+          : null,
     };
 
     const out = path.join(snapshotsDir(), LATEST);
