@@ -554,12 +554,8 @@ export function runPivot21Backtest(
       leverage: 1,
       durationBars: Math.max(1, barIdx - tr.entryBar + 1),
     };
-    finalizeTrade({
-      exit: "end_of_test",
-      exitPrice: cLast.close,
-      exitTimeMs: tMsEnd,
-      exitBarIndex: barIdx,
-    });
+    /** Не финализируем — см. backtestEngine.ts: открытая позиция не считается сделкой. */
+    open = null;
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;

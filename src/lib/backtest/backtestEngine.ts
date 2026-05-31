@@ -893,6 +893,12 @@ export function runBacktest(
     const tMsEnd = cLast.time * 1000;
     const barIdx = n - 1;
     const openedAtMs = (candles[open.entryBar]?.time ?? 0) * 1000;
+    /**
+     * НЕ финализируем как сделку end_of_test — иначе нереализованный убыток
+     * попадает в trades и портит метрики (worst trade, win rate, total PnL).
+     * Открытую позицию показываем только через openPositionAtDataEnd; equity
+     * = реализованный PnL без unrealized PnL висящей позиции.
+     */
     openPositionAtDataEnd = buildOpenPositionSnapshot(
       open,
       cLast.close,
@@ -901,7 +907,7 @@ export function runBacktest(
       barIdx,
       settings,
     );
-    finalizeTrade(open, "end_of_test", cLast.close, tMsEnd, barIdx);
+    open = null;
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;

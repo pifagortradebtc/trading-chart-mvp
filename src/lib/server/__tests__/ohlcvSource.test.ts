@@ -14,15 +14,22 @@ describe("pickOhlcvSource", () => {
     expect(note).toMatch(/Hyperliquid|CoinGecko/i);
   });
 
+  it("routes MNTUSDT to CoinGecko (нет на Binance/OKX)", () => {
+    const { source, note } = pickOhlcvSource("MNTUSDT");
+    expect(source).toBe("coingecko");
+    expect(note).toMatch(/Mantle|CoinGecko/i);
+  });
+
   it("defaults to Binance for unmapped symbols", () => {
     expect(pickOhlcvSource("BTCUSDT").source).toBe("binance");
     expect(pickOhlcvSource("ETHUSDT").source).toBe("binance");
-    expect(pickOhlcvSource("MNTUSDT").source).toBe("binance");
+    expect(pickOhlcvSource("SOLUSDT").source).toBe("binance");
   });
 
   it("is case-insensitive", () => {
     expect(pickOhlcvSource("okbusdt").source).toBe("okx");
     expect(pickOhlcvSource("hypeusdt").source).toBe("coingecko");
+    expect(pickOhlcvSource("mntusdt").source).toBe("coingecko");
   });
 });
 

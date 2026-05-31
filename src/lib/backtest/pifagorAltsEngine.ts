@@ -320,7 +320,8 @@ export function runPifagorAltsBacktest(
       leverage: dca.leverage,
       durationBars: Math.max(1, barIdx - open.firstEntryBar + 1),
     };
-    finalizeTrade(open, "end_of_test", cLast.close, tMsEnd, barIdx);
+    /** Не финализируем — см. backtestEngine.ts: открытая позиция не считается сделкой. */
+    open = null;
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;
