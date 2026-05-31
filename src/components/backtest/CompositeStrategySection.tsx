@@ -1261,7 +1261,7 @@ export function CompositeStrategySection({
         </div>
         {needsDepth ? (
           <span className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
-            ⚠ Нужны depth-данные (BuyForce/SellForce). ТФ графика ∈ &#123;1m, 5m, 15m, 1h&#125;.
+            ⚠ Нужны depth-данные (BuyForce/SellForce/BidAsk). ТФ графика ∈ &#123;1m, 5m, 15m, 1h, 1d&#125;.
           </span>
         ) : null}
         <span className="text-[10px] text-[#6b7280]">
