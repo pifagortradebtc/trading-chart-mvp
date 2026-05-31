@@ -25,20 +25,20 @@ describe("prefilterByHistoryLength", () => {
     const input = [
       makeSeries("BTCUSDT", 1000),
       makeSeries("ETHUSDT", 1000),
-      makeSeries("HYPEUSDT", 200), // <500 = half of max
+      makeSeries("HYPEUSDT", 150), // <200 = 20% of max (new default minRatio = 0.2)
     ];
     const { kept, dropped } = prefilterByHistoryLength(input);
     expect(kept.map((k) => k.symbol)).toEqual(["BTCUSDT", "ETHUSDT"]);
     expect(dropped.map((d) => d.symbol)).toEqual(["HYPEUSDT"]);
-    expect(dropped[0]!.length).toBe(200);
+    expect(dropped[0]!.length).toBe(150);
     expect(dropped[0]!.maxLength).toBe(1000);
     expect(dropped[0]!.reason).toMatch(/watchlist/i);
   });
 
-  it("keeps a short asset when it stays above half the longest", () => {
+  it("keeps a short asset when it stays above 20% of the longest", () => {
     const input = [
       makeSeries("BTCUSDT", 1000),
-      makeSeries("HYPEUSDT", 700), // >500 — passes the half-ratio guard
+      makeSeries("HYPEUSDT", 250), // >200 — passes new 20% ratio guard
     ];
     const { kept, dropped } = prefilterByHistoryLength(input);
     expect(kept).toHaveLength(2);

@@ -10,7 +10,7 @@
  *     CoinGecko aggregates its history across the venues that do list it.
  */
 
-export type OhlcvSource = "binance" | "okx" | "coingecko";
+export type OhlcvSource = "binance" | "okx" | "coingecko" | "bybit";
 
 export interface SourceConfig {
   source: OhlcvSource;
@@ -24,12 +24,12 @@ const OVERRIDES: Record<string, SourceConfig> = {
     note: "OKB листится только на OKX, не на Binance Spot.",
   },
   HYPEUSDT: {
-    source: "coingecko",
-    note: "HYPE (Hyperliquid) не торгуется на Binance Spot — история берётся с CoinGecko.",
+    source: "bybit",
+    note: "HYPE (Hyperliquid) не торгуется на Binance Spot. Берём с Bybit — listing ~декабрь 2024, дольше чем CoinGecko free tier (365д).",
   },
   MNTUSDT: {
-    source: "coingecko",
-    note: "MNT (Mantle) на Binance/OKX отсутствует — берём с CoinGecko (free tier ограничен 365 днями).",
+    source: "bybit",
+    note: "MNT (Mantle) на Binance/OKX отсутствует. Берём с Bybit — listing 2023, заметно длиннее истории чем CoinGecko free tier.",
   },
 };
 

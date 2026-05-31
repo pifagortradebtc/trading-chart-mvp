@@ -9,6 +9,10 @@ import {
   fetchOkxKlinesServer,
   fetchOkxKlinesForward,
 } from "@/lib/server/okxKlines";
+import {
+  fetchBybitKlinesServer,
+  fetchBybitKlinesForward,
+} from "@/lib/server/bybitKlines";
 import { fetchCoinGeckoDailyServer } from "@/lib/server/coingeckoHistory";
 import {
   pickOhlcvSource,
@@ -128,6 +132,7 @@ async function fetchFromSource(
   opts: { symbol: string; interval: string; startMs: number; endMs: number },
 ): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string }> {
   if (source === "okx") return fetchOkxKlinesServer(opts);
+  if (source === "bybit") return fetchBybitKlinesServer(opts);
   if (source === "coingecko") {
     if (opts.interval !== "1d") {
       throw new Error("CoinGecko-источник поддерживает только daily (interval=1d).");
@@ -146,6 +151,7 @@ async function fetchForwardFromSource(
   opts: { symbol: string; interval: string; startMs: number; endMs: number },
 ): Promise<Candle[]> {
   if (source === "okx") return fetchOkxKlinesForward(opts);
+  if (source === "bybit") return fetchBybitKlinesForward(opts);
   if (source === "coingecko") {
     // CoinGecko returns full daily history in one call — re-fetch and let
     // mergeCandlesSorted dedupe with existing cache.
@@ -342,6 +348,7 @@ async function handleStableV2(
 
 function sourceLabel(s: OhlcvSource): string {
   if (s === "okx") return "OKX";
+  if (s === "bybit") return "Bybit";
   if (s === "coingecko") return "CoinGecko";
   return "Биржа";
 }

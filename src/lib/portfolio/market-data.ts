@@ -125,8 +125,14 @@ export function prefilterByHistoryLength(
   series: { symbol: string; klines: Kline[] }[],
   opts: { minBars?: number; minRatio?: number } = {},
 ): PrefilteredSeries {
+  /**
+   * Дефолты ослаблены: minRatio 0.5 → 0.2, чтобы свежие листинги (HYPE, MNT и т.п.)
+   * могли участвовать в Markowitz-расчёте. Раньше HYPE с 5 мес истории на фоне 3 лет
+   * у длиннейшего отсеивался (150/1095 ≈ 14% < 50%), и пользователь не мог его
+   * включить в портфель. Минимум 90 дней оставляем — короче ковариация совсем шумная.
+   */
   const minBars = opts.minBars ?? 90;
-  const minRatio = opts.minRatio ?? 0.5;
+  const minRatio = opts.minRatio ?? 0.2;
 
   if (series.length === 0) return { kept: [], dropped: [] };
 
