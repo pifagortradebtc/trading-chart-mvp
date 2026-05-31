@@ -143,15 +143,19 @@ export function runPifagorAltsBacktest(
     exitPrice: number,
     tMs: number,
     barIndex: number,
+    /** end_of_test → запись только для графика, equity не трогаем. См. backtestEngine.ts. */
+    isOpenPosition = false,
   ) => {
     const gross = tr.qty * (exitPrice - tr.avgPrice);
     const exitNotional = exitPrice * tr.qty;
     const exitFee = (exitNotional * dca.feePctPerSide) / 100;
-    tr.feesUsdt += exitFee;
+    if (!isOpenPosition) tr.feesUsdt += exitFee;
     const pnl = gross - tr.feesUsdt - tr.fundingUsdt;
-    equity += pnl;
-    if (equity > peak) peak = equity;
-    pushEquity(tMs);
+    if (!isOpenPosition) {
+      equity += pnl;
+      if (equity > peak) peak = equity;
+      pushEquity(tMs);
+    }
 
     const entryT = candles[tr.firstEntryBar]?.time ?? candles[tr.firstSignalBar]?.time ?? 0;
     const grid = buildGridFromFills(tr.fills, tr.firstPrice, settings);
@@ -320,8 +324,8 @@ export function runPifagorAltsBacktest(
       leverage: dca.leverage,
       durationBars: Math.max(1, barIdx - open.firstEntryBar + 1),
     };
-    /** Не финализируем — см. backtestEngine.ts: открытая позиция не считается сделкой. */
-    open = null;
+    /** Запись для графика; equity не двигаем (isOpenPosition=true). */
+    finalizeTrade(open, "end_of_test", cLast.close, tMsEnd, barIdx, true);
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;

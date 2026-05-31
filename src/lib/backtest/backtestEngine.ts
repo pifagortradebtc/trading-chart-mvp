@@ -581,6 +581,13 @@ export function runBacktest(
     exitPrice: number,
     tMs: number,
     barIndex: number,
+    /**
+     * Для end_of_test (открытая позиция на конце выборки): записываем сделку
+     * только для отрисовки на графике (DCA-сетка, AVG, TP), но НЕ обновляем
+     * equity и не пушим точку — иначе нереализованный убыток засоряет кривую.
+     * Метрики такие сделки тоже отфильтровывают (см. computeMetrics).
+     */
+    isOpenPosition = false,
   ) => {
     const gross =
       tr.side === "long"
@@ -588,11 +595,13 @@ export function runBacktest(
         : tr.qty * (tr.avgPrice - exitPrice);
     const exitNotional = exitPrice * tr.qty;
     const exitFee = (exitNotional * settings.dca.feePctPerSide) / 100;
-    tr.feesUsdt += exitFee;
+    if (!isOpenPosition) tr.feesUsdt += exitFee;
     const pnl = gross - tr.feesUsdt - tr.fundingUsdt;
-    equity += pnl;
-    if (equity > peak) peak = equity;
-    pushEquity(tMs);
+    if (!isOpenPosition) {
+      equity += pnl;
+      if (equity > peak) peak = equity;
+      pushEquity(tMs);
+    }
 
     const entryT = candles[tr.entryBar]?.time ?? candles[tr.signalBar]?.time ?? 0;
     trades.push({
@@ -893,12 +902,6 @@ export function runBacktest(
     const tMsEnd = cLast.time * 1000;
     const barIdx = n - 1;
     const openedAtMs = (candles[open.entryBar]?.time ?? 0) * 1000;
-    /**
-     * НЕ финализируем как сделку end_of_test — иначе нереализованный убыток
-     * попадает в trades и портит метрики (worst trade, win rate, total PnL).
-     * Открытую позицию показываем только через openPositionAtDataEnd; equity
-     * = реализованный PnL без unrealized PnL висящей позиции.
-     */
     openPositionAtDataEnd = buildOpenPositionSnapshot(
       open,
       cLast.close,
@@ -907,7 +910,14 @@ export function runBacktest(
       barIdx,
       settings,
     );
-    open = null;
+    /**
+     * Финализируем как end_of_test, но с isOpenPosition=true:
+     *   • trades[] получает запись с dcaGrid/fills/AVG/TP — нужно для отрисовки
+     *     открытой позиции на графике (метки DCA, линии AVG/TP до последнего бара)
+     *   • equity НЕ меняется — нереализованный убыток в кривую не попадает
+     *   • метрики (worst, PnL, winRate) фильтруют end_of_test — см. computeMetrics
+     */
+    finalizeTrade(open, "end_of_test", cLast.close, tMsEnd, barIdx, true);
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;

@@ -11,11 +11,14 @@ function exitMarkerText(t: TradeRecord): string {
   if (t.exitReason === "liquidation") return `#${t.id} ликв. ${pnlStr} USDT`;
   if (t.exitReason === "sl") return `#${t.id} SL ${pnlStr} USDT`;
   if (t.exitReason === "signal") return `#${t.id} сигнал ${pnlStr} USDT`;
-  return `#${t.id} конец ${pnlStr} USDT`;
+  /** end_of_test = висящая позиция: PnL нереализованный, не закрытая. */
+  return `#${t.id} OPEN ${pnlStr} USDT (нереализ.)`;
 }
 
 function exitMarkerColor(reason: TradeRecord["exitReason"]): string {
   if (reason === "tp") return "#34d399";
+  /** Висящая позиция — нейтральный янтарный, не красный (это не убыток). */
+  if (reason === "end_of_test") return "#fbbf24";
   return "#f87171";
 }
 
@@ -66,7 +69,13 @@ export function buildBacktestChartMarkers(trades: TradeRecord[]): SeriesMarker<T
       }
     }
 
-    if (t.exitReason === "tp" || t.exitReason === "signal" || showNonTpExit) {
+    /** Висящую позицию (end_of_test) показываем ВСЕГДА — она одна на весь прогон. */
+    if (
+      t.exitReason === "tp" ||
+      t.exitReason === "signal" ||
+      t.exitReason === "end_of_test" ||
+      showNonTpExit
+    ) {
       const tEx = Math.floor(t.exitTime / 1000) as Time;
       out.push({
         time: tEx,

@@ -131,6 +131,8 @@ interface FinalizeArgs {
   /** Override для расчёта PnL/мартингейла. */
   isStop?: boolean;
   isTakeProfit?: boolean;
+  /** end_of_test — запись для графика, equity не трогаем. См. backtestEngine.ts. */
+  isOpenPosition?: boolean;
 }
 
 export function runPivot21Backtest(
@@ -227,19 +229,20 @@ export function runPivot21Backtest(
 
   function finalizeTrade(args: FinalizeArgs): void {
     if (!open) return;
-    const { exit, exitPrice, exitTimeMs, exitBarIndex } = args;
+    const { exit, exitPrice, exitTimeMs, exitBarIndex, isOpenPosition = false } = args;
     const tr = open;
     const grossPerCoin = tr.side === "long" ? exitPrice - tr.entryPrice : tr.entryPrice - exitPrice;
     const gross = grossPerCoin * tr.qty;
-    const exitFee = exitPrice * tr.qty * feeFrac;
+    const exitFee = isOpenPosition ? 0 : exitPrice * tr.qty * feeFrac;
     const totalFees = tr.feesUsdt + exitFee;
     const pnl = gross - exitFee;
-    equity += pnl;
-    if (equity > peak) peak = equity;
-
-    // Мартингейл: при убытке consecutiveLosses++; при прибыли — сброс.
-    if (pnl > 0) consecutiveLosses = 0;
-    else consecutiveLosses += 1;
+    if (!isOpenPosition) {
+      equity += pnl;
+      if (equity > peak) peak = equity;
+      // Мартингейл: при убытке consecutiveLosses++; при прибыли — сброс.
+      if (pnl > 0) consecutiveLosses = 0;
+      else consecutiveLosses += 1;
+    }
 
     const notional = tr.entryPrice * tr.qty;
     const grid = {
@@ -554,8 +557,14 @@ export function runPivot21Backtest(
       leverage: 1,
       durationBars: Math.max(1, barIdx - tr.entryBar + 1),
     };
-    /** Не финализируем — см. backtestEngine.ts: открытая позиция не считается сделкой. */
-    open = null;
+    /** Запись для графика; equity и мартингейл не двигаем (isOpenPosition). */
+    finalizeTrade({
+      exit: "end_of_test",
+      exitPrice: cLast.close,
+      exitTimeMs: tMsEnd,
+      exitBarIndex: barIdx,
+      isOpenPosition: true,
+    });
   }
 
   const fromMs = n ? candles[0]!.time * 1000 : 0;

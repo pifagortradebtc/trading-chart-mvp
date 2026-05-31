@@ -88,6 +88,13 @@ export function computeMetrics(
   equity: EquityPoint[],
   startingDeposit: number,
 ): MetricsSummary {
+  /**
+   * Открытая позиция на конце выборки (end_of_test) хранится в trades только для отрисовки
+   * на графике — реально сделка не закрыта, PnL нереализованный, equity не двигалась.
+   * Исключаем из ВСЕХ метрик чтобы висящая позиция не портила Return/winRate/worstTrade.
+   */
+  const allTrades = trades;
+  trades = trades.filter((t) => t.exitReason !== "end_of_test");
   const wins = trades.filter((t) => t.pnlUsdt > 0);
   const losses = trades.filter((t) => t.pnlUsdt < 0);
   const grossProfit = wins.reduce((s, t) => s + t.pnlUsdt, 0);
@@ -114,7 +121,8 @@ export function computeMetrics(
   const maxEqDd = maxDrawdownFromEquity(equity);
 
   const liquidations = trades.filter((t) => t.exitReason === "liquidation").length;
-  const endOfTestCloses = trades.filter((t) => t.exitReason === "end_of_test").length;
+  /** allTrades здесь = неотфильтрованный массив с end_of_test (для счётчика «висит на конце»). */
+  const endOfTestCloses = allTrades.filter((t) => t.exitReason === "end_of_test").length;
 
   let worstTrade: TradeRecord | null = null;
   for (const t of trades) {
