@@ -11,6 +11,7 @@ import { buildDcaGrid } from "@/lib/backtest/dcaGrid";
 import { PORTFOLIO_ALTS_SYMBOL_COUNT } from "@/lib/backtest/portfolioAltsSymbols";
 import type { BacktestSettings } from "@/lib/backtest/types";
 import { CompositeStrategySection } from "./CompositeStrategySection";
+import { CompositeFormulaRow } from "./CompositeFormulaRow";
 import { ChaikKeltSettingsForm } from "./ChaikKeltSettingsForm";
 
 function Tip({ children }: { children: React.ReactNode }) {
@@ -299,7 +300,7 @@ export function BacktestSettingsForm({
                 }
               }}
             >
-              <option value="composite">★ Композит (стек стратегий, AND/OR)</option>
+              <option value="composite">★ Композит (стек стратегий, И/ИЛИ)</option>
               <option value="chaik_dca">V2_ЧайкКельт + DCA-сетка</option>
               <option value="buyforce_dca">Pifagor BuyForce + DCA (LONG)</option>
               <option value="sellforce_dca">Pifagor SellForce + DCA (SHORT)</option>
@@ -307,6 +308,9 @@ export function BacktestSettingsForm({
               <option value="pivot21">Pifagor 21 (Pivot Magnet)</option>
             </select>
           </label>
+          {settings.strategyKind === "composite" ? (
+            <CompositeFormulaRow settings={settings} onChange={onChange} />
+          ) : null}
           {settings.strategyKind === "pifagor_alts" ? (
             <>
               <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm text-violet-100">

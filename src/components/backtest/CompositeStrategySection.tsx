@@ -28,7 +28,6 @@ import type {
   BacktestSettings,
   CompositeStrategyConfig,
   CompositeStrategyKind,
-  JoinRule,
   StrategySlot,
 } from "@/lib/backtest/types";
 import { ChaikKeltSettingsForm } from "./ChaikKeltSettingsForm";
@@ -170,26 +169,19 @@ export function CompositeStrategySection({
         они выбираются отдельно как одиночные стратегии.
       </p>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {config.slots.map((slot, idx) => (
           <div key={slot.id}>
             {idx > 0 ? (
-              <div className="flex items-center justify-center py-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="h-px w-12 bg-[#2e3241]" />
-                  <select
-                    className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-100 outline-none focus:border-cyan-500/70"
-                    value={slot.joinRule ?? "and"}
-                    onChange={(e) =>
-                      patchSlot(slot.id, { joinRule: e.target.value as JoinRule })
-                    }
-                    title="Оператор объединения с накопленным результатом предыдущих слотов"
-                  >
-                    <option value="and">И (AND)</option>
-                    <option value="or">ИЛИ (OR)</option>
-                  </select>
-                  <div className="h-px w-12 bg-[#2e3241]" />
-                </div>
+              <div className="mb-2 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wide text-[#6b7280]">
+                <div className="h-px flex-1 bg-[#2e3241]/60" />
+                <span>
+                  объединяется через{" "}
+                  <strong className="text-cyan-300">
+                    {(slot.joinRule ?? "and") === "and" ? "И" : "ИЛИ"}
+                  </strong>
+                </span>
+                <div className="h-px flex-1 bg-[#2e3241]/60" />
               </div>
             ) : null}
             <div
