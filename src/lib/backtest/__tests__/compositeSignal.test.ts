@@ -1,75 +1,84 @@
 import { describe, expect, it } from "vitest";
 import { combineCompositeSignals } from "../compositeSignal";
+import type { JoinRule } from "../types";
 
 function bools(arr: (0 | 1)[]): boolean[] {
   return arr.map((v) => v === 1);
 }
 
-describe("combineCompositeSignals", () => {
-  it("AND: оба слота должны дать сигнал в окне", () => {
-    // 10 баров. Слот A: сигнал на баре 2. Слот B: сигнал на баре 5. window=5.
-    // На баре 5 у слота A сигнал в [1..5] (бар 2 попадает), у слота B на 5. → composite=true
+describe("combineCompositeSignals (per-slot joinRule, left-fold)", () => {
+  it("AND join: оба слота должны дать сигнал в окне", () => {
+    /** 10 баров. Слот A: сигнал на баре 2. Слот B: сигнал на баре 5. window=5. */
     const slots = [
       { long: bools([0, 0, 1, 0, 0, 0, 0, 0, 0, 0]), short: bools([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) },
       { long: bools([0, 0, 0, 0, 0, 1, 0, 0, 0, 0]), short: bools([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) },
     ];
-    const r = combineCompositeSignals(slots, "and", 5, null, 10);
-    // bar 5: slot A signal в окне [1..5] (бар 2), slot B сигнал на 5 → AND true
+    const joinRules: JoinRule[] = ["and", "and"]; // первый игнорируется
+    const r = combineCompositeSignals(slots, joinRules, 5, 10);
     expect(r.longActive[5]).toBe(true);
-    expect(r.longActive[4]).toBe(false); // slot B ещё не дал
-    // bar 6: slot A сигнал в окне [2..6] (бар 2), slot B в [2..6] (бар 5) → AND true
+    expect(r.longActive[4]).toBe(false);
     expect(r.longActive[6]).toBe(true);
-    // bar 7: slot A окно [3..7] — бара 2 уже нет, нет сигнала → AND false
     expect(r.longActive[7]).toBe(false);
   });
 
-  it("ANY: достаточно одного слота", () => {
+  it("OR join: достаточно одного слота", () => {
     const slots = [
       { long: bools([0, 1, 0, 0, 0]), short: bools([0, 0, 0, 0, 0]) },
       { long: bools([0, 0, 0, 0, 0]), short: bools([0, 0, 0, 0, 0]) },
     ];
-    const r = combineCompositeSignals(slots, "any", 3, null, 5);
-    expect(r.longActive[1]).toBe(true); // только slot A — но any
-    expect(r.longActive[3]).toBe(true); // ещё в окне
-    expect(r.longActive[4]).toBe(false); // бар 1 вылетел
+    const joinRules: JoinRule[] = ["and", "or"];
+    const r = combineCompositeSignals(slots, joinRules, 3, 5);
+    expect(r.longActive[1]).toBe(true);
+    expect(r.longActive[3]).toBe(true);
+    expect(r.longActive[4]).toBe(false);
   });
 
-  it("MAJORITY: правильно при разных конфигурациях", () => {
+  it("формула «S1 И S2 ИЛИ S3» (left-fold)", () => {
+    // window=1 — строго на одном баре
+    // S1 = true на 0, false везде иначе
+    // S2 = true на 0, false иначе
+    // S3 = true на 1, false иначе
+    // formula at bar 0: (true AND true) OR false = true
+    // formula at bar 1: (false AND false) OR true = true
+    // formula at bar 2: (false AND false) OR false = false
     const slots = [
-      { long: bools([1, 1, 1, 0, 0]), short: bools([0, 0, 0, 0, 0]) },
-      { long: bools([0, 0, 1, 1, 1]), short: bools([0, 0, 0, 0, 0]) },
-      { long: bools([0, 0, 0, 0, 1]), short: bools([0, 0, 0, 0, 0]) },
+      { long: bools([1, 0, 0]), short: bools([0, 0, 0]) },
+      { long: bools([1, 0, 0]), short: bools([0, 0, 0]) },
+      { long: bools([0, 1, 0]), short: bools([0, 0, 0]) },
     ];
-    const r = combineCompositeSignals(slots, "majority", 1, 2, 5);
-    // window=1: только текущий бар
-    // bar 0: только A → 1 голос < 2 → false
-    // bar 2: A=1, B=1 → 2 голоса → true
-    // bar 4: B=1, C=1 → 2 голоса → true
-    expect(r.longActive[0]).toBe(false);
-    expect(r.longActive[2]).toBe(true);
-    expect(r.longActive[4]).toBe(true);
+    const joinRules: JoinRule[] = ["and", "and", "or"];
+    const r = combineCompositeSignals(slots, joinRules, 1, 3);
+    expect(r.longActive[0]).toBe(true);
+    expect(r.longActive[1]).toBe(true);
+    expect(r.longActive[2]).toBe(false);
   });
 
   it("пустой массив слотов → false везде", () => {
-    const r = combineCompositeSignals([], "and", 5, null, 3);
+    const r = combineCompositeSignals([], [], 5, 3);
     expect(r.longActive).toEqual([false, false, false]);
     expect(r.shortActive).toEqual([false, false, false]);
   });
 
-  it("smешанные LONG и SHORT слоты — голосуются отдельно", () => {
+  it("смешанные LONG и SHORT слоты — голосуются отдельно", () => {
     const slots = [
       { long: bools([0, 1, 0]), short: bools([0, 0, 0]) }, // BuyForce
       { long: bools([0, 0, 0]), short: bools([0, 1, 0]) }, // SellForce
     ];
-    const r = combineCompositeSignals(slots, "and", 1, null, 3);
-    // AND for long: slot A (long=1 на 1), slot B (long=0 на 1) → 1 из 2 → false
-    expect(r.longActive[1]).toBe(false);
-    // AND for short: slot A (short=0 на 1), slot B (short=1 на 1) → 1 из 2 → false
-    expect(r.shortActive[1]).toBe(false);
+    /** AND-join: для long нужно оба, для short — оба. На баре 1: long[0]=true, long[1]=false → false */
+    const rAnd = combineCompositeSignals(slots, ["and", "and"], 1, 3);
+    expect(rAnd.longActive[1]).toBe(false);
+    expect(rAnd.shortActive[1]).toBe(false);
 
-    // С ANY должно сработать
-    const r2 = combineCompositeSignals(slots, "any", 1, null, 3);
-    expect(r2.longActive[1]).toBe(true);
-    expect(r2.shortActive[1]).toBe(true);
+    /** OR-join: достаточно одного. На баре 1: long[0] OR long[1] = true OR false = true */
+    const rOr = combineCompositeSignals(slots, ["and", "or"], 1, 3);
+    expect(rOr.longActive[1]).toBe(true);
+    expect(rOr.shortActive[1]).toBe(true);
+  });
+
+  it("один слот: joinRule игнорируется, сигналы как есть", () => {
+    const slots = [{ long: bools([0, 1, 0, 1]), short: bools([1, 0, 1, 0]) }];
+    const r = combineCompositeSignals(slots, ["and"], 1, 4);
+    expect(r.longActive).toEqual([false, true, false, true]);
+    expect(r.shortActive).toEqual([true, false, true, false]);
   });
 });

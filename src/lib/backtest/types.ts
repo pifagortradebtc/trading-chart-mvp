@@ -57,13 +57,30 @@ export type CompositeStrategyKind =
   | "adx_filter";
 
 /**
- * Один слот в composite: тип стратегии и её собственные параметры.
- * Хранятся inline — у каждого слота свой набор настроек (можно иметь
- * MACD #1 с 12/26/9 и MACD #2 с 5/35/5 в одном composite).
+ * Оператор объединения слота с накопленным результатом предыдущих слотов.
+ * Применяется к каждому слоту КРОМЕ первого (у первого joinRule игнорируется).
+ *
+ * Вычисление composite — left-fold:
+ *   active = slot1.active
+ *   for i in 2..N: active = active <slots[i].joinRule> slot_i.active
+ *
+ * Формула вида «S1 И S2 ИЛИ S3» (left-associative — без приоритета И > ИЛИ).
+ */
+export type JoinRule = "and" | "or";
+
+/**
+ * Один слот в composite: тип стратегии, её параметры и оператор объединения
+ * с предыдущими слотами.
  */
 export interface StrategySlot {
   id: string;
   kind: CompositeStrategyKind;
+  /**
+   * Оператор объединения с накопленным результатом слотов выше.
+   * У первого слота поле есть, но игнорируется (нечего объединять).
+   * Default = "and".
+   */
+  joinRule?: JoinRule;
   /** Заполняется только когда kind === "chaik_dca". */
   chaikKelt?: ChaikKeltSettings;
   /** Заполняется только когда kind === "buyforce_dca". */
@@ -79,24 +96,28 @@ export interface StrategySlot {
   adxFilter?: AdxFilterSettings;
 }
 
-/** Правило объединения сигналов от нескольких слотов. */
+/**
+ * @deprecated Глобальное правило AND/ANY/MAJORITY заменено на per-slot joinRule
+ * (см. StrategySlot.joinRule). Тип сохранён в типе для миграции старых снапшотов.
+ */
 export type CompositeRule = "and" | "any" | "majority";
 
 export interface CompositeStrategyConfig {
   slots: StrategySlot[];
   /**
-   * AND — все слоты должны дать сигнал в окне; ANY — хотя бы один;
-   * MAJORITY — не менее `minSignalCount` слотов (по умолчанию >= половина).
-   */
-  rule: CompositeRule;
-  /** Используется только при rule === "majority". null = round(N/2) от количества слотов. */
-  minSignalCount: number | null;
-  /**
    * Окно подтверждения: сигналы от разных стратегий редко приходят на одном баре.
    * На каждом баре i считаем «есть ли сигнал у этой стратегии в [i-window..i]».
-   * 0 = строго один и тот же бар (почти никогда не сработает), 5 — мягко, 20 — очень мягко.
+   * 1 = строго один и тот же бар (почти никогда не сработает с AND), 5 — мягко,
+   * 20 — очень мягко.
    */
   confirmWindowBars: number;
+  /**
+   * @deprecated Глобальное правило больше не используется (per-slot joinRule).
+   * Оставлено только для миграции старых снапшотов.
+   */
+  rule?: CompositeRule;
+  /** @deprecated Параметр для majority — режим удалён. */
+  minSignalCount?: number | null;
 }
 
 export type TradeDirection = "long" | "short";

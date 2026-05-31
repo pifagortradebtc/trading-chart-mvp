@@ -628,11 +628,11 @@ export function runBacktest(
       }
       return { long: r.longActive, short: r.shortActive };
     });
+    const joinRules = config.slots.map((s) => s.joinRule ?? "and");
     const combined = combineCompositeSignals(
       slotSignals,
-      config.rule,
+      joinRules,
       config.confirmWindowBars,
-      config.minSignalCount,
       n,
     );
     longActive = combined.longActive;

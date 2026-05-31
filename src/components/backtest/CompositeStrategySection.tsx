@@ -26,9 +26,9 @@ import {
 } from "@/lib/backtest/classicIndicatorSignals";
 import type {
   BacktestSettings,
-  CompositeRule,
   CompositeStrategyConfig,
   CompositeStrategyKind,
+  JoinRule,
   StrategySlot,
 } from "@/lib/backtest/types";
 import { ChaikKeltSettingsForm } from "./ChaikKeltSettingsForm";
@@ -57,6 +57,7 @@ function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
   return {
     id: `slot-${Date.now()}-${idx}`,
     kind,
+    joinRule: "and",
     chaikKelt: kind === "chaik_dca" ? { ...DEFAULT_CHAIK } : undefined,
     buyForce: kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS } : undefined,
     sellForce: kind === "sellforce_dca" ? { ...DEFAULT_SELLFORCE_SETTINGS } : undefined,
@@ -160,19 +161,40 @@ export function CompositeStrategySection({
       </div>
 
       <p className="mb-4 text-xs leading-relaxed text-[#787b86]">
-        Бот открывает сделку, когда сигналы от слотов совпадают по выбранному правилу
-        («ВСЕ», «ЛЮБОЙ», «большинство»). У каждого слота своя стратегия и свои параметры.
-        В композит идут только сигнал-генераторы (BuyForce, SellForce, ЧайкКельт, а также
+        Между слотами выбирай оператор <strong className="text-cyan-300">И</strong> /
+        {" "}<strong className="text-cyan-300">ИЛИ</strong> — получится формула
+        «S1 И S2 ИЛИ S3», которая вычисляется слева направо. Бот открывает сделку,
+        когда формула возвращает true. У каждого слота своя стратегия и свои параметры.
+        В композит идут только сигнал-генераторы (BuyForce, SellForce, ЧайкКельт и
         классические индикаторы). ALTS и Pivot21 имеют собственное управление позицией —
         они выбираются отдельно как одиночные стратегии.
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {config.slots.map((slot, idx) => (
-          <div
-            key={slot.id}
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] p-3"
-          >
+          <div key={slot.id}>
+            {idx > 0 ? (
+              <div className="flex items-center justify-center py-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="h-px w-12 bg-[#2e3241]" />
+                  <select
+                    className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-100 outline-none focus:border-cyan-500/70"
+                    value={slot.joinRule ?? "and"}
+                    onChange={(e) =>
+                      patchSlot(slot.id, { joinRule: e.target.value as JoinRule })
+                    }
+                    title="Оператор объединения с накопленным результатом предыдущих слотов"
+                  >
+                    <option value="and">И (AND)</option>
+                    <option value="or">ИЛИ (OR)</option>
+                  </select>
+                  <div className="h-px w-12 bg-[#2e3241]" />
+                </div>
+              </div>
+            ) : null}
+            <div
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] p-3"
+            >
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">
                 #{idx + 1}
@@ -876,12 +898,13 @@ export function CompositeStrategySection({
                 </label>
                 <p className="col-span-2 text-[10px] text-[#6b7280]">
                   ADX — фильтр силы тренда. Сигнал постоянный: активен, когда ADX выше
-                  порога на этом баре. В композите с правилом «ВСЕ согласны» пропускает
+                  порога на этом баре. Объединяя в композите оператором И, пропускает
                   направленные сигналы других слотов только в трендовом рынке (отсекает
                   боковик).
                 </p>
               </div>
             ) : null}
+            </div>
           </div>
         ))}
       </div>
@@ -958,69 +981,14 @@ export function CompositeStrategySection({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <div>
-          <span className="text-xs text-[#787b86]">
-            Правило объединения
-            <Tip>
-              ВСЕ: каждый слот должен дать сигнал. ЛЮБОЙ: достаточно одного слота.
-              Большинство: минимум N из M слотов (по умолчанию N = округление от M/2 вверх).
-            </Tip>
-          </span>
-          <div className="mt-1 flex flex-wrap gap-2">
-            {(["and", "any", "majority"] as CompositeRule[]).map((r) => (
-              <label
-                key={r}
-                className={`cursor-pointer rounded-md border px-3 py-1.5 text-xs ${
-                  config.rule === r
-                    ? "border-cyan-500/60 bg-cyan-500/15 text-cyan-100"
-                    : "border-[#2e3241] bg-[#0c0e14] text-[#787b86] hover:bg-[#131722]"
-                }`}
-              >
-                <input
-                  type="radio"
-                  className="sr-only"
-                  checked={config.rule === r}
-                  onChange={() => patchComposite({ rule: r })}
-                />
-                {r === "and"
-                  ? "ВСЕ согласны"
-                  : r === "any"
-                    ? "ЛЮБОЙ согласен"
-                    : "Большинство (N из M)"}
-              </label>
-            ))}
-          </div>
-          {config.rule === "majority" ? (
-            <label className="mt-2 flex items-center gap-2 text-xs text-[#787b86]">
-              <span>N из {config.slots.length}:</span>
-              <input
-                type="number"
-                min="1"
-                max={config.slots.length}
-                className="w-20 rounded border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono text-[#d1d4dc]"
-                value={config.minSignalCount ?? Math.ceil(config.slots.length / 2)}
-                onChange={(e) => {
-                  const v = Math.max(
-                    1,
-                    Math.min(config.slots.length, Math.floor(Number(e.target.value) || 1)),
-                  );
-                  patchComposite({ minSignalCount: v });
-                }}
-              />
-              <span className="text-[10px] text-[#6b7280]">
-                по умолчанию: {Math.ceil(config.slots.length / 2)}
-              </span>
-            </label>
-          ) : null}
-        </div>
-        <label className="flex flex-col gap-1">
+      <div className="mt-5">
+        <label className="flex max-w-md flex-col gap-1">
           <span className="text-xs text-[#787b86]">
             Окно подтверждения (баров)
             <Tip>
               На каждом баре слот считается «активным», если его сигнал сработал в
               последние N баров. 1 — строго один и тот же бар (почти никогда не сработает
-              в режиме «ВСЕ»). 5–10 — мягкое подтверждение. 20+ — очень мягкое.
+              с оператором И). 5–10 — мягкое подтверждение. 20+ — очень мягкое.
             </Tip>
           </span>
           <input
@@ -1042,36 +1010,32 @@ export function CompositeStrategySection({
       </div>
 
       <div className="mt-4 grid gap-2 rounded-md border border-[#2e3241] bg-[#0c0e14] p-3 text-[11px]">
-        <span className="text-[#787b86]">Что бот будет торговать:</span>
-        <div className="flex flex-wrap items-center gap-2 font-mono">
-          {needsLongInfo ? (
-            <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
-              LONG: когда{" "}
-              {config.rule === "and"
-                ? "ВСЕ согласны"
-                : config.rule === "any"
-                  ? "ЛЮБОЙ согласен"
-                  : "набирается большинство"}{" "}
-              среди LONG-слотов
+        <span className="text-[#787b86]">Итоговая формула композита (вычисляется слева направо):</span>
+        <div className="font-mono text-[12px] text-cyan-100">
+          {config.slots.map((slot, idx) => (
+            <span key={slot.id}>
+              {idx > 0 ? (
+                <span className="mx-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200">
+                  {(slot.joinRule ?? "and") === "and" ? "И" : "ИЛИ"}
+                </span>
+              ) : null}
+              <span className="rounded bg-white/[0.05] px-1.5 py-0.5">
+                #{idx + 1} {slotLabel(slot.kind)}
+              </span>
             </span>
-          ) : null}
-          {needsShortInfo ? (
-            <span className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-rose-200">
-              SHORT: когда{" "}
-              {config.rule === "and"
-                ? "ВСЕ согласны"
-                : config.rule === "any"
-                  ? "ЛЮБОЙ согласен"
-                  : "набирается большинство"}{" "}
-              среди SHORT-слотов
-            </span>
-          ) : null}
-          {needsDepth ? (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
-              Нужны depth-данные (BuyForce/SellForce). ТФ графика ∈ &#123;1m,5m,15m,1h&#125;.
-            </span>
-          ) : null}
+          ))}
         </div>
+        {needsDepth ? (
+          <span className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+            ⚠ Нужны depth-данные (BuyForce/SellForce). ТФ графика ∈ &#123;1m, 5m, 15m, 1h&#125;.
+          </span>
+        ) : null}
+        <span className="text-[10px] text-[#6b7280]">
+          Бот откроет {needsLongInfo ? "LONG" : ""}
+          {needsLongInfo && needsShortInfo ? " / " : ""}
+          {needsShortInfo ? "SHORT" : ""} когда формула вернёт true (внутри окна
+          подтверждения {config.confirmWindowBars} баров).
+        </span>
       </div>
     </section>
   );

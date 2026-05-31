@@ -1,9 +1,9 @@
 import type {
   BacktestSettings,
   ChaikKeltSettings,
-  CompositeRule,
   CompositeStrategyConfig,
   DcaBotSettings,
+  JoinRule,
   StrategySlot,
 } from "./types";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
@@ -199,11 +199,10 @@ export const DEFAULT_COMPOSITE: CompositeStrategyConfig = {
     {
       id: "slot-1",
       kind: "buyforce_dca",
+      joinRule: "and",
       buyForce: DEFAULT_BUYFORCE_SETTINGS,
     },
   ],
-  rule: "and",
-  minSignalCount: null,
   confirmWindowBars: 5,
 };
 
@@ -245,16 +244,18 @@ function normalizeStrategyKind(raw: unknown): BacktestSettings["strategyKind"] {
 function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
   if (typeof raw !== "object" || raw == null) return DEFAULT_COMPOSITE;
   const r = raw as Partial<CompositeStrategyConfig>;
-  const rule: CompositeRule =
-    r.rule === "and" || r.rule === "any" || r.rule === "majority" ? r.rule : "and";
   const window =
     typeof r.confirmWindowBars === "number" && Number.isFinite(r.confirmWindowBars)
       ? Math.max(0, Math.min(200, Math.floor(r.confirmWindowBars)))
       : DEFAULT_COMPOSITE.confirmWindowBars;
-  const minSignalCount =
-    typeof r.minSignalCount === "number" && Number.isFinite(r.minSignalCount) && r.minSignalCount > 0
-      ? Math.floor(r.minSignalCount)
-      : null;
+  /**
+   * Миграция глобального rule (legacy) в per-slot joinRule:
+   *   old "and" / "majority" → "and" для всех слотов
+   *   old "any"              → "or"  для всех слотов
+   * Если у слота уже есть joinRule (новый формат) — он сохраняется.
+   */
+  const legacyRule = r.rule;
+  const fallbackJoin: JoinRule = legacyRule === "any" ? "or" : "and";
   const rawSlots = Array.isArray(r.slots) ? r.slots : [];
   const slots: StrategySlot[] = rawSlots
     .map((slot, idx): StrategySlot | null => {
@@ -273,9 +274,12 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
         "adx_filter",
       ];
       if (!kind || !validKinds.includes(kind)) return null;
+      const joinRule: JoinRule =
+        s.joinRule === "and" || s.joinRule === "or" ? s.joinRule : fallbackJoin;
       return {
         id: typeof s.id === "string" && s.id ? s.id : `slot-${idx + 1}`,
         kind,
+        joinRule,
         chaikKelt: kind === "chaik_dca" ? { ...DEFAULT_CHAIK, ...s.chaikKelt } : undefined,
         buyForce:
           kind === "buyforce_dca" ? { ...DEFAULT_BUYFORCE_SETTINGS, ...s.buyForce } : undefined,
@@ -297,8 +301,6 @@ function normalizeCompositeConfig(raw: unknown): CompositeStrategyConfig {
     .filter((s): s is StrategySlot => s !== null);
   return {
     slots: slots.length > 0 ? slots : DEFAULT_COMPOSITE.slots,
-    rule,
-    minSignalCount,
     confirmWindowBars: window,
   };
 }
