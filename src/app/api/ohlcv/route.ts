@@ -123,11 +123,20 @@ export async function GET(req: Request) {
   return handleStableV2(symbol, interval, startMs, endMs, yearsBack, source, note);
 }
 
-/**
- * Адаптер «один интерфейс для всех источников». CoinGecko игнорирует interval
- * (только daily через market_chart); OKX ему следует, Binance — primary.
- */
-async function fetchFromSource(
+/** Похоже на «нет такого тикера на бирже» — Binance/OKX/Bybit отдают похожие тексты ошибок. */
+function looksLikeUnknownSymbolError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("invalid symbol") ||
+    msg.includes("instrument") ||
+    msg.includes("symbol does not exist") ||
+    msg.includes("not found") ||
+    msg.includes("400") ||
+    msg.includes("404")
+  );
+}
+
+async function fetchSingleSource(
   source: OhlcvSource,
   opts: { symbol: string; interval: string; startMs: number; endMs: number },
 ): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string }> {
@@ -146,7 +155,49 @@ async function fetchFromSource(
   return fetchBinanceKlinesServer(opts);
 }
 
-async function fetchForwardFromSource(
+/**
+ * Адаптер «один интерфейс для всех источников» с auto-fallback.
+ *
+ * Если source === "binance" (дефолт для незарегистрированных тикеров) и Binance
+ * вернул «invalid symbol» — пробуем по очереди bybit, okx, coingecko. Это
+ * страховка для тикеров вроде HYPER, которые могут листоваться на альтернативных
+ * биржах быстрее чем мы добавим их в OVERRIDES вручную.
+ *
+ * Для явных OVERRIDES (HYPE→bybit, OKB→okx и т.д.) fallback НЕ применяется —
+ * если назначенная биржа не отдала данные, это реальная ошибка для логов.
+ */
+async function fetchFromSource(
+  source: OhlcvSource,
+  opts: { symbol: string; interval: string; startMs: number; endMs: number },
+): Promise<{ candles: Candle[]; oldestAvailableMs: number | null; warning?: string }> {
+  try {
+    return await fetchSingleSource(source, opts);
+  } catch (primaryErr) {
+    /** Auto-fallback только для дефолтного binance — для явных overrides не делаем. */
+    if (source !== "binance" || !looksLikeUnknownSymbolError(primaryErr)) throw primaryErr;
+    const chain: OhlcvSource[] = ["bybit", "okx"];
+    if (opts.interval === "1d") chain.push("coingecko");
+    for (const alt of chain) {
+      try {
+        const res = await fetchSingleSource(alt, opts);
+        if (res.candles.length > 0) {
+          return {
+            ...res,
+            warning:
+              (res.warning ? `${res.warning} ` : "") +
+              `Binance не знает ${opts.symbol} — данные взяты с ${alt} (auto-fallback). ` +
+              `Добавь в OVERRIDES в ohlcvSource.ts чтобы избежать round-trip.`,
+          };
+        }
+      } catch {
+        /** этот источник тоже не знает — пробуем следующий */
+      }
+    }
+    throw primaryErr;
+  }
+}
+
+async function fetchSingleForwardFromSource(
   source: OhlcvSource,
   opts: { symbol: string; interval: string; startMs: number; endMs: number },
 ): Promise<Candle[]> {
@@ -163,6 +214,28 @@ async function fetchForwardFromSource(
     return r.candles;
   }
   return fetchBinanceKlinesForward(opts);
+}
+
+async function fetchForwardFromSource(
+  source: OhlcvSource,
+  opts: { symbol: string; interval: string; startMs: number; endMs: number },
+): Promise<Candle[]> {
+  try {
+    return await fetchSingleForwardFromSource(source, opts);
+  } catch (primaryErr) {
+    if (source !== "binance" || !looksLikeUnknownSymbolError(primaryErr)) throw primaryErr;
+    const chain: OhlcvSource[] = ["bybit", "okx"];
+    if (opts.interval === "1d") chain.push("coingecko");
+    for (const alt of chain) {
+      try {
+        const out = await fetchSingleForwardFromSource(alt, opts);
+        if (out.length > 0) return out;
+      } catch {
+        /** этот источник не знает — пробуем следующий */
+      }
+    }
+    throw primaryErr;
+  }
 }
 
 async function handleLegacyV1(
@@ -190,7 +263,9 @@ async function handleLegacyV1(
   }
 
   try {
-    const { candles, oldestAvailableMs, warning } = await fetchBinanceKlinesServer({
+    /** Используем общий dispatcher с auto-fallback (Binance → Bybit → OKX → CoinGecko). */
+    const { source: routedSource } = pickOhlcvSource(symbol);
+    const { candles, oldestAvailableMs, warning } = await fetchFromSource(routedSource, {
       symbol,
       interval,
       startMs,
