@@ -185,24 +185,17 @@ export const DEFAULT_BACKTEST: BacktestSettings = {
   depthInterval: "1h",
 };
 
-/**
- * Допустимые значения BacktestStrategyKind для нормализации raw input.
- *
- * Историческое значение `"chaik_dca"` (V2_ЧайкКельт) автоматически
- * мигрирует на `"buyforce_dca"` — стратегия удалена из UI/engine.
- * Это нужно для совместимости со старыми снимками снапшотов и
- * сохранёнными настройками юзера.
- */
+/** Допустимые значения BacktestStrategyKind для нормализации raw input. */
 function normalizeStrategyKind(raw: unknown): BacktestSettings["strategyKind"] {
   if (
     raw === "pifagor_alts" ||
     raw === "pivot21" ||
+    raw === "chaik_dca" ||
     raw === "buyforce_dca" ||
     raw === "sellforce_dca"
   ) {
     return raw;
   }
-  // Legacy: chaik_dca → buyforce_dca.
   return "buyforce_dca";
 }
 

@@ -7,11 +7,7 @@
  */
 
 import type { Candle } from "@/types/candle";
-// Тип ChaikComputedSeries сохранён для shape переменной `series` —
-// поля массивов ATR/ADX/RSI используются в общей DCA-логике (limit entry, etc).
-// Для buyforce/sellforce стратегий заполняется через makeEmptySeries() (NaN).
-// computeChaikSignals удалён — стратегия chaik_dca снята с UI/engine.
-import type { ChaikComputedSeries } from "./chaikKeltSignal";
+import { computeChaikSignals, type ChaikComputedSeries } from "./chaikKeltSignal";
 import {
   computeBuyForceSignals,
   computeSellForceSignals,
@@ -554,12 +550,12 @@ export function runBacktest(
     meta = new Array<SignalBarState | null>(n).fill(null);
     series = makeEmptySeries(n);
   } else {
-    // Любая стратегия которая не обрабатывается выше — ошибка конфигурации.
-    // Был "chaik_dca" (V2_ЧайкКельт) — снят с UI/engine, заменён BuyForce/SellForce.
-    throw new Error(
-      `Неизвестная стратегия: ${String(settings.strategyKind)}. ` +
-        `Поддерживается: buyforce_dca, sellforce_dca, pifagor_alts, pivot21.`,
-    );
+    // chaik_dca (V2_ЧайкКельт) — default дефолт для legacy/новых юзеров.
+    const r = computeChaikSignals(candles, settings.indicator);
+    longActive = r.longActive;
+    shortActive = r.shortActive;
+    meta = r.meta;
+    series = r.series;
   }
 
   let equity = settings.dca.startDepositUsdt;

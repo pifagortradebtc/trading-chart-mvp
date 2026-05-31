@@ -5,7 +5,7 @@
 
 import type { DcaGridRow, TradeRecord } from "./types";
 
-export type OverlayLevelKind = "entry" | "dca" | "tp" | "liq";
+export type OverlayLevelKind = "entry" | "dca" | "avg" | "tp" | "liq";
 
 /** Упрощённая цена ликвидации на графике не показываем при кроссе (залог на всём счёте — не моделируем как изолированную линию). */
 function shouldDrawLiquidationLevel(tr: TradeRecord, last: DcaGridRow): boolean {
@@ -42,17 +42,37 @@ function levelsFromTrade(tr: TradeRecord, idPrefix: string): ChartOverlayLevel[]
     });
   }
 
-  const last = rows[rows.length - 1];
-  if (last) {
+  // Берём row по **фактически** заполненным уровням — это позиция реально
+  // сложилась после maxDcaIndex исполнений. avg и TP относительно неё,
+  // а не относительно гипотетической полной сетки.
+  const filledCount = Math.max(1, tr.maxDcaIndex);
+  const actualRow = rows[filledCount - 1] ?? rows[rows.length - 1];
+
+  if (actualRow) {
+    // Средняя цена входа после фактических усреднений. Показываем только
+    // если усреднений было больше одного (иначе avg == entry, дублируем).
+    if (filledCount > 1) {
+      levels.push({
+        price: actualRow.avgPrice,
+        label: idPrefix ? `${idPrefix}AVG` : "Средняя",
+        color: "#8b5cf6", // violet — выделяется среди entry/dca/tp/liq
+        kind: "avg",
+      });
+    }
+
+    // TP по фактической средней — куда реально закроется позиция.
+    // Раньше брали last row (полная сетка), что давало неточный TP, если
+    // не все DCA заполнились.
     levels.push({
-      price: last.takeProfitPrice,
+      price: actualRow.takeProfitPrice,
       label: idPrefix ? `${idPrefix}TP` : "Take profit",
       color: "#34d399",
       kind: "tp",
     });
-    if (shouldDrawLiquidationLevel(tr, last)) {
+
+    if (shouldDrawLiquidationLevel(tr, actualRow)) {
       levels.push({
-        price: last.approxLiquidationPrice,
+        price: actualRow.approxLiquidationPrice,
         label: idPrefix ? `${idPrefix}Ликвидация ~` : "Ликвидация ~",
         color: "#ef4444",
         kind: "liq",
