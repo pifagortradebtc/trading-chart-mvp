@@ -89,8 +89,11 @@ export function BacktestPage() {
    * Опциональный пользовательский период бэктеста — срез внутри загруженных `yearsBack`.
    * Формат: "YYYY-MM-DD" (UTC), пустая строка = «не задано».
    * Сами свечи всё равно грузятся за yearsBack (кеш не ломаем), а в run() — фильтр.
+   *
+   * Дефолт: 2025-05-25 (≈ актуальный период живых данных, чтобы не считать 8-летнюю историю
+   * при каждом первом запуске). Очистка дат → бэктест по всей загруженной истории.
    */
-  const [customStartDate, setCustomStartDate] = useState<string>("");
+  const [customStartDate, setCustomStartDate] = useState<string>("2025-05-25");
   const [customEndDate, setCustomEndDate] = useState<string>("");
   const [source, setSource] = useState<"binance" | "csv">("binance");
   /** Включите, чтобы игнорировать IndexedDB и заново тянуть полный ряд (редко нужно). */

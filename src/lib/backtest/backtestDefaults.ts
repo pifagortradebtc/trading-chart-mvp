@@ -73,8 +73,11 @@ export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
 
 export const DEFAULT_DCA: DcaBotSettings = {
   startDepositUsdt: 10_000,
-  /** Полный баланс кошелька (торговый депозит + поддерживающая маржа / залог). */
-  walletBalanceUsdt: 40_000,
+  /**
+   * Полный баланс счёта = депозит + доп. свободный баланс под другие стратегии.
+   * По умолчанию = startDepositUsdt (доп. баланс 0) — UI «Доп. свободный баланс» нулевой.
+   */
+  walletBalanceUsdt: 10_000,
   marginMode: "cross",
   /** 7% от торгового депозита — первый ордер сетки. */
   firstOrderDepositPct: 7,

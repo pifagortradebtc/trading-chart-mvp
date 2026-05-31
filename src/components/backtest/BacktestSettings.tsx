@@ -168,13 +168,9 @@ export function BacktestSettingsForm({
 }) {
   /**
    * Логика «будут ли реально такие сделки» совпадает с движком (backtestEngine.ts:92-94):
-   *   long  = allowLong  && (mode === "long"  || mode === "auto")
    *   short = allowShort && (mode === "short" || mode === "auto")
-   * Используем для дизейбла полей, которые относятся только к одной стороне.
+   * Используем для дизейбла «Первый ордер %» (это SHORT-only поле).
    */
-  const willTradeLong =
-    settings.dca.allowLong &&
-    (settings.dca.mode === "long" || settings.dca.mode === "auto");
   const willTradeShort =
     settings.dca.allowShort &&
     (settings.dca.mode === "short" || settings.dca.mode === "auto");
@@ -212,6 +208,61 @@ export function BacktestSettingsForm({
       ...settings,
       sellForce: { ...settings.sellForce, ...partial },
     });
+
+  /**
+   * Упрощённая модель «как думает трейдер» поверх Pine-полей под капотом:
+   *   Депозит       = startDepositUsdt (счёт под стратегию, база метрик)
+   *   Плечо         = leverage
+   *   Маржа/сделку  = gridTotalNotionalUsdt / leverage (реальный залог при full grid)
+   *   Доп. баланс   = max(0, walletBalanceUsdt − startDepositUsdt) (страхует в Cross)
+   *
+   * Под капотом всё остаётся в старых полях типа DcaBotSettings — старые снимки
+   * без миграций раскладываются обратно (extra просто будет 0..N).
+   */
+  const dca = settings.dca;
+  const gridNotionalEffective =
+    dca.gridTotalNotionalUsdt && dca.gridTotalNotionalUsdt > 0
+      ? dca.gridTotalNotionalUsdt
+      : dca.startDepositUsdt;
+  const marginPerTradeUsdt = dca.leverage > 0 ? gridNotionalEffective / dca.leverage : 0;
+  const marginPctOfDepo =
+    dca.startDepositUsdt > 0 ? (marginPerTradeUsdt / dca.startDepositUsdt) * 100 : 0;
+  const extraFreeBalance = Math.max(0, dca.walletBalanceUsdt - dca.startDepositUsdt);
+  const walletTotalUsdt = dca.startDepositUsdt + extraFreeBalance;
+  const freeBufferAfterTrade = Math.max(0, walletTotalUsdt - marginPerTradeUsdt);
+
+  /** Изменения «как трейдер» → правильно раскладываем в Pine-поля. */
+  const setDeposit = (newDepo: number) => {
+    const depo = Number.isFinite(newDepo) && newDepo > 0 ? newDepo : 0;
+    patchDca({
+      startDepositUsdt: depo,
+      walletBalanceUsdt: depo + extraFreeBalance,
+      /** Сохраняем долю маржи: gridNotional = margin% × depo × leverage. */
+      gridTotalNotionalUsdt:
+        marginPctOfDepo > 0 && depo > 0
+          ? (depo * marginPctOfDepo * dca.leverage) / 100
+          : depo,
+    });
+  };
+  const setLeverage = (newLev: number) => {
+    const lev = Number.isFinite(newLev) && newLev > 0 ? newLev : 1;
+    /** Маржу держим постоянной → номинал масштабируется с плечом. */
+    patchDca({
+      leverage: lev,
+      gridTotalNotionalUsdt: marginPerTradeUsdt * lev,
+    });
+  };
+  const setMarginUsdt = (newMargin: number) => {
+    const m = Number.isFinite(newMargin) && newMargin > 0 ? newMargin : 0;
+    /** Cap: маржа не может быть больше депозита (иначе бот залезет в чужие деньги). */
+    const capped = Math.min(m, dca.startDepositUsdt);
+    patchDca({ gridTotalNotionalUsdt: capped * dca.leverage });
+  };
+  const setExtraFreeBalance = (newExtra: number) => {
+    const extra = Number.isFinite(newExtra) && newExtra > 0 ? newExtra : 0;
+    patchDca({ walletBalanceUsdt: dca.startDepositUsdt + extra });
+  };
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
@@ -722,22 +773,168 @@ export function BacktestSettingsForm({
           settings.strategyKind === "buyforce_dca" ||
           settings.strategyKind === "sellforce_dca" ? (
             <>
+          {/* Капитал и плечо — три простых поля как думает трейдер */}
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>
-                Торговый депозит USDT
+                Депозит USDT (на счёте под стратегию)
                 <Tip>
-                  Сумма на торговом счёте, которая участвует в расчёте сетки бота (ордера, номинал). Не весь
-                  кошелёк — только выделенный под эту стратегию торговый капитал.
+                  Сумма USDT, выделенная под этого DCA-бота. От неё считаются все %-метрики
+                  (Return%, MaxDD%). Если у тебя на бирже есть ещё деньги под другие стратегии,
+                  укажи их ниже в «Доп. свободный баланс».
                 </Tip>
               </span>
               <input
                 type="number"
+                min={0}
+                step={1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.startDepositUsdt}
+                onChange={(e) => setDeposit(Number(e.target.value))}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Плечо
+                <Tip>
+                  При изменении плеча «Маржа на сделку» фиксируется, а номинал позиции масштабируется.
+                  Пример: маржа 2500 USDT × плечо 4 = номинал 10 000 USDT.
+                </Tip>
+              </span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.dca.leverage}
+                onChange={(e) => setLeverage(Number(e.target.value))}
+              />
+            </label>
+          </div>
+
+          {/* Маржа на сделку — главное поле «сколько реально торгуется» */}
+          <label className="flex flex-col gap-1">
+            <span>
+              Маржа на сделку USDT
+              <Tip>
+                Реальный залог, который замораживается на счёте при полном заполнении DCA-сетки.
+                Должна быть ≤ депозиту. Номинал позиции (face value) = маржа × плечо — именно эта сумма
+                распределяется по ордерам сетки. Эквивалентно Pine `marginPerTrade / leverage`.
+              </Tip>
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                max={settings.dca.startDepositUsdt}
+                className="flex-1 rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={Math.round(marginPerTradeUsdt * 100) / 100}
+                onChange={(e) => setMarginUsdt(Number(e.target.value))}
+              />
+              <span className="whitespace-nowrap font-mono text-[11px] text-[#787b86]">
+                ≈ {marginPctOfDepo.toFixed(1)}% депо
+              </span>
+            </div>
+            <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 rounded-md border border-cyan-500/20 bg-cyan-500/[0.04] px-2 py-1.5 text-[10.5px]">
+              <span className="text-[#787b86]">Номинал позиции (full grid):</span>
+              <span className="text-right font-mono text-cyan-200">
+                {(marginPerTradeUsdt * settings.dca.leverage).toLocaleString("ru-RU", {
+                  maximumFractionDigits: 0,
+                })}{" "}
+                USDT
+              </span>
+              <span className="text-[#787b86]">Свободно на счёте после full grid:</span>
+              <span className="text-right font-mono text-emerald-200">
+                {freeBufferAfterTrade.toLocaleString("ru-RU", {
+                  maximumFractionDigits: 0,
+                })}{" "}
+                USDT
+              </span>
+              {isCrossMargin && (
+                <span className="col-span-2 text-[10px] text-[#787b86]">
+                  В Cross этот буфер страхует позицию от ликвидации (биржа считает по всему счёту).
+                </span>
+              )}
+            </div>
+          </label>
+
+          {/* Тип маржи + опц. доп. баланс на счёте сверх депо */}
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>
+                Тип маржи
+                <Tip>
+                  Cross: ликвидация считается от всего счёта (депозит + доп. баланс). Isolated: только от
+                  маржи, посланной на позицию — ликвидация значительно ближе.
+                </Tip>
+              </span>
+              <select
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                value={settings.dca.marginMode}
                 onChange={(e) =>
-                  patchDca({ startDepositUsdt: Number(e.target.value) })
+                  patchDca({
+                    marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
+                  })
                 }
+              >
+                <option value="isolated">Изолированная</option>
+                <option value="cross">Кросс</option>
+              </select>
+            </label>
+            <label
+              className={`flex flex-col gap-1 ${isCrossMargin ? "" : inactiveClass}`}
+              title={
+                isCrossMargin
+                  ? undefined
+                  : "В Isolated-режиме ликвидация считается только от маржи позиции; доп. баланс не страхует."
+              }
+            >
+              <span>
+                Доп. свободный баланс на счёте USDT (опц.)
+                {!isCrossMargin && (
+                  <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
+                    только CROSS
+                  </span>
+                )}
+                <Tip>
+                  Если на бирже под другие стратегии лежат ещё деньги — укажи их здесь. В Cross-режиме они
+                  страхуют эту позицию от ликвидации (эффективное плечо для ликвидации ↓). На размеры
+                  ордеров и метрики НЕ влияет — только на оценку ликвидации.
+                </Tip>
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                disabled={!isCrossMargin}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
+                value={extraFreeBalance}
+                onChange={(e) => setExtraFreeBalance(Number(e.target.value))}
+              />
+              {isCrossMargin ? (
+                <span className="text-[10px] text-[#6b7280]">
+                  Полный кошелёк для ликвидации: {walletTotalUsdt.toLocaleString("ru-RU")} USDT
+                </span>
+              ) : (
+                <span className="text-[10px] text-[#6b7280]">
+                  Поле активно только в Cross. В Isolated ликвидация = от маржи позиции.
+                </span>
+              )}
+            </label>
+          </div>
+
+          {/* Параметры сетки */}
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>Ордеров в сетке</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+                value={settings.dca.ordersCount}
+                onChange={(e) => patchDca({ ordersCount: Number(e.target.value) })}
               />
             </label>
             <label
@@ -745,20 +942,20 @@ export function BacktestSettingsForm({
               title={
                 willTradeShort
                   ? undefined
-                  : "В режиме «Только LONG» это поле не используется. LONG-сетка строится из «Сумма сетки» ниже (или из торгового депозита), а первый ордер выводится обратной формулой через volumeFactor."
+                  : "В режиме «Только LONG» это поле не используется. LONG-сетка строится из «Маржа на сделку» × плечо через volumeFactor."
               }
             >
               <span>
-                Первый ордер, % от торгового депозита
+                Первый ордер, % от депозита
                 {!willTradeShort && (
                   <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
                     только SHORT
                   </span>
                 )}
                 <Tip>
-                  Первый ордер = торговый депозит × % / 100. Процент считается именно от торгового депозита, не от
-                  полного баланса кошелька. Используется ТОЛЬКО для SHORT-сетки; для LONG распределение задаётся
-                  «Сумма сетки» / депозитом и volumeFactor.
+                  Используется ТОЛЬКО для SHORT: первый ордер = депозит × % / 100, остальные =
+                  первый × volumeFactor^i. Сумма SHORT-сетки набегает свободно.
+                  В LONG это поле игнорируется — там сумма сетки = маржа × плечо.
                 </Tip>
               </span>
               <input
@@ -781,136 +978,13 @@ export function BacktestSettingsForm({
                   ).toLocaleString("ru-RU", {
                     maximumFractionDigits: 2,
                   })}{" "}
-                  USDT — первый SHORT-ордер при текущем депозите
+                  USDT — первый SHORT-ордер
                 </span>
               ) : (
                 <span className="text-[10px] text-[#6b7280]">
-                  Не применяется в LONG-режиме: размер LONG-ордеров диктуется «Сумма сетки» и volumeFactor.
+                  Не применяется в LONG: размер LONG-сетки = «Маржа на сделку» × плечо.
                 </span>
               )}
-            </label>
-          </div>
-          <label
-            className={`flex flex-col gap-1 ${willTradeLong ? "" : inactiveClass}`}
-            title={
-              willTradeLong
-                ? undefined
-                : "В режиме «Только SHORT» это поле не используется. SHORT-сетка строится от «Первый ордер %» × volumeFactor^i — сумма набегает свободно."
-            }
-          >
-            <span>
-              Сумма номиналов сетки USDT (Pine marginPerTrade)
-              {!willTradeLong && (
-                <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
-                  только LONG
-                </span>
-              )}
-              <Tip>
-                Опционально: если задано, сумма USDT по всем ордерам лонг-сетки равна этому значению (как в Pine).
-                Пустое поле — используется торговый депозит. Используется ТОЛЬКО для LONG-сетки.
-              </Tip>
-            </span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              disabled={!willTradeLong}
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
-              value={settings.dca.gridTotalNotionalUsdt ?? ""}
-              placeholder={`по умолчанию ${settings.dca.startDepositUsdt}`}
-              onChange={(e) =>
-                patchDca({
-                  gridTotalNotionalUsdt:
-                    e.target.value === "" || Number(e.target.value) <= 0
-                      ? undefined
-                      : Number(e.target.value),
-                })
-              }
-            />
-            {!willTradeLong && (
-              <span className="text-[10px] text-[#6b7280]">
-                Не применяется в SHORT-режиме: распределение SHORT-сетки идёт от «Первый ордер %» × volumeFactor.
-              </span>
-            )}
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
-              <span>
-                Тип маржи
-                <Tip>
-                  Кросс: в расчётах бэктеста учитывается соотношение полного баланса к торговому депозиту
-                  (упрощённая модель ликвидации). Изолированная: только equity стратегии от торгового депозита.
-                </Tip>
-              </span>
-              <select
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
-                value={settings.dca.marginMode}
-                onChange={(e) =>
-                  patchDca({
-                    marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
-                  })
-                }
-              >
-                <option value="isolated">Изолированная</option>
-                <option value="cross">Кросс</option>
-              </select>
-            </label>
-            <label
-              className={`flex flex-col gap-1 ${isCrossMargin ? "" : inactiveClass}`}
-              title={
-                isCrossMargin
-                  ? undefined
-                  : "В Isolated маржинальном режиме ликвидация считается только от торгового депозита, поле игнорируется."
-              }
-            >
-              <span>
-                Баланс кошелька USDT (всего на счёте)
-                {!isCrossMargin && (
-                  <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
-                    только CROSS
-                  </span>
-                )}
-                <Tip>
-                  Полный баланс аккаунта: торговый депозит + средства под поддерживающую маржу и общий залог при
-                  кроссе. В сетку и первый ордер % заходит только торговый депозит; остальное — запас ликвидности
-                  на счёте (в модели кросса от этого зависит масштаб оценки ликвидации относительно торгового депозита).
-                  При изолированной марже поле для расчёта ликвидации не используется.
-                </Tip>
-              </span>
-              <input
-                type="number"
-                min={0}
-                step={1}
-                disabled={!isCrossMargin}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
-                value={settings.dca.walletBalanceUsdt}
-                onChange={(e) => patchDca({ walletBalanceUsdt: Number(e.target.value) })}
-              />
-              {!isCrossMargin && (
-                <span className="text-[10px] text-[#6b7280]">
-                  Активно только в Cross-режиме: тогда отношение wallet/depo уменьшает эффективное плечо для ликвидации.
-                </span>
-              )}
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
-              <span>Плечо</span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.dca.leverage}
-                onChange={(e) => patchDca({ leverage: Number(e.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Ордеров в сетке</span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.dca.ordersCount}
-                onChange={(e) => patchDca({ ordersCount: Number(e.target.value) })}
-              />
             </label>
           </div>
           <label className="flex flex-col gap-1">
