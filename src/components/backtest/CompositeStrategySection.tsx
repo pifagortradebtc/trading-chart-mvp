@@ -345,76 +345,136 @@ export function CompositeStrategySection({
             <div className="space-y-3">
 
             {slot.kind === "buyforce_dca" && slot.buyForce ? (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Уровень нуля</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.buyForce.zeroLevel}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        buyForce: { ...slot.buyForce!, zeroLevel: Number(e.target.value) },
-                      })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Задержка (баров)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.buyForce.cooldownBars}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        buyForce: {
-                          ...slot.buyForce!,
-                          cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
-                        },
-                      })
-                    }
-                  />
-                </label>
+              <div className="space-y-2 text-xs">
+                <p className="rounded-md border border-emerald-500/25 bg-emerald-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-emerald-100/80">
+                  📈 Формула: <code className="font-mono">RO = (bid_3 − ask_8) / ask_1.5</code>. Cross-up
+                  через «Уровень нуля» = LONG-сигнал. Требует depth-данные с Pifagor VPS.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Уровень нуля</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.buyForce.zeroLevel}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          buyForce: { ...slot.buyForce!, zeroLevel: Number(e.target.value) },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Сглаживание SMA
+                      <Tip>
+                        1 = без сглаживания (как раньше). &gt;1 = усреднение RO за N
+                        последних баров. Соответствует «smooth_length» в оригинальном
+                        TV-индикаторе.
+                      </Tip>
+                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.buyForce.smoothingLength ?? 1}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          buyForce: {
+                            ...slot.buyForce!,
+                            smoothingLength: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Задержка (баров)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.buyForce.cooldownBars}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          buyForce: {
+                            ...slot.buyForce!,
+                            cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
               </div>
             ) : null}
 
             {slot.kind === "sellforce_dca" && slot.sellForce ? (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Уровень нуля</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.sellForce.zeroLevel}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        sellForce: { ...slot.sellForce!, zeroLevel: Number(e.target.value) },
-                      })
-                    }
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Задержка (баров)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
-                    value={slot.sellForce.cooldownBars}
-                    onChange={(e) =>
-                      patchSlot(slot.id, {
-                        sellForce: {
-                          ...slot.sellForce!,
-                          cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
-                        },
-                      })
-                    }
-                  />
-                </label>
+              <div className="space-y-2 text-xs">
+                <p className="rounded-md border border-rose-500/25 bg-rose-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-rose-100/80">
+                  📉 Формула: <code className="font-mono">RO = (ask_3 − bid_8) / bid_1.5</code>. Cross-up
+                  через «Уровень нуля» = SHORT-сигнал. Требует depth-данные с Pifagor VPS.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Уровень нуля</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.sellForce.zeroLevel}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          sellForce: { ...slot.sellForce!, zeroLevel: Number(e.target.value) },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">
+                      Сглаживание SMA
+                      <Tip>
+                        1 = без сглаживания. &gt;1 = усреднение RO за N последних баров.
+                      </Tip>
+                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.sellForce.smoothingLength ?? 1}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          sellForce: {
+                            ...slot.sellForce!,
+                            smoothingLength: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[#787b86]">Задержка (баров)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                      value={slot.sellForce.cooldownBars}
+                      onChange={(e) =>
+                        patchSlot(slot.id, {
+                          sellForce: {
+                            ...slot.sellForce!,
+                            cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
               </div>
             ) : null}
 

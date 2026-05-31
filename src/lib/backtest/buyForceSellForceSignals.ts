@@ -26,21 +26,30 @@ export interface BuyForceSettings {
   zeroLevel: number;
   /** Минимум баров между сигналами (как в Chaikin). */
   cooldownBars: number;
+  /**
+   * SMA-сглаживание RO. 1 = без сглаживания (как раньше), >1 = усреднение
+   * за N последних баров. Помогает фильтровать шумовые мгновенные cross-up.
+   * Соответствует параметру «smooth_length» в TV-индикаторе.
+   */
+  smoothingLength: number;
 }
 
 export interface SellForceSettings {
   zeroLevel: number;
   cooldownBars: number;
+  smoothingLength: number;
 }
 
 export const DEFAULT_BUYFORCE_SETTINGS: BuyForceSettings = {
   zeroLevel: 0,
   cooldownBars: 1,
+  smoothingLength: 1,
 };
 
 export const DEFAULT_SELLFORCE_SETTINGS: SellForceSettings = {
   zeroLevel: 0,
   cooldownBars: 1,
+  smoothingLength: 1,
 };
 
 // ─── Compute RO ───────────────────────────────────────────────────────────────
@@ -77,6 +86,35 @@ function indexDepthByTime(bars: DepthBar[]): Map<number, DepthBar> {
 }
 
 /**
+ * Trailing SMA по массиву RO (NaN-aware). Используется для сглаживания
+ * RO перед edge-detection. window=1 → возвращает исходный массив.
+ */
+function smoothRoArray(ro: number[], window: number): number[] {
+  const w = Math.max(1, Math.floor(window));
+  if (w === 1) return ro.slice();
+  const n = ro.length;
+  const out = new Array<number>(n).fill(Number.NaN);
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    const v = ro[i]!;
+    if (Number.isFinite(v)) {
+      sum += v;
+      count++;
+    }
+    if (i >= w) {
+      const drop = ro[i - w]!;
+      if (Number.isFinite(drop)) {
+        sum -= drop;
+        count--;
+      }
+    }
+    if (count === w) out[i] = sum / w;
+  }
+  return out;
+}
+
+/**
  * Универсальный расчёт edge-trigger по любой RO-формуле.
  * Используется и для BuyForce, и для SellForce.
  */
@@ -86,31 +124,35 @@ function computeEdgeSignals(
   computeRo: (b: DepthBar) => number,
   zeroLevel: number,
   cooldownBars: number,
+  smoothingLength: number,
 ): DepthSignalResult {
   const byT = indexDepthByTime(depthBars);
   const n = candles.length;
-  const ro = new Array<number>(n).fill(Number.NaN);
+  const rawRo = new Array<number>(n).fill(Number.NaN);
   const active = new Array<boolean>(n).fill(false);
-
-  let prevRo = Number.NaN;
-  let lastSignalIdx = -Infinity;
   let depthBarsAvailable = 0;
   let missingDepth = 0;
 
+  /** Шаг 1: вычисляем raw RO для каждого бара (или NaN если depth missing). */
   for (let i = 0; i < n; i++) {
     const candle = candles[i];
-    // candle.time — unix seconds (lightweight-charts convention)
     const depth = byT.get(candle.time);
     if (!depth) {
       missingDepth++;
-      // Не двигаем prev_ro: оставляем как было, чтобы edge на следующем
-      // baren с данными считался относительно последнего известного RO.
       continue;
     }
     depthBarsAvailable++;
-    const currRo = computeRo(depth);
-    ro[i] = currRo;
+    rawRo[i] = computeRo(depth);
+  }
 
+  /** Шаг 2: применяем сглаживание (если smoothingLength > 1). */
+  const ro = smoothRoArray(rawRo, smoothingLength);
+
+  /** Шаг 3: edge-detection на сглаженном RO. */
+  let prevRo = Number.NaN;
+  let lastSignalIdx = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const currRo = ro[i]!;
     if (Number.isFinite(prevRo) && Number.isFinite(currRo)) {
       const crossedUp = prevRo <= zeroLevel && currRo > zeroLevel;
       if (crossedUp && i - lastSignalIdx > cooldownBars) {
@@ -138,6 +180,7 @@ export function computeBuyForceSignals(
     computeBuyForceRo,
     settings.zeroLevel,
     Math.max(0, Math.floor(settings.cooldownBars)),
+    Math.max(1, Math.floor(settings.smoothingLength ?? 1)),
   );
 }
 
@@ -155,6 +198,7 @@ export function computeSellForceSignals(
     computeSellForceRo,
     settings.zeroLevel,
     Math.max(0, Math.floor(settings.cooldownBars)),
+    Math.max(1, Math.floor(settings.smoothingLength ?? 1)),
   );
 }
 
