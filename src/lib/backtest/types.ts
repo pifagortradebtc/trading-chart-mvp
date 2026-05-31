@@ -5,8 +5,24 @@
 import type { Candle } from "@/types/candle";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
 import type { Pivot21Settings } from "./pivot21Types";
+import type {
+  BuyForceSettings,
+  SellForceSettings,
+} from "./buyForceSellForceSignals";
 
-export type BacktestStrategyKind = "chaik_dca" | "pifagor_alts" | "pivot21";
+/**
+ * Внимание: `"chaik_dca"` (V2_ЧайкКельт) формально остался в enum для
+ * type-safety старых снимков снапшотов и условий по коду, но **снят с
+ * UI dropdown и engine**: при попытке запустить runBacktest с этим
+ * kind движок бросит ошибку. Миграция: `normalizeStrategyKind()`
+ * автоматически переводит `chaik_dca` → `buyforce_dca`.
+ */
+export type BacktestStrategyKind =
+  | "chaik_dca"
+  | "buyforce_dca"
+  | "sellforce_dca"
+  | "pifagor_alts"
+  | "pivot21";
 
 export type TradeDirection = "long" | "short";
 export type DirectionMode = "long" | "short" | "auto";
@@ -110,6 +126,12 @@ export interface BacktestSettings {
   pifagorAlts: PifagorAltsSettings;
   /** Учитывается при strategyKind === "pivot21". */
   pivot21: Pivot21Settings;
+  /** Учитывается при strategyKind === "buyforce_dca". RO пересекает zero_level ↑ → long. */
+  buyForce: BuyForceSettings;
+  /** Учитывается при strategyKind === "sellforce_dca". RO пересекает zero_level ↑ → short. */
+  sellForce: SellForceSettings;
+  /** Таймфрейм depth-данных для buyforce/sellforce. Должен совпадать с интервалом OHLCV. */
+  depthInterval: "1m" | "5m" | "15m" | "1h";
 }
 
 export interface DcaGridRow {

@@ -7,7 +7,16 @@
  */
 
 import type { Candle } from "@/types/candle";
-import { computeChaikSignals } from "./chaikKeltSignal";
+// Тип ChaikComputedSeries сохранён для shape переменной `series` —
+// поля массивов ATR/ADX/RSI используются в общей DCA-логике (limit entry, etc).
+// Для buyforce/sellforce стратегий заполняется через makeEmptySeries() (NaN).
+// computeChaikSignals удалён — стратегия chaik_dca снята с UI/engine.
+import type { ChaikComputedSeries } from "./chaikKeltSignal";
+import {
+  computeBuyForceSignals,
+  computeSellForceSignals,
+} from "./buyForceSellForceSignals";
+import type { DepthBar } from "./depthTypes";
 import { buildDcaGrid } from "./dcaGrid";
 import { runPifagorAltsBacktest } from "./pifagorAltsEngine";
 import { runPivot21Backtest } from "./pivot21Engine";
@@ -441,6 +450,29 @@ function createOpenTrade(
   };
 }
 
+/**
+ * Мок ChaikComputedSeries для стратегий, которые не используют Chaikin/Keltner
+ * (buyforce_dca / sellforce_dca). Все массивы — NaN: `Number.isFinite(atrKelt[i])`
+ * вернёт false → лимитного входа нет → market entry на open следующего бара.
+ */
+function makeEmptySeries(n: number): ChaikComputedSeries {
+  const arr = () => new Array<number>(n).fill(Number.NaN);
+  return {
+    chOsc: arr(),
+    adx: arr(),
+    diPlus: arr(),
+    diMinus: arr(),
+    rsiVal: arr(),
+    emaPullback: arr(),
+    kUpper: arr(),
+    kLower: arr(),
+    rangeHigh: arr(),
+    rangeLow: arr(),
+    rangePosPct: arr(),
+    atrKelt: arr(),
+  };
+}
+
 export function runBacktest(
   candles: Candle[],
   symbol: string,
@@ -450,6 +482,8 @@ export function runBacktest(
   chartIntervalMs?: number,
   /** Интервал графика в Binance-формате (15m, 1h, ...) — Pifagor 21 использует его как fallback `pivotTf`. */
   intervalLabel?: string,
+  /** Order-book depth-серия для стратегий `buyforce_dca` / `sellforce_dca`. */
+  depthBars?: DepthBar[],
 ): BacktestResult {
   if (settings.strategyKind === "pifagor_alts") {
     if (!dailyCandles?.length || chartIntervalMs == null) {
@@ -484,10 +518,49 @@ export function runBacktest(
   const signalsOut: (boolean | null)[] = new Array(n).fill(null);
   const metaOut: (SignalBarState | null)[] = new Array(n).fill(null);
 
-  const { longActive, shortActive, meta, series } = computeChaikSignals(
-    candles,
-    settings.indicator,
-  );
+  /**
+   * Универсальный слой сигналов: какая бы стратегия ни была (chaik_dca / buyforce_dca /
+   * sellforce_dca), на этом шаге получаем longActive[], shortActive[], meta[] и series.
+   * Дальнейшая DCA-логика — общая.
+   *
+   * Для buyforce/sellforce — `series` это мок с массивами NaN (ATR Кельтнера не считается,
+   * лимитного входа нет → market entry на open следующего бара).
+   */
+  let longActive: boolean[];
+  let shortActive: boolean[];
+  let meta: (SignalBarState | null)[];
+  let series: ChaikComputedSeries;
+
+  if (settings.strategyKind === "buyforce_dca") {
+    if (!depthBars?.length) {
+      throw new Error(
+        "BuyForce: передайте depthBars (order-book depth серия). Включите load в BacktestPage.",
+      );
+    }
+    const r = computeBuyForceSignals(candles, depthBars, settings.buyForce);
+    longActive = r.active;
+    shortActive = new Array<boolean>(n).fill(false);
+    meta = new Array<SignalBarState | null>(n).fill(null);
+    series = makeEmptySeries(n);
+  } else if (settings.strategyKind === "sellforce_dca") {
+    if (!depthBars?.length) {
+      throw new Error(
+        "SellForce: передайте depthBars (order-book depth серия). Включите load в BacktestPage.",
+      );
+    }
+    const r = computeSellForceSignals(candles, depthBars, settings.sellForce);
+    longActive = new Array<boolean>(n).fill(false);
+    shortActive = r.active;
+    meta = new Array<SignalBarState | null>(n).fill(null);
+    series = makeEmptySeries(n);
+  } else {
+    // Любая стратегия которая не обрабатывается выше — ошибка конфигурации.
+    // Был "chaik_dca" (V2_ЧайкКельт) — снят с UI/engine, заменён BuyForce/SellForce.
+    throw new Error(
+      `Неизвестная стратегия: ${String(settings.strategyKind)}. ` +
+        `Поддерживается: buyforce_dca, sellforce_dca, pifagor_alts, pivot21.`,
+    );
+  }
 
   let equity = settings.dca.startDepositUsdt;
   const equityCurve: EquityPoint[] = [];

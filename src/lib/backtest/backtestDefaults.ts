@@ -1,6 +1,12 @@
 import type { BacktestSettings, ChaikKeltSettings, DcaBotSettings } from "./types";
 import type { PifagorAltsSettings } from "./pifagorAltsTypes";
 import type { Pivot21Settings } from "./pivot21Types";
+import {
+  DEFAULT_BUYFORCE_SETTINGS,
+  DEFAULT_SELLFORCE_SETTINGS,
+  type BuyForceSettings,
+  type SellForceSettings,
+} from "./buyForceSellForceSignals";
 
 /**
  * Стандартные input Pine `V2_ЧайкКельт` (значения по умолчанию в скрипте).
@@ -166,7 +172,7 @@ export function migrateDcaSettings(
 }
 
 export const DEFAULT_BACKTEST: BacktestSettings = {
-  strategyKind: "chaik_dca",
+  strategyKind: "buyforce_dca",
   portfolioAltsMode: false,
   entryTiming: "next_open",
   executionOrder: "conservative",
@@ -174,17 +180,45 @@ export const DEFAULT_BACKTEST: BacktestSettings = {
   dca: DEFAULT_DCA,
   pifagorAlts: DEFAULT_PIFAGOR_ALTS,
   pivot21: DEFAULT_PIVOT21,
+  buyForce: DEFAULT_BUYFORCE_SETTINGS,
+  sellForce: DEFAULT_SELLFORCE_SETTINGS,
+  depthInterval: "1h",
 };
 
-/** Допустимые значения BacktestStrategyKind для нормализации raw input. */
+/**
+ * Допустимые значения BacktestStrategyKind для нормализации raw input.
+ *
+ * Историческое значение `"chaik_dca"` (V2_ЧайкКельт) автоматически
+ * мигрирует на `"buyforce_dca"` — стратегия удалена из UI/engine.
+ * Это нужно для совместимости со старыми снимками снапшотов и
+ * сохранёнными настройками юзера.
+ */
 function normalizeStrategyKind(raw: unknown): BacktestSettings["strategyKind"] {
-  if (raw === "pifagor_alts" || raw === "pivot21" || raw === "chaik_dca") return raw;
-  return "chaik_dca";
+  if (
+    raw === "pifagor_alts" ||
+    raw === "pivot21" ||
+    raw === "buyforce_dca" ||
+    raw === "sellforce_dca"
+  ) {
+    return raw;
+  }
+  // Legacy: chaik_dca → buyforce_dca.
+  return "buyforce_dca";
+}
+
+/** Допустимые depth-таймфреймы. Pifagor VPS отдаёт только эти 4 уровня. */
+function normalizeDepthInterval(
+  raw: unknown,
+): BacktestSettings["depthInterval"] {
+  if (raw === "1m" || raw === "5m" || raw === "15m" || raw === "1h") return raw;
+  return "1h";
 }
 
 /** Слияние снимка / частичного JSON с актуальными дефолтами (новые поля стратегии Pifagor). */
 export function migrateBacktestSettings(raw: Partial<BacktestSettings>): BacktestSettings {
   const sk = normalizeStrategyKind(raw.strategyKind);
+  const buyForce: BuyForceSettings = { ...DEFAULT_BUYFORCE_SETTINGS, ...raw.buyForce };
+  const sellForce: SellForceSettings = { ...DEFAULT_SELLFORCE_SETTINGS, ...raw.sellForce };
   const base: BacktestSettings = {
     ...DEFAULT_BACKTEST,
     ...raw,
@@ -197,6 +231,9 @@ export function migrateBacktestSettings(raw: Partial<BacktestSettings>): Backtes
     dca: migrateDcaSettings({ ...DEFAULT_DCA, ...raw.dca }),
     pifagorAlts: { ...DEFAULT_PIFAGOR_ALTS, ...raw.pifagorAlts },
     pivot21: { ...DEFAULT_PIVOT21, ...raw.pivot21 },
+    buyForce,
+    sellForce,
+    depthInterval: normalizeDepthInterval(raw.depthInterval),
   };
   if (sk === "pifagor_alts") {
     return applyPifagorTvDefaults(base, {

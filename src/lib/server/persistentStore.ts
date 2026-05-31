@@ -22,6 +22,24 @@ export function snapshotsDir(): string {
   return path.join(getPersistentRoot(), "snapshots");
 }
 
+/** Папка кеша для bid/ask depth серий (BuyForce/SellForce backtest). */
+export function bidaskDir(): string {
+  return path.join(getPersistentRoot(), "bidask");
+}
+
+/**
+ * Стабильное имя файла для depth-серии: одна серия на пару + TF + глубину лет.
+ * Префикс "v1_" чтобы оставить место для будущих изменений формата.
+ */
+export function stableBidaskFileName(
+  symbol: string,
+  interval: string,
+  yearsBack: number,
+): string {
+  const sym = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  return `v1_${sym}_${interval}_y${yearsBack}.json`;
+}
+
 export async function ensureDir(dir: string): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
 }

@@ -3,6 +3,7 @@
  */
 
 import type { Candle } from "@/types/candle";
+import type { DepthBar } from "./depthTypes";
 import type { BacktestResult, BacktestSettings } from "./types";
 
 type WorkerSuccess = { ok: true; result: Omit<BacktestResult, "candles"> };
@@ -16,6 +17,8 @@ export function runBacktestOffMainThread(
   dailyCandles?: Candle[],
   chartIntervalMs?: number,
   intervalLabel?: string,
+  /** Depth-серия для buyforce_dca / sellforce_dca. */
+  depthBars?: DepthBar[],
 ): Promise<BacktestResult> {
   if (typeof Worker === "undefined") {
     return Promise.reject(new Error("Web Workers недоступны в этой среде"));
@@ -53,6 +56,7 @@ export function runBacktestOffMainThread(
       settings,
       startMs,
       intervalLabel,
+      depthBars,
     });
   });
 }

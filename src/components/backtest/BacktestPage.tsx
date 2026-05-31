@@ -8,6 +8,8 @@ import {
   parseOhlcvCsv,
   tryLoadOhlcvBrowserCache,
 } from "@/lib/backtest/dataProvider";
+import { loadDepthData } from "@/lib/backtest/depthData";
+import type { DepthBar, DepthInterval } from "@/lib/backtest/depthTypes";
 import { binanceIntervalToMs } from "@/lib/backtest/ohlcvUtils";
 import { runBacktestOffMainThread } from "@/lib/backtest/runBacktestClient";
 import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
@@ -516,6 +518,39 @@ export function BacktestPage() {
           useCache: true,
         });
       }
+
+      // Depth-серия для BuyForce / SellForce (Pifagor VPS API).
+      let depthBars: DepthBar[] | undefined = undefined;
+      const isDepthStrategy =
+        runSettings.strategyKind === "buyforce_dca" ||
+        runSettings.strategyKind === "sellforce_dca";
+      if (isDepthStrategy) {
+        const depthInterval = runSettings.depthInterval as DepthInterval;
+        if (interval !== depthInterval) {
+          throw new Error(
+            `BuyForce/SellForce: интервал графика (${interval}) должен совпадать с depthInterval (${depthInterval}). ` +
+              `Выберите ТФ ${depthInterval} в загрузке OHLCV, либо смените depthInterval в настройках.`,
+          );
+        }
+        setLoadMsg("Загрузка depth-данных (Pifagor VPS)…");
+        const depthRes = await loadDepthData({
+          symbol: effectiveSymbol,
+          interval: depthInterval,
+          startMs,
+          endMs,
+          yearsBack,
+          useCache: true,
+        });
+        depthBars = depthRes.bars;
+        if (depthBars.length === 0) {
+          throw new Error(
+            `BuyForce/SellForce: за окно [${new Date(startMs).toISOString().slice(0, 10)}` +
+              ` .. ${new Date(endMs).toISOString().slice(0, 10)}] нет depth-данных в БД Pifagor. ` +
+              `Полное покрытие — только последние ~9 дней (с 2026-05-23); раньше — разрежённый tardis archive.`,
+          );
+        }
+      }
+
       const res = await runBacktestOffMainThread(
         candles,
         effectiveSymbol,
@@ -524,6 +559,7 @@ export function BacktestPage() {
         dailyCandles,
         binanceIntervalToMs(interval),
         interval,
+        depthBars,
       );
       window.clearInterval(progressTimer);
       setRunProgress(96);

@@ -4,6 +4,7 @@
 
 import type { Candle } from "../types/candle";
 import { runBacktest } from "../lib/backtest/backtestEngine";
+import type { DepthBar } from "../lib/backtest/depthTypes";
 import type { BacktestResult, BacktestSettings } from "../lib/backtest/types";
 
 type BacktestWorkerPayload = {
@@ -15,10 +16,12 @@ type BacktestWorkerPayload = {
   startMs: number;
   /** Binance-формат таймфрейма (15m, 1h, ...) — для Pifagor 21 опц. fallback. */
   intervalLabel?: string;
+  /** Order-book depth серия для стратегий buyforce_dca / sellforce_dca. */
+  depthBars?: DepthBar[];
 };
 
 self.onmessage = (ev: MessageEvent<BacktestWorkerPayload>) => {
-  const { candles, dailyCandles, chartIntervalMs, symbol, settings, startMs, intervalLabel } = ev.data;
+  const { candles, dailyCandles, chartIntervalMs, symbol, settings, startMs, intervalLabel, depthBars } = ev.data;
   try {
     const full = runBacktest(
       candles,
@@ -28,6 +31,7 @@ self.onmessage = (ev: MessageEvent<BacktestWorkerPayload>) => {
       dailyCandles,
       chartIntervalMs,
       intervalLabel,
+      depthBars,
     );
     const { candles: candlesOut, ...rest } = full;
     void candlesOut;

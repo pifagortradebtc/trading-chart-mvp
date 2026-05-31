@@ -2,7 +2,6 @@
 
 import {
   applyPifagorTvDefaults,
-  DEFAULT_CHAIK,
   DEFAULT_PIFAGOR_ALTS,
   DEFAULT_PIFAGOR_DCA,
   DEFAULT_PIVOT21,
@@ -27,8 +26,6 @@ export function BacktestSettingsForm({
 }) {
   const patch = (partial: Partial<BacktestSettings>) =>
     onChange({ ...settings, ...partial });
-  const patchInd = (partial: Partial<BacktestSettings["indicator"]>) =>
-    onChange({ ...settings, indicator: { ...settings.indicator, ...partial } });
   const patchDca = (partial: Partial<BacktestSettings["dca"]>) =>
     onChange({ ...settings, dca: { ...settings.dca, ...partial } });
   const patchPif = (partial: Partial<BacktestSettings["pifagorAlts"]>) =>
@@ -40,6 +37,16 @@ export function BacktestSettingsForm({
     onChange({
       ...settings,
       pivot21: { ...settings.pivot21, ...partial },
+    });
+  const patchBuy = (partial: Partial<BacktestSettings["buyForce"]>) =>
+    onChange({
+      ...settings,
+      buyForce: { ...settings.buyForce, ...partial },
+    });
+  const patchSell = (partial: Partial<BacktestSettings["sellForce"]>) =>
+    onChange({
+      ...settings,
+      sellForce: { ...settings.sellForce, ...partial },
     });
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -76,7 +83,8 @@ export function BacktestSettingsForm({
                 }
               }}
             >
-              <option value="chaik_dca">V2_ЧайкКельт + DCA-сетка</option>
+              <option value="buyforce_dca">Pifagor BuyForce + DCA (LONG)</option>
+              <option value="sellforce_dca">Pifagor SellForce + DCA (SHORT)</option>
               <option value="pifagor_alts">Pifagor ALTS 3.7 (лонг, без сетки)</option>
               <option value="pivot21">Pifagor 21 (Pivot Magnet)</option>
             </select>
@@ -108,322 +116,111 @@ export function BacktestSettingsForm({
         </div>
       </section>
 
-      {settings.strategyKind === "chaik_dca" ? (
+
+      {settings.strategyKind === "buyforce_dca" ||
+      settings.strategyKind === "sellforce_dca" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[#787b86]">
-            Индикатор V2_ЧайкКельт
+            {settings.strategyKind === "buyforce_dca"
+              ? "Индикатор BuyForce (LONG)"
+              : "Индикатор SellForce (SHORT)"}
           </h3>
-          <button
-            type="button"
-            className="rounded-lg border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100 hover:bg-cyan-500/20"
-            title="Все поля блока — значения из Pine по умолчанию (вход в сделку)"
-            onClick={() => patchInd({ ...DEFAULT_CHAIK })}
-          >
-            Как в Pine (дефолты входа)
-          </button>
+          <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[11px] text-emerald-200">
+            {settings.strategyKind === "buyforce_dca"
+              ? "RO = (bid_3 − ask_8) / ask_1.5"
+              : "RO = (ask_3 − bid_8) / bid_1.5"}
+          </span>
         </div>
         <div className="grid gap-3 text-sm">
+          <p className="text-xs leading-relaxed text-[#787b86]">
+            {settings.strategyKind === "buyforce_dca"
+              ? "Триггер LONG: RO пересекает уровень нуля снизу вверх. Один сигнал на одно пересечение (edge trigger)."
+              : "Триггер SHORT: RO пересекает уровень нуля снизу вверх. Один сигнал на одно пересечение (edge trigger)."}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span>
+                Уровень нуля
+                <Tip>
+                  Порог пересечения RO. По умолчанию 0. Можно повысить чтобы фильтровать слабые сигналы
+                  (например +0.05 — войти только при сильном положительном RO).
+                </Tip>
+              </span>
+              <input
+                type="number"
+                step="0.01"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                value={
+                  settings.strategyKind === "buyforce_dca"
+                    ? settings.buyForce.zeroLevel
+                    : settings.sellForce.zeroLevel
+                }
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  if (settings.strategyKind === "buyforce_dca")
+                    patchBuy({ zeroLevel: v });
+                  else patchSell({ zeroLevel: v });
+                }}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span>
+                Cooldown (баров)
+                <Tip>
+                  Минимум баров между сигналами. 1 = можно сразу на следующем баре.
+                  Выше — реже сигналы, меньше шумных входов.
+                </Tip>
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+                value={
+                  settings.strategyKind === "buyforce_dca"
+                    ? settings.buyForce.cooldownBars
+                    : settings.sellForce.cooldownBars
+                }
+                onChange={(e) => {
+                  const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                  if (settings.strategyKind === "buyforce_dca")
+                    patchBuy({ cooldownBars: v });
+                  else patchSell({ cooldownBars: v });
+                }}
+              />
+            </label>
+          </div>
           <label className="flex flex-col gap-1">
-            <span className="text-[#787b86]">
-              Фильтр направления Pine
-              <Tip>auto / только long / только short на уровне индикатора</Tip>
+            <span>
+              Таймфрейм depth-данных
+              <Tip>
+                Должен совпадать с интервалом OHLCV в загрузке выше. Pifagor VPS отдаёт depth
+                с разной плотностью: на 1m только последние ~9 дней полные, на 1h — год.
+              </Tip>
             </span>
             <select
               className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
-              value={settings.indicator.directionFilter}
+              value={settings.depthInterval}
               onChange={(e) =>
-                patchInd({
-                  directionFilter: e.target.value as BacktestSettings["indicator"]["directionFilter"],
+                patch({
+                  depthInterval: e.target.value as BacktestSettings["depthInterval"],
                 })
               }
             >
-              <option value="auto">Auto</option>
-              <option value="long_only">Long only</option>
-              <option value="short_only">Short only</option>
+              <option value="1m">1m (полное покрытие ~9 дней)</option>
+              <option value="5m">5m (умеренное за год)</option>
+              <option value="15m">15m (хорошее за год)</option>
+              <option value="1h">1h (стабильное за весь год) — рекомендуем</option>
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
-              <span>Chaikin fast</span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.chaikinFast}
-                onChange={(e) => patchInd({ chaikinFast: Number(e.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Chaikin slow</span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.chaikinSlow}
-                onChange={(e) => patchInd({ chaikinSlow: Number(e.target.value) })}
-              />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1">
-            <span>
-              ADX порог (боковик ≤)
-              <Tip>Выше — тренд, ниже или равно — боковик в логике сигнала</Tip>
-            </span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-              value={settings.indicator.adxThreshold}
-              onChange={(e) => patchInd({ adxThreshold: Number(e.target.value) })}
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
-              <span>
-                RSI range long &lt;
-                <Tip>Порог RSI для LONG в боковике</Tip>
-              </span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.rsiRangeThresholdLong}
-                onChange={(e) =>
-                  patchInd({ rsiRangeThresholdLong: Number(e.target.value) })
-                }
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>
-                RSI trend long &lt;
-                <Tip>Порог RSI для LONG в тренде</Tip>
-              </span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.rsiTrendThresholdLong}
-                onChange={(e) =>
-                  patchInd({ rsiTrendThresholdLong: Number(e.target.value) })
-                }
-              />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1">
-            <span>Длина EMA отката</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-              value={settings.indicator.emaPullbackLen}
-              onChange={(e) => patchInd({ emaPullbackLen: Number(e.target.value) })}
-            />
-          </label>
-          <div className="grid grid-cols-3 gap-2">
-            <label className="flex flex-col gap-1">
-              <span>Keltner EMA</span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.keltnerEmaLen}
-                onChange={(e) => patchInd({ keltnerEmaLen: Number(e.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Keltner ATR</span>
-              <input
-                type="number"
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.keltnerAtrLen}
-                onChange={(e) => patchInd({ keltnerAtrLen: Number(e.target.value) })}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span>Keltner mult</span>
-              <input
-                type="number"
-                step={0.1}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                value={settings.indicator.keltnerMult}
-                onChange={(e) => patchInd({ keltnerMult: Number(e.target.value) })}
-              />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1">
-            <span>Cooldown (баров)</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-              value={settings.indicator.cooldownBars}
-              onChange={(e) => patchInd({ cooldownBars: Number(e.target.value) })}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span>
-              ТФ Чайкина (метка Pine)
-              <Tip>
-                В Pine осциллятор на `request.security`; в веб-бэктесте ряд совпадает с загруженным ТФ графика.
-                Для сравнения с TV задайте тот же интервал на графике или совпадающий расчёт.
-              </Tip>
-            </span>
-            <input
-              type="text"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-              value={settings.indicator.chaikinTf}
-              onChange={(e) => patchInd({ chaikinTf: e.target.value })}
-            />
-          </label>
-          <div className="rounded-lg border border-[#2e3241] bg-[#0c0e14]/60 px-3 py-2">
-            <p className="mb-2 text-xs text-[#787b86]">
-              Якорь лонга (ОТКАТОМ БЭК V2): при лимите якорь = close − ATR×k, иначе close; ATR по длине Keltner ATR.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.indicator.useLimitRange}
-                  onChange={(e) => patchInd({ useLimitRange: e.target.checked })}
-                />
-                <span>Лимит в боковике</span>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>k ATR (боковик)</span>
-                <input
-                  type="number"
-                  step={0.01}
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.limitRangeAtr}
-                  onChange={(e) => patchInd({ limitRangeAtr: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={settings.indicator.useLimitTrend}
-                  onChange={(e) => patchInd({ useLimitTrend: e.target.checked })}
-                />
-                <span>Лимит в тренде</span>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>k ATR (тренд)</span>
-                <input
-                  type="number"
-                  step={0.01}
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.limitTrendAtr}
-                  onChange={(e) => patchInd({ limitTrendAtr: Number(e.target.value) })}
-                />
-              </label>
-            </div>
-          </div>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              className="rounded border-[#2e3241]"
-              checked={settings.indicator.crossMode}
-              onChange={(e) => patchInd({ crossMode: e.target.checked })}
-            />
-            <span className="text-[#787b86]">
-              Только пересечение нуля Чайкина
-              <Tip>Pine cross_mode: сигнал на баре пересечения, а не пока осциллятор с нужной стороны нуля</Tip>
-            </span>
-          </label>
-          <details className="rounded-lg border border-[#2e3241] bg-[#0c0e14]/80 px-3 py-2">
-            <summary className="cursor-pointer text-xs font-medium text-[#787b86]">
-              Остальные параметры входа (как в Pine)
-            </summary>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <label className="flex flex-col gap-1">
-                <span>Период ADX</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.adxLength}
-                  onChange={(e) => patchInd({ adxLength: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>Окно диапазона (баров)</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.rangeBars}
-                  onChange={(e) => patchInd({ rangeBars: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>Макс. позиция лонг %</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.rangeMaxPctLong}
-                  onChange={(e) => patchInd({ rangeMaxPctLong: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>Мин. позиция шорт %</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.rangeMinPctShort}
-                  onChange={(e) => patchInd({ rangeMinPctShort: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>Допуск отката к EMA %</span>
-                <input
-                  type="number"
-                  step={0.1}
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.pullbackPct}
-                  onChange={(e) => patchInd({ pullbackPct: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>Баров для импульса (lookback)</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.divLookback}
-                  onChange={(e) => patchInd({ divLookback: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>Период RSI</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.rsiLen}
-                  onChange={(e) => patchInd({ rsiLen: Number(e.target.value) })}
-                />
-              </label>
-              <label className="flex items-center gap-2 pt-6">
-                <input
-                  type="checkbox"
-                  checked={settings.indicator.rsiEnabled}
-                  onChange={(e) => patchInd({ rsiEnabled: e.target.checked })}
-                />
-                <span>RSI включён</span>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>RSI шорт боковик &gt;</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.rsiRangeThresholdShort}
-                  onChange={(e) =>
-                    patchInd({ rsiRangeThresholdShort: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span>RSI шорт тренд &gt;</span>
-                <input
-                  type="number"
-                  className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
-                  value={settings.indicator.rsiTrendThresholdShort}
-                  onChange={(e) =>
-                    patchInd({ rsiTrendThresholdShort: Number(e.target.value) })
-                  }
-                />
-              </label>
-            </div>
-          </details>
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100">
+            ⚠️ Depth-данные тянутся с Pifagor VPS (`pifagor.153.80.192.107.nip.io`).
+            Live-collector пишет ~600k snapshots/мес для текущего месяца; за прошлое — tardis
+            archive ~20k/мес (1 snap каждые ~2 мин). На 1m прошлое будет с пропусками,
+            на 1h всё стабильно.
+          </p>
         </div>
       </section>
       ) : null}
@@ -438,7 +235,8 @@ export function BacktestSettingsForm({
           {settings.strategyKind === "pifagor_alts" ? "Капитал и размер входа" : "DCA-бот"}
         </h3>
         <div className="grid gap-3 text-sm">
-          {settings.strategyKind === "chaik_dca" ? (
+          {settings.strategyKind === "buyforce_dca" ||
+          settings.strategyKind === "sellforce_dca" ? (
             <>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
@@ -1010,35 +808,14 @@ export function BacktestSettingsForm({
         </section>
       ) : null}
 
-      {settings.strategyKind === "chaik_dca" || settings.strategyKind === "pivot21" ? (
+      {settings.strategyKind === "buyforce_dca" ||
+      settings.strategyKind === "sellforce_dca" ||
+      settings.strategyKind === "pivot21" ? (
       <section className="rounded-xl border border-[#2e3241] bg-[#131722] p-5 lg:col-span-2">
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[#787b86]">
           Исполнение
         </h3>
         <div className="flex flex-wrap gap-6 text-sm">
-          {settings.strategyKind === "chaik_dca" ? (
-            <label className="flex flex-col gap-1">
-              <span>
-                Вход
-                <Tip>
-                  LONG ОТКАТОМ: якорь и лимит/маркет первого ордера задаются как в Pine (не этим селектором). Ниже —
-                  только для SHORT: open следующей свечи или close сигнальной.
-                </Tip>
-              </span>
-              <select
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2"
-                value={settings.entryTiming}
-                onChange={(e) =>
-                  patch({
-                    entryTiming: e.target.value as BacktestSettings["entryTiming"],
-                  })
-                }
-              >
-                <option value="next_open">Open следующей свечи</option>
-                <option value="signal_close">Close сигнальной свечи</option>
-              </select>
-            </label>
-          ) : null}
           <label className="flex flex-col gap-1">
             <span>
               {settings.strategyKind === "pivot21"
