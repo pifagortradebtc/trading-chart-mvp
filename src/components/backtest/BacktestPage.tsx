@@ -105,6 +105,7 @@ export function BacktestPage() {
   const [warning, setWarning] = useState<string | undefined>();
   /** Неполная история Binance — только вкладка «Стратегия», не глобальный баннер. */
   const [ohlcvCoverageHint, setOhlcvCoverageHint] = useState<string | undefined>();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [dataNote, setDataNote] = useState("");
   const [busy, setBusy] = useState(false);
   /** Фоновая автозагрузка OHLCV при открытии страницы или восстановлении снимка (не ручная кнопка). */
@@ -115,7 +116,8 @@ export function BacktestPage() {
   );
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [selected, setSelected] = useState<TradeRecord | null>(null);
-  const [persistSnapshots, setPersistSnapshots] = useState(true);
+  /** Save backtest results to server — always on (UI checkbox убран как шум). */
+  const persistSnapshots = true;
   const [runProgress, setRunProgress] = useState<number | null>(null);
   const [portfolioResult, setPortfolioResult] = useState<PortfolioBacktestResult | null>(null);
   const [portfolioProgressMsg, setPortfolioProgressMsg] = useState("");
@@ -735,6 +737,8 @@ export function BacktestPage() {
     }
   };
 
+  /** Восстановление снимка с сервера. UI-кнопка убрана как шум, функция оставлена для возможного возврата. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const restoreFromServer = async () => {
     setWarning(undefined);
     setOhlcvCoverageHint(undefined);
@@ -1107,29 +1111,6 @@ export function BacktestPage() {
                   </div>
                 )}
 
-                <label className="mt-5 flex cursor-pointer items-start gap-2 text-sm text-[var(--rex-muted)]">
-                  <input
-                    type="checkbox"
-                    checked={persistSnapshots}
-                    onChange={(e) => setPersistSnapshots(e.target.checked)}
-                    className="mt-0.5 rounded border-white/20 bg-transparent"
-                  />
-                  <span>
-                    Сохранять на сервер результат бэктеста (сделки, equity, настройки) — не сами свечи OHLCV
-                  </span>
-                </label>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <button
-                    type="button"
-                    disabled={busy || autoOhlcvBusy}
-                    title="Подставляет последний сохранённый бэктест (настройки, сделки, кривая)"
-                    onClick={() => void restoreFromServer()}
-                    className="text-left text-[11px] text-sky-300/90 underline decoration-sky-500/40 underline-offset-2 hover:text-sky-200 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Восстановить последний бэктест с сервера (сделки и equity)
-                  </button>
-                </div>
-
                 {(busy || autoOhlcvBusy) && !candles.length && (
                   <div className="mt-4 space-y-2">
                     <SkeletonBlock className="h-3 w-full" />
@@ -1140,7 +1121,6 @@ export function BacktestPage() {
                   <p className="mt-3 text-xs text-violet-300">{portfolioProgressMsg}</p>
                 )}
                 {loadMsg && <p className="mt-3 text-xs text-cyan-400">{loadMsg}</p>}
-                {dataNote && <p className="mt-2 text-sm text-[var(--rex-muted)]">{dataNote}</p>}
               </GlassCard>
 
               <div className="mt-6 lg:sticky lg:top-24 lg:mt-0">
