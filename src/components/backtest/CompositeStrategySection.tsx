@@ -46,11 +46,11 @@ function slotLabel(kind: CompositeStrategyKind): string {
   if (kind === "sellforce_dca") return "SellForce (SHORT)";
   if (kind === "chaik_dca") return "V2_ЧайкКельт";
   if (kind === "macd") return "MACD";
-  if (kind === "rsi_threshold") return "RSI (oversold/overbought)";
-  if (kind === "ema_cross") return "EMA Cross (golden/death)";
-  if (kind === "bollinger") return "Bollinger Bands";
+  if (kind === "rsi_threshold") return "RSI (перепроданность/перекупленность)";
+  if (kind === "ema_cross") return "EMA Cross (золотой/мёртвый крест)";
+  if (kind === "bollinger") return "Полосы Боллинджера";
   if (kind === "stochastic") return "Stochastic %K";
-  return "ADX trend filter";
+  return "ADX (фильтр силы тренда)";
 }
 
 function makeSlot(kind: CompositeStrategyKind, idx: number): StrategySlot {
@@ -160,10 +160,11 @@ export function CompositeStrategySection({
       </div>
 
       <p className="mb-4 text-xs leading-relaxed text-[#787b86]">
-        Бот стреляет, когда сигналы от слотов совпадают по правилу ниже (AND/OR/большинство).
-        Для каждого слота — своя стратегия и свои параметры. В композит идут только
-        сигнал-генераторы (BuyForce, SellForce, ЧайкКельт). ALTS и Pivot21 имеют собственный
-        position-management — они выбираются отдельно как одиночные стратегии.
+        Бот открывает сделку, когда сигналы от слотов совпадают по выбранному правилу
+        («ВСЕ», «ЛЮБОЙ», «большинство»). У каждого слота своя стратегия и свои параметры.
+        В композит идут только сигнал-генераторы (BuyForce, SellForce, ЧайкКельт, а также
+        классические индикаторы). ALTS и Pivot21 имеют собственное управление позицией —
+        они выбираются отдельно как одиночные стратегии.
       </p>
 
       <div className="space-y-3">
@@ -183,19 +184,19 @@ export function CompositeStrategySection({
                   changeSlotKind(slot.id, e.target.value as CompositeStrategyKind)
                 }
               >
-                <optgroup label="Pifagor сигналы">
+                <optgroup label="Сигналы Pifagor">
                   <option value="buyforce_dca">{slotLabel("buyforce_dca")}</option>
                   <option value="sellforce_dca">{slotLabel("sellforce_dca")}</option>
                   <option value="chaik_dca">{slotLabel("chaik_dca")}</option>
                 </optgroup>
-                <optgroup label="Классические индикаторы (LONG+SHORT)">
+                <optgroup label="Классические индикаторы (LONG и SHORT)">
                   <option value="macd">{slotLabel("macd")}</option>
                   <option value="rsi_threshold">{slotLabel("rsi_threshold")}</option>
                   <option value="ema_cross">{slotLabel("ema_cross")}</option>
                   <option value="bollinger">{slotLabel("bollinger")}</option>
                   <option value="stochastic">{slotLabel("stochastic")}</option>
                 </optgroup>
-                <optgroup label="Фильтры (не дают direction, только усиливают)">
+                <optgroup label="Фильтры (без направления, усиливают другие)">
                   <option value="adx_filter">{slotLabel("adx_filter")}</option>
                 </optgroup>
               </select>
@@ -249,7 +250,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Cooldown (баров)</span>
+                  <span className="text-[#787b86]">Задержка (баров)</span>
                   <input
                     type="number"
                     min="0"
@@ -286,7 +287,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Cooldown (баров)</span>
+                  <span className="text-[#787b86]">Задержка (баров)</span>
                   <input
                     type="number"
                     min="0"
@@ -322,9 +323,10 @@ export function CompositeStrategySection({
                   <span className="text-[#787b86]">
                     Сигнальный режим
                     <Tip>
-                      Что считать триггером для LONG/SHORT. «Signal cross» — классика
-                      (MACD↑/↓ signal-line). «Zero cross» — медленнее, надёжнее. «Above
-                      zero gate» — постоянный фильтр (long пока MACD&gt;0, short пока &lt;0).
+                      Что считать триггером для LONG/SHORT. «Пересечение signal-линии» —
+                      классика (MACD↑/↓ сигнальной EMA). «Пересечение нуля» — медленнее,
+                      надёжнее. «Выше/ниже нуля» — постоянный фильтр (LONG пока MACD&gt;0,
+                      SHORT пока &lt;0).
                     </Tip>
                   </span>
                   <select
@@ -340,17 +342,19 @@ export function CompositeStrategySection({
                     }
                   >
                     <option value="signal_cross">
-                      Cross signal line (long: MACD↑signal, short: ↓)
+                      Пересечение signal-линии (LONG: MACD↑сигнал, SHORT: ↓)
                     </option>
-                    <option value="zero_cross">Zero cross (long: MACD↑0, short: ↓0)</option>
+                    <option value="zero_cross">
+                      Пересечение нуля (LONG: MACD↑0, SHORT: ↓0)
+                    </option>
                     <option value="above_zero_gate">
-                      Above/below zero (фильтр: long пока MACD&gt;0)
+                      Выше/ниже нуля (фильтр: LONG пока MACD&gt;0)
                     </option>
                   </select>
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Fast EMA</span>
+                    <span className="text-[#787b86]">Быстрая EMA</span>
                     <input
                       type="number"
                       min="1"
@@ -368,7 +372,7 @@ export function CompositeStrategySection({
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Slow EMA</span>
+                    <span className="text-[#787b86]">Медленная EMA</span>
                     <input
                       type="number"
                       min="1"
@@ -386,7 +390,7 @@ export function CompositeStrategySection({
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Signal EMA</span>
+                    <span className="text-[#787b86]">Сигнальная EMA</span>
                     <input
                       type="number"
                       min="1"
@@ -404,7 +408,7 @@ export function CompositeStrategySection({
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Cooldown</span>
+                    <span className="text-[#787b86]">Задержка (баров)</span>
                     <input
                       type="number"
                       min="0"
@@ -431,9 +435,10 @@ export function CompositeStrategySection({
                   <span className="text-[#787b86]">
                     Сигнальный режим
                     <Tip>
-                      Exit zones — классика (long: RSI↑ из oversold). Enter zones — наоборот
-                      (long когда RSI заходит в oversold, ждём отскок). Midline — long при
-                      RSI↑50 (моментум). Inside zone — постоянный фильтр.
+                      «Выход из зон» — классика (LONG когда RSI выходит вверх из
+                      перепроданности). «Вход в зоны» — наоборот: LONG когда RSI входит в
+                      перепроданность, ждём отскок. «Средняя 50» — моментум: LONG при
+                      пересечении 50 вверх. «Внутри зоны» — постоянный фильтр.
                     </Tip>
                   </span>
                   <select
@@ -449,22 +454,22 @@ export function CompositeStrategySection({
                     }
                   >
                     <option value="exit_zones">
-                      Exit zones (long: RSI↑oversold, short: RSI↓overbought)
+                      Выход из зон (LONG: RSI↑перепроданность, SHORT: RSI↓перекупленность)
                     </option>
                     <option value="enter_zones">
-                      Enter zones (long: RSI↓oversold, short: RSI↑overbought)
+                      Вход в зоны (LONG: RSI↓перепроданность, SHORT: RSI↑перекупленность)
                     </option>
                     <option value="midline_cross">
-                      Midline 50 (long: RSI↑50, short: RSI↓50)
+                      Средняя 50 (LONG: RSI↑50, SHORT: RSI↓50)
                     </option>
                     <option value="inside_zone">
-                      Inside zone (фильтр: long пока RSI&lt;oversold)
+                      Внутри зоны (фильтр: LONG пока RSI&lt;перепроданности)
                     </option>
                   </select>
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">RSI длина</span>
+                    <span className="text-[#787b86]">Период RSI</span>
                     <input
                       type="number"
                       min="2"
@@ -482,7 +487,7 @@ export function CompositeStrategySection({
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Oversold &lt;</span>
+                    <span className="text-[#787b86]">Перепроданность &lt;</span>
                     <input
                       type="number"
                       min="0"
@@ -501,7 +506,7 @@ export function CompositeStrategySection({
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Overbought &gt;</span>
+                    <span className="text-[#787b86]">Перекупленность &gt;</span>
                     <input
                       type="number"
                       min="0"
@@ -520,7 +525,7 @@ export function CompositeStrategySection({
                     />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[#787b86]">Cooldown</span>
+                    <span className="text-[#787b86]">Задержка (баров)</span>
                     <input
                       type="number"
                       min="0"
@@ -547,8 +552,9 @@ export function CompositeStrategySection({
                   <span className="text-[#787b86]">
                     Сигнальный режим
                     <Tip>
-                      Cross event — edge: long на golden cross, short на death. Above/below —
-                      continuous фильтр: long пока fast EMA &gt; slow EMA.
+                      «Пересечение» — edge: LONG при золотом кресте (быстрая ↑ медленную),
+                      SHORT при мёртвом. «Выше/ниже» — постоянный фильтр: LONG пока быстрая
+                      EMA &gt; медленной.
                     </Tip>
                   </span>
                   <select
@@ -563,15 +569,17 @@ export function CompositeStrategySection({
                       })
                     }
                   >
-                    <option value="cross_event">Cross event (golden/death)</option>
+                    <option value="cross_event">
+                      Пересечение (золотой/мёртвый крест)
+                    </option>
                     <option value="above_below">
-                      Above/below (фильтр: long пока fast&gt;slow)
+                      Выше/ниже (фильтр: LONG пока быстрая&gt;медленной)
                     </option>
                   </select>
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Fast EMA</span>
+                  <span className="text-[#787b86]">Быстрая EMA</span>
                   <input
                     type="number"
                     min="1"
@@ -589,7 +597,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Slow EMA</span>
+                  <span className="text-[#787b86]">Медленная EMA</span>
                   <input
                     type="number"
                     min="1"
@@ -607,7 +615,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Cooldown</span>
+                  <span className="text-[#787b86]">Задержка (баров)</span>
                   <input
                     type="number"
                     min="0"
@@ -634,9 +642,9 @@ export function CompositeStrategySection({
                   <span className="text-[#787b86]">
                     Сигнальный режим
                     <Tip>
-                      Touch band — mean reversion: long при пробое нижней полосы (жди отскок),
-                      short при пробое верхней. Breakout — наоборот, моментум: long при пробое
-                      верхней (импульс), short при пробое нижней.
+                      «Касание полос» — контртренд: LONG при пробое нижней полосы (жди
+                      отскок), SHORT при пробое верхней. «Пробой» — наоборот, моментум:
+                      LONG при пробое верхней (импульс вверх), SHORT при пробое нижней.
                     </Tip>
                   </span>
                   <select
@@ -652,16 +660,16 @@ export function CompositeStrategySection({
                     }
                   >
                     <option value="touch_band">
-                      Touch band (mean reversion: long нижняя, short верхняя)
+                      Касание полос (контртренд: LONG нижняя, SHORT верхняя)
                     </option>
                     <option value="breakout">
-                      Breakout (моментум: long верхняя, short нижняя)
+                      Пробой (моментум: LONG верхняя, SHORT нижняя)
                     </option>
                   </select>
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Длина SMA</span>
+                  <span className="text-[#787b86]">Период SMA</span>
                   <input
                     type="number"
                     min="2"
@@ -697,7 +705,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Cooldown</span>
+                  <span className="text-[#787b86]">Задержка (баров)</span>
                   <input
                     type="number"
                     min="0"
@@ -724,8 +732,8 @@ export function CompositeStrategySection({
                   <span className="text-[#787b86]">
                     Сигнальный режим
                     <Tip>
-                      Exit zones — классика (long: %K↑oversold, short: %K↓overbought).
-                      Enter zones — наоборот (вход в зону, ждём разворот).
+                      «Выход из зон» — классика (LONG: %K выходит вверх из перепроданности).
+                      «Вход в зоны» — наоборот: вход в зону, ждём разворот.
                     </Tip>
                   </span>
                   <select
@@ -741,16 +749,16 @@ export function CompositeStrategySection({
                     }
                   >
                     <option value="exit_zones">
-                      Exit zones (long: %K↑oversold, short: %K↓overbought)
+                      Выход из зон (LONG: %K↑перепроданность, SHORT: %K↓перекупленность)
                     </option>
                     <option value="enter_zones">
-                      Enter zones (long: %K↓oversold, short: %K↑overbought)
+                      Вход в зоны (LONG: %K↓перепроданность, SHORT: %K↑перекупленность)
                     </option>
                   </select>
                 </label>
                 <div className="grid grid-cols-4 gap-2">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">%K длина</span>
+                  <span className="text-[#787b86]">Период %K</span>
                   <input
                     type="number"
                     min="2"
@@ -786,7 +794,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Oversold &lt;</span>
+                  <span className="text-[#787b86]">Перепроданность &lt;</span>
                   <input
                     type="number"
                     min="0"
@@ -805,7 +813,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">Overbought &gt;</span>
+                  <span className="text-[#787b86]">Перекупленность &gt;</span>
                   <input
                     type="number"
                     min="0"
@@ -830,7 +838,7 @@ export function CompositeStrategySection({
             {slot.kind === "adx_filter" && slot.adxFilter ? (
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">ADX длина</span>
+                  <span className="text-[#787b86]">Период ADX</span>
                   <input
                     type="number"
                     min="2"
@@ -848,7 +856,7 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-[#787b86]">ADX &gt; (трендовая сила)</span>
+                  <span className="text-[#787b86]">Порог силы тренда (ADX &gt;)</span>
                   <input
                     type="number"
                     min="0"
@@ -867,9 +875,10 @@ export function CompositeStrategySection({
                   />
                 </label>
                 <p className="col-span-2 text-[10px] text-[#6b7280]">
-                  ADX — фильтр силы тренда. Сигнал постоянный: «true» если ADX выше порога
-                  на этом баре. В AND-композите пропускает direction-сигналы других слотов
-                  только в трендовом рынке.
+                  ADX — фильтр силы тренда. Сигнал постоянный: активен, когда ADX выше
+                  порога на этом баре. В композите с правилом «ВСЕ согласны» пропускает
+                  направленные сигналы других слотов только в трендовом рынке (отсекает
+                  боковик).
                 </p>
               </div>
             ) : null}
@@ -944,7 +953,7 @@ export function CompositeStrategySection({
             onClick={() => addSlot("adx_filter")}
             className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
           >
-            ADX filter
+            ADX (фильтр)
           </button>
         </div>
       </div>
@@ -954,8 +963,8 @@ export function CompositeStrategySection({
           <span className="text-xs text-[#787b86]">
             Правило объединения
             <Tip>
-              AND: все слоты должны дать сигнал. ANY: любой один. Большинство: минимум N
-              из M (по умолчанию N = ceil(M/2)).
+              ВСЕ: каждый слот должен дать сигнал. ЛЮБОЙ: достаточно одного слота.
+              Большинство: минимум N из M слотов (по умолчанию N = округление от M/2 вверх).
             </Tip>
           </span>
           <div className="mt-1 flex flex-wrap gap-2">
@@ -974,7 +983,11 @@ export function CompositeStrategySection({
                   checked={config.rule === r}
                   onChange={() => patchComposite({ rule: r })}
                 />
-                {r === "and" ? "AND (все)" : r === "any" ? "ANY (любой)" : "Большинство (N из M)"}
+                {r === "and"
+                  ? "ВСЕ согласны"
+                  : r === "any"
+                    ? "ЛЮБОЙ согласен"
+                    : "Большинство (N из M)"}
               </label>
             ))}
           </div>
@@ -1005,9 +1018,9 @@ export function CompositeStrategySection({
           <span className="text-xs text-[#787b86]">
             Окно подтверждения (баров)
             <Tip>
-              На каждом баре считаем слот «активным» если его сигнал был в последние N
-              баров. 1 = строго один и тот же бар (почти никогда не сработает на AND).
-              5-10 — мягкое подтверждение. 20+ — очень мягкое.
+              На каждом баре слот считается «активным», если его сигнал сработал в
+              последние N баров. 1 — строго один и тот же бар (почти никогда не сработает
+              в режиме «ВСЕ»). 5–10 — мягкое подтверждение. 20+ — очень мягкое.
             </Tip>
           </span>
           <input
@@ -1033,16 +1046,24 @@ export function CompositeStrategySection({
         <div className="flex flex-wrap items-center gap-2 font-mono">
           {needsLongInfo ? (
             <span className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
-              LONG: при{" "}
-              {config.rule === "and" ? "AND" : config.rule === "any" ? "ANY" : "большинство"} от
-              слотов LONG-типа
+              LONG: когда{" "}
+              {config.rule === "and"
+                ? "ВСЕ согласны"
+                : config.rule === "any"
+                  ? "ЛЮБОЙ согласен"
+                  : "набирается большинство"}{" "}
+              среди LONG-слотов
             </span>
           ) : null}
           {needsShortInfo ? (
             <span className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-rose-200">
-              SHORT: при{" "}
-              {config.rule === "and" ? "AND" : config.rule === "any" ? "ANY" : "большинство"} от
-              слотов SHORT-типа
+              SHORT: когда{" "}
+              {config.rule === "and"
+                ? "ВСЕ согласны"
+                : config.rule === "any"
+                  ? "ЛЮБОЙ согласен"
+                  : "набирается большинство"}{" "}
+              среди SHORT-слотов
             </span>
           ) : null}
           {needsDepth ? (
