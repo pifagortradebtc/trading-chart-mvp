@@ -389,3 +389,167 @@ NAV export workflow:
 Кабинет аналитики **готов к использованию в production-режиме фонда**. 14 моделей, полный risk framework, liquidity, walk-forward, model attribution. Один пропущенный пункт roadmap-а (on-chain) объективно требует external commitment — недостающего у нас сейчас.
 
 Если возвращаешься к проекту — приноси конкретное направление: новые активы, новые провайдеры данных (on-chain), UI-полировка по фидбеку реальных аналитиков, или интеграция с другим репозиторием фонда.
+
+---
+---
+
+# Сессия 2026-05-31: Backtest UX overhaul + Composite multi-strategy
+
+Большая итерация по `/backtest`. ~60 коммитов от `8199341` до `ce6524d`. Главное — **переход от singleton-стратегий к Composite multi-strategy** + интуитивная капитальная модель + множество визуальных fixes.
+
+## Что добавлено / починено (по областям)
+
+### Backtest core
+- **Кастомный период бэктеста** (BacktestPage.tsx) — поля «С / По (UTC)» внутри загруженного `yearsBack`. Default `customStartDate = "2025-05-25"`. Сохраняется в snapshot.
+- **Упрощённая капитальная модель** (BacktestSettings.tsx) — заменил «Торговый депозит + Сумма сетки + Баланс кошелька» на трейдерскую модель «Депозит + Плечо + Маржа на сделку + Доп. свободный баланс». Под капотом мапится в существующие `DcaBotSettings` (zero migration).
+- **DCA-бот секция всегда full-width** (`lg:col-span-2`).
+- **DcaGridPreview** — таблица всех ордеров + warnings (overshoot, узкая сетка, маленький TP).
+
+### Composite multi-strategy (самая большая фича)
+
+Вместо одного `strategyKind` — стек слотов с per-pair операторами:
+
+- `CompositeStrategyConfig.slots: StrategySlot[]` — каждый слот: `kind` + inline settings
+- `StrategySlot.joinRule: "and" | "or"` — оператор объединения с предыдущим (left-fold)
+- `confirmWindowBars` — sliding window для согласования сигналов
+- Engine: `combineCompositeSignals()` в `compositeSignal.ts`
+
+**10 типов слотов:**
+1. `buyforce_dca` — RO = (bid_3 − ask_8) / ask_1.5 (depth)
+2. `sellforce_dca` — RO = (ask_3 − bid_8) / bid_1.5 (depth)
+3. `chaik_dca` — V2_ЧайкКельт (полные настройки через `ChaikKeltSettingsForm`)
+4. `bidask_spread` — bid_X% − ask_Y% raw (BidAsk из pifagor-trade-website-2)
+5. `macd` — signal_cross / zero_cross / above_zero_gate
+6. `rsi_threshold` — exit_zones / enter_zones / midline_cross / inside_zone
+7. `ema_cross` — cross_event / above_below
+8. `bollinger` — touch_band / breakout
+9. `stochastic` — exit_zones / enter_zones
+10. `adx_filter` — фильтр силы тренда
+
+Все классические индикаторы имеют **signalMode** для смены триггера LONG/SHORT.
+
+**UI:**
+- **Компактная формула** в шапке «Модель бэктеста» (CompositeFormulaRow.tsx): `[#1 ▾] [И] [#2 ▾] [+ слот]`
+- **Детальные настройки** в КОМПОЗИТ-секции — каждый слот цветной (8 цветов циклом), сворачивается через ⚙
+- **1d depth interval** добавлен (TV resolution `"D"`)
+- **BuyForce/SellForce smoothing** — SMA по N барам перед edge-detection
+- **Русская локализация** всех signal modes и parameters
+
+### Chart visualization
+- **AVG/TP segments** per trade (chartDcaSegments.ts) — фиолетовая solid + эмеральд dashed
+- **SL line** per trade — красная dashed `#f87171` с fallback из `t.stopLossPct + t.avgEntryPrice`
+- **USDT volume в маркерах** — «#38 · 50 USDT», «DCA 2 · 75 USDT»
+- **Все exit-маркеры** в session view — раньше SL/liquidation скрывались (баг)
+- **Fix: 48-trade limit** для маркеров — раньше cap применялся и к segments и к markers
+- **«Обновить» кнопка** на /chart → `window.location.reload()`. `consumeBacktestChartHandoff` больше не удаляет ключ
+
+### Engine semantics
+- **end_of_test не загрязняет metrics** — открытая позиция не финализируется в `trades[]`. Информация через `openPositionAtDataEnd` snapshot.
+- **Hero MAX DD = max(equity DD, per-trade DD, open position DD)** — раньше только equity DD (= 0% при 100% win rate скрывало реальные просадки).
+
+### Auto-sync + OHLCV
+- **depthInterval = chart interval** автоматически (раньше ручная sync)
+- **HYPE, MNT** → Bybit (раньше CoinGecko 365д лимит). **OKB** → OKX.
+- **MNT в default universe**. **Donut charts** показывают 0% активы.
+
+### UI polish
+- **Header**: логотип кликабельный → `pifagor.fund`, кнопка «На фонд ↗»
+- **Composite default** = ЧайкКельт (вместо BuyForce)
+- **Resizable splitter** между sidebar и main (ResearchShell.tsx) — persist в localStorage
+- **Убран hero**-заголовок «Пифагор DCA Research Terminal» + абзац
+- **Убран checkbox** «Сохранять на сервер» + ссылка восстановления (всегда вкл по умолчанию)
+- **Убран dev-абзац** про `/api/ohlcv` и persistent disk
+- **Кнопка «Загрузить OHLCV»** в 3 раза меньше
+- **Окно подтверждения default = 1** (вместо 5)
+- **Серые поля** «Первый ордер %» (только SHORT), «Сумма сетки» (только LONG)
+
+## Lessons — bug patterns + как НЕ допустить
+
+### 1. UI-side фильтрация важных данных «для красоты» ❌
+
+**Симптом:** Маркеры выхода SL/liquidation скрывались в multi-trade view (`showNonTpExit = trades.length === 1`). Юзер видел entries без exits и думал «бот не закрывает сделки».
+
+**Как избежать:** Не фильтруй критические события (SL, ликвидация, large negative PnL) ради «не загромождать». Если данных много — оптимизируй рендеринг (lightweight-charts handle тысячи markers), не скрывай. Скрытие OK только для **true noise** (дубликаты, zero-impact events).
+
+### 2. Single cap для разных concerns ❌
+
+**Симптом:** `MAX_TRADES_FOR_DCA_SEGMENTS = 48` использовался для тяжёлых line-series И для дешёвых markers одновременно. Юзер видел маркеры только для последних 48 из 176 сделок.
+
+**Как избежать:** Разделяй cap-ы по типу нагрузки. Heavy = cap, light = no cap. Имей separate refs / memos: `sessionTradesForDcaSegments` (capped) vs `sessionTrades` (full).
+
+### 3. Расширение схемы данных без fallback breaks old snapshots ❌
+
+**Симптом:** Добавил `stopLossPrice` в `DcaGridRow` — SL-линия только на новых runs. Старые snapshots в localStorage / на disk без этого поля → SL-линия пропадала.
+
+**Как избежать:** При добавлении нового поля для visualization — ВСЕГДА fallback в render code. Не полагайся на «юзер re-runs after deploy». Конкретно здесь: добавил `TradeRecord.stopLossPct` + computed fallback в chartDcaSegments.
+
+### 4. Type-only changes без runtime grep ❌
+
+**Симптом:** Добавил `"1d"` в `DepthInterval` type, но забыл обновить hardcoded UI hint «`ТФ графика ∈ {1m, 5m, 15m, 1h}`». Юзер видел противоречие.
+
+**Как избежать:** При расширении enum-подобного типа — `grep` по всем хардкод-упоминаниям: `"1m"|"5m"|...`, optgroup labels, error messages, комментарии. **Идеал:** строить список значений из единственного источника правды (типа `DEPTH_INTERVALS` const) и подставлять в строки `{INTERVALS.join("/")}`.
+
+### 5. Engine semantics «открытая позиция = закрытая by end of test» ❌
+
+**Симптом:** Открытая на конце данных позиция финализировалась как сделка с unrealized loss → попадала в metrics → «100% win rate» стратегия показывала −21% return и худшую сделку −4447 USDT.
+
+**Как избежать:** Различай **реализованный PnL** (только закрытые: TP/SL/signal/liq) vs **unrealized snapshot** (open position info — отдельная структура, НЕ в `trades[]`). Metrics ТОЛЬКО по closed trades. Если есть данные о висящей позиции — `openPositionAtDataEnd` + UI блок «Позиция», не массив trades.
+
+### 6. Capital model с overlapping semantic полями ❌
+
+**Симптом:** Юзер не понимал разницу между «Торговый депозит», «Сумма сетки», «Баланс кошелька». 3 финансовых поля с пересекающейся семантикой = несколько сообщений на разбор.
+
+**Как избежать:** Capital model должна map на **mental model реального трейдера**: «У меня X депо, плечо Y, на сделку лочу маржу Z». Internal storage может быть сложнее (с denominators), но **UI = как думает оператор**. Деплой translator-функции: `setDeposit(d)`, `setLeverage(l)` мапят в legacy-поля автоматически.
+
+### 7. Composite mode без визуального flow ❌
+
+**Симптом:** Сначала сделал композит как вертикальный стек слотов с операторами между ними. Юзер попросил **горизонтальную формулу в шапке** — для быстрого визуального понимания структуры.
+
+**Как избежать:** Когда у фичи есть «структурная схема» (формула, граф, pipeline) — дай юзеру **компактное визуальное представление сверху**, даже если детали ниже. Двухслойный UI: compact summary + expanded details. Shared state синхронизирует слои.
+
+### 8. Hardcoded UI strings разбросаны по большим файлам ❌
+
+**Симптом:** Translation на русский потребовала прохода по 50+ строкам в CompositeStrategySection.tsx (~1100 строк). Easy miss spots.
+
+**Как избежать:** Выделяй copy в **central registry** для больших UI с repeated patterns (например `signalModeLabels.ts`). Импортируй из неё. Тогда переводы / rebranding = один правка.
+
+### 9. Старые комментарии становятся неверными после изменений ❌
+
+**Симптом:** Изменил allowedDepthIntervals на включение «1d», но комментарий выше всё ещё писал «Если ТФ графика 4h/1d/3d/1w — depth для него не существует».
+
+**Как избежать:** При изменении логики — **проверяй комментарии рядом**. Лучше: не дублируй информацию из кода в комментарии (DRY); комментируй только «почему», не «что».
+
+## Где лежит код composite (для быстрой навигации)
+
+| Что | Файл |
+|-----|------|
+| Slot kinds + settings types | `src/lib/backtest/types.ts` |
+| Default values | `src/lib/backtest/backtestDefaults.ts` |
+| Classic indicators (MACD/RSI/EMA/Bollinger/Stoch/ADX) | `src/lib/backtest/classicIndicatorSignals.ts` |
+| BuyForce/SellForce/BidAsk computation | `src/lib/backtest/buyForceSellForceSignals.ts` |
+| Composite combiner (left-fold) | `src/lib/backtest/compositeSignal.ts` |
+| Engine integration | `src/lib/backtest/backtestEngine.ts` (lines ~525-565) |
+| Compact formula UI | `src/components/backtest/CompositeFormulaRow.tsx` |
+| Detail panels UI | `src/components/backtest/CompositeStrategySection.tsx` |
+| Reusable ChaikKelt form | `src/components/backtest/ChaikKeltSettingsForm.tsx` |
+| Chart segments (entry/DCA/AVG/TP/SL) | `src/lib/backtest/chartDcaSegments.ts` |
+| Chart markers | `src/lib/backtest/chartTradeMarkers.ts` |
+| Resizable splitter | `src/components/research/ResearchShell.tsx` |
+| Depth-data fetch | `src/app/api/bidask/route.ts` + `src/lib/backtest/depthData.ts` |
+
+## Состояние
+
+- **158 тестов** проходят (`npm test`)
+- **Build clean** (`npm run build` — no warnings)
+- **Render auto-deploys** on push to master
+- Деплой live: `https://trading-chart-mvp.onrender.com`
+
+## Возможные follow-ups (по убыванию ценности)
+
+1. **Диагностический popup** «сколько сигналов сгенерировал каждый слот за период» — самый частый user-pain в composite: «почему мало сделок?» Юзер не понимает какой слот фильтрует.
+2. **Сравнительные бэктесты** — UI для запуска N variants одной стратегии параллельно с табличкой (winrate / sharpe / DD).
+3. **Walk-forward для composite** — сейчас только для chaik_dca.
+4. **Optimization grid для composite параметров** — TP/overlap уже есть, добавить signal modes и smoothing.
+5. **Auto-fallback OHLCV chain** — если Binance 404, попробовать Bybit → OKX → CoinGecko (сейчас только explicit overrides).
+6. **«Открытая позиция» блок в hero** — current unrealized PnL / max DD / distance to TP визуально prominent.
+7. **Compress slot card** в composite — MACD/RSI можно сделать однострочными, экономия экрана.
