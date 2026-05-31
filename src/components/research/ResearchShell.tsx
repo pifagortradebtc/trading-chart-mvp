@@ -150,7 +150,7 @@ export function ResearchShell({
 
         <div className="flex min-w-0 flex-1 flex-col">
           {/* ── Hero ── */}
-          <header className="relative overflow-hidden border-b border-surface-border bg-[rgba(10,16,32,0.55)] px-4 py-10 sm:px-8 sm:py-12">
+          <header className="relative overflow-hidden border-b border-surface-border bg-[rgba(10,16,32,0.55)] px-4 py-4 sm:px-8 sm:py-5">
             {/* Gold aurora */}
             <div
               aria-hidden
@@ -167,15 +167,6 @@ export function ResearchShell({
                   <p className="eyebrow flex items-center gap-3">
                     <span className="pulse-dot" aria-hidden />
                     Pifagor Fund · Кабинет аналитики
-                  </p>
-                  <h1 className="mt-4 font-display text-3xl font-semibold leading-[1.05] tracking-display-tight text-ink sm:text-[2.5rem]">
-                    Пифагор DCA{" "}
-                    <span className="accent-serif text-brand-light">Research</span>{" "}
-                    Terminal
-                  </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-[15px]">
-                    Прозрачный взгляд на стратегию циклического накопления
-                    криптофонда. Каждое решение — на цифрах, не на догадках.
                   </p>
                 </div>
                 {heroStats && (
