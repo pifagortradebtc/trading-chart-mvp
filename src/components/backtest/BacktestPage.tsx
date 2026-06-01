@@ -16,6 +16,7 @@ import { computeMetrics, type MetricsSummary } from "@/lib/backtest/metrics";
 import type { BacktestResult, BacktestSettings, TradeRecord } from "@/lib/backtest/types";
 import { DEFAULT_BACKTEST, migrateBacktestSettings } from "@/lib/backtest/backtestDefaults";
 import { BacktestSettingsForm } from "./BacktestSettings";
+import { NumberInput } from "./NumberInput";
 import { BacktestResults } from "./BacktestResults";
 import { BacktestStrategyDashboard } from "./BacktestStrategyDashboard";
 import { PortfolioBacktestDashboard } from "./PortfolioBacktestDashboard";
@@ -1000,12 +1001,11 @@ export function BacktestPage() {
                   </label>
                   <label className="flex flex-col gap-1 text-sm">
                     <span className="text-[var(--rex-muted)]">Глубина (лет)</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       min={1}
                       max={12}
                       value={yearsBack}
-                      onChange={(e) => setYearsBack(Number(e.target.value))}
+                      onValueChange={setYearsBack}
                       className={`${inp} w-24`}
                     />
                   </label>
@@ -1150,7 +1150,11 @@ export function BacktestPage() {
               <PortfolioBacktestDashboard result={portfolioResult} />
             ) : (
               <>
-            <BacktestResults m={metrics} openPosition={result?.openPositionAtDataEnd ?? null} />
+            <BacktestResults
+              m={metrics}
+              openPosition={result?.openPositionAtDataEnd ?? null}
+              settings={settings}
+            />
             {result && metrics ? (
               <BacktestStrategyDashboard result={result} settings={settings} interval={interval} />
             ) : null}

@@ -13,6 +13,7 @@ import type { BacktestSettings } from "@/lib/backtest/types";
 import { CompositeStrategySection } from "./CompositeStrategySection";
 import { CompositeFormulaRow } from "./CompositeFormulaRow";
 import { ChaikKeltSettingsForm } from "./ChaikKeltSettingsForm";
+import { NumberInput } from "./NumberInput";
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -212,14 +213,14 @@ export function BacktestSettingsForm({
     });
 
   /**
-   * Упрощённая модель «как думает трейдер» поверх Pine-полей под капотом:
-   *   Депозит       = startDepositUsdt (счёт под стратегию, база метрик)
-   *   Плечо         = leverage
-   *   Маржа/сделку  = gridTotalNotionalUsdt / leverage (реальный залог при full grid)
-   *   Доп. баланс   = max(0, walletBalanceUsdt − startDepositUsdt) (страхует в Cross)
+   * Упрощённая модель «как думает трейдер» — всего ДВА поля + плечо:
+   *   Баланс кошелька = startDepositUsdt (всё, что на счёте; база для %-метрик)
+   *   Плечо           = leverage
+   *   Сумма в торговле= gridTotalNotionalUsdt / leverage (залог под одну сделку, full grid)
    *
-   * Под капотом всё остаётся в старых полях типа DcaBotSettings — старые снимки
-   * без миграций раскладываются обратно (extra просто будет 0..N).
+   * `walletBalanceUsdt` под капотом синхронизируется с депозитом 1:1 — отдельного
+   * «доп. свободного баланса» в UI больше нет (упрощение для трейдера). Старые снимки
+   * с walletBalance > startDeposit терпимы (поля просто равны после первого изменения).
    */
   const dca = settings.dca;
   const gridNotionalEffective =
@@ -227,22 +228,21 @@ export function BacktestSettingsForm({
       ? dca.gridTotalNotionalUsdt
       : dca.startDepositUsdt;
   const marginPerTradeUsdt = dca.leverage > 0 ? gridNotionalEffective / dca.leverage : 0;
-  const marginPctOfDepo =
+  const marginPctOfWallet =
     dca.startDepositUsdt > 0 ? (marginPerTradeUsdt / dca.startDepositUsdt) * 100 : 0;
-  const extraFreeBalance = Math.max(0, dca.walletBalanceUsdt - dca.startDepositUsdt);
-  const walletTotalUsdt = dca.startDepositUsdt + extraFreeBalance;
-  const freeBufferAfterTrade = Math.max(0, walletTotalUsdt - marginPerTradeUsdt);
+  const freeBufferAfterTrade = Math.max(0, dca.startDepositUsdt - marginPerTradeUsdt);
 
   /** Изменения «как трейдер» → правильно раскладываем в Pine-поля. */
   const setDeposit = (newDepo: number) => {
     const depo = Number.isFinite(newDepo) && newDepo > 0 ? newDepo : 0;
     patchDca({
       startDepositUsdt: depo,
-      walletBalanceUsdt: depo + extraFreeBalance,
+      /** Кошелёк = депозит (extra balance в UI нет). */
+      walletBalanceUsdt: depo,
       /** Сохраняем долю маржи: gridNotional = margin% × depo × leverage. */
       gridTotalNotionalUsdt:
-        marginPctOfDepo > 0 && depo > 0
-          ? (depo * marginPctOfDepo * dca.leverage) / 100
+        marginPctOfWallet > 0 && depo > 0
+          ? (depo * marginPctOfWallet * dca.leverage) / 100
           : depo,
     });
   };
@@ -256,13 +256,9 @@ export function BacktestSettingsForm({
   };
   const setMarginUsdt = (newMargin: number) => {
     const m = Number.isFinite(newMargin) && newMargin > 0 ? newMargin : 0;
-    /** Cap: маржа не может быть больше депозита (иначе бот залезет в чужие деньги). */
+    /** Cap: «сумма в торговле» не может быть больше баланса кошелька. */
     const capped = Math.min(m, dca.startDepositUsdt);
     patchDca({ gridTotalNotionalUsdt: capped * dca.leverage });
-  };
-  const setExtraFreeBalance = (newExtra: number) => {
-    const extra = Number.isFinite(newExtra) && newExtra > 0 ? newExtra : 0;
-    patchDca({ walletBalanceUsdt: dca.startDepositUsdt + extra });
   };
 
   return (
@@ -384,8 +380,7 @@ export function BacktestSettingsForm({
                   (например +0.05 — войти только при сильном положительном RO).
                 </Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 step="0.01"
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
                 value={
@@ -393,9 +388,7 @@ export function BacktestSettingsForm({
                     ? settings.buyForce.zeroLevel
                     : settings.sellForce.zeroLevel
                 }
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (!Number.isFinite(v)) return;
+                onValueChange={(v) => {
                   if (settings.strategyKind === "buyforce_dca")
                     patchBuy({ zeroLevel: v });
                   else patchSell({ zeroLevel: v });
@@ -410,18 +403,17 @@ export function BacktestSettingsForm({
                   Выше — реже сигналы, меньше шумных входов.
                 </Tip>
               </span>
-              <input
-                type="number"
-                min="0"
-                step="1"
+              <NumberInput
+                min={0}
+                step={1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
                 value={
                   settings.strategyKind === "buyforce_dca"
                     ? settings.buyForce.cooldownBars
                     : settings.sellForce.cooldownBars
                 }
-                onChange={(e) => {
-                  const v = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                onValueChange={(n) => {
+                  const v = Math.max(0, Math.floor(n));
                   if (settings.strategyKind === "buyforce_dca")
                     patchBuy({ cooldownBars: v });
                   else patchSell({ cooldownBars: v });
@@ -487,63 +479,60 @@ export function BacktestSettingsForm({
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>
-                Депозит USDT (на счёте под стратегию)
+                Баланс кошелька USDT
                 <Tip>
-                  Сумма USDT, выделенная под этого DCA-бота. От неё считаются все %-метрики
-                  (Return%, MaxDD%). Если у тебя на бирже есть ещё деньги под другие стратегии,
-                  укажи их ниже в «Доп. свободный баланс».
+                  Сколько всего USDT у тебя на счёте под эту стратегию. От этого числа считаются все
+                  %-метрики (Return%, MaxDD%) и от него же отталкивается «Сумма в торговле».
                 </Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0}
                 step={1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.startDepositUsdt}
-                onChange={(e) => setDeposit(Number(e.target.value))}
+                onValueChange={setDeposit}
               />
             </label>
             <label className="flex flex-col gap-1">
               <span>
                 Плечо
                 <Tip>
-                  При изменении плеча «Маржа на сделку» фиксируется, а номинал позиции масштабируется.
-                  Пример: маржа 2500 USDT × плечо 4 = номинал 10 000 USDT.
+                  При изменении плеча «Сумма в торговле» фиксируется, а номинал позиции масштабируется.
+                  Пример: 2500 USDT в торговле × плечо 4 = номинал 10 000 USDT, который и распределяется по сетке.
                 </Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 step={1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.leverage}
-                onChange={(e) => setLeverage(Number(e.target.value))}
+                onValueChange={setLeverage}
               />
             </label>
           </div>
 
-          {/* Маржа на сделку — главное поле «сколько реально торгуется» */}
+          {/* Сумма в торговле — главное поле «сколько реально работает в сделках» */}
           <label className="flex flex-col gap-1">
             <span>
-              Маржа на сделку USDT
+              Сумма в торговле USDT
               <Tip>
-                Реальный залог, который замораживается на счёте при полном заполнении DCA-сетки.
-                Должна быть ≤ депозиту. Номинал позиции (face value) = маржа × плечо — именно эта сумма
-                распределяется по ордерам сетки. Эквивалентно Pine `marginPerTrade / leverage`.
+                Сколько денег реально участвует в позиции (залог под одну сделку при полном заполнении
+                сетки). Должна быть ≤ балансу кошелька — остальное лежит на счёте как обеспечение.
+                Номинал позиции (face value) = «Сумма в торговле» × плечо, и именно он распределяется
+                по ордерам сетки.
               </Tip>
             </span>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
+              <NumberInput
                 min={0}
                 step={1}
                 max={settings.dca.startDepositUsdt}
                 className="flex-1 rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={Math.round(marginPerTradeUsdt * 100) / 100}
-                onChange={(e) => setMarginUsdt(Number(e.target.value))}
+                onValueChange={setMarginUsdt}
               />
               <span className="whitespace-nowrap font-mono text-[11px] text-[#787b86]">
-                ≈ {marginPctOfDepo.toFixed(1)}% депо
+                ≈ {marginPctOfWallet.toFixed(1)}% кошелька
               </span>
             </div>
             <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 rounded-md border border-cyan-500/20 bg-cyan-500/[0.04] px-2 py-1.5 text-[10.5px]">
@@ -569,82 +558,39 @@ export function BacktestSettingsForm({
             </div>
           </label>
 
-          {/* Тип маржи + опц. доп. баланс на счёте сверх депо */}
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
-              <span>
-                Тип маржи
-                <Tip>
-                  Cross: ликвидация считается от всего счёта (депозит + доп. баланс). Isolated: только от
-                  маржи, посланной на позицию — ликвидация значительно ближе.
-                </Tip>
-              </span>
-              <select
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
-                value={settings.dca.marginMode}
-                onChange={(e) =>
-                  patchDca({
-                    marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
-                  })
-                }
-              >
-                <option value="isolated">Изолированная</option>
-                <option value="cross">Кросс</option>
-              </select>
-            </label>
-            <label
-              className={`flex flex-col gap-1 ${isCrossMargin ? "" : inactiveClass}`}
-              title={
-                isCrossMargin
-                  ? undefined
-                  : "В Isolated-режиме ликвидация считается только от маржи позиции; доп. баланс не страхует."
+          {/* Тип маржи (отдельной строкой во всю ширину) */}
+          <label className="flex flex-col gap-1">
+            <span>
+              Тип маржи
+              <Tip>
+                Cross: ликвидация считается от всего баланса кошелька. Isolated: только от суммы в торговле
+                (залога позиции) — ликвидация значительно ближе.
+              </Tip>
+            </span>
+            <select
+              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-3 py-2 text-[#d1d4dc]"
+              value={settings.dca.marginMode}
+              onChange={(e) =>
+                patchDca({
+                  marginMode: e.target.value as BacktestSettings["dca"]["marginMode"],
+                })
               }
             >
-              <span>
-                Доп. свободный баланс на счёте USDT (опц.)
-                {!isCrossMargin && (
-                  <span className="ml-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-200">
-                    только CROSS
-                  </span>
-                )}
-                <Tip>
-                  Если на бирже под другие стратегии лежат ещё деньги — укажи их здесь. В Cross-режиме они
-                  страхуют эту позицию от ликвидации (эффективное плечо для ликвидации ↓). На размеры
-                  ордеров и метрики НЕ влияет — только на оценку ликвидации.
-                </Tip>
-              </span>
-              <input
-                type="number"
-                min={0}
-                step={1}
-                disabled={!isCrossMargin}
-                className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
-                value={extraFreeBalance}
-                onChange={(e) => setExtraFreeBalance(Number(e.target.value))}
-              />
-              {isCrossMargin ? (
-                <span className="text-[10px] text-[#6b7280]">
-                  Полный кошелёк для ликвидации: {walletTotalUsdt.toLocaleString("ru-RU")} USDT
-                </span>
-              ) : (
-                <span className="text-[10px] text-[#6b7280]">
-                  Поле активно только в Cross. В Isolated ликвидация = от маржи позиции.
-                </span>
-              )}
-            </label>
-          </div>
+              <option value="isolated">Изолированная</option>
+              <option value="cross">Кросс</option>
+            </select>
+          </label>
 
           {/* Параметры сетки */}
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>Ордеров в сетке</span>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 step={1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.ordersCount}
-                onChange={(e) => patchDca({ ordersCount: Number(e.target.value) })}
+                onValueChange={(n) => patchDca({ ordersCount: n })}
               />
             </label>
             <label
@@ -652,7 +598,7 @@ export function BacktestSettingsForm({
               title={
                 willTradeShort
                   ? undefined
-                  : "В режиме «Только LONG» это поле не используется. LONG-сетка строится из «Маржа на сделку» × плечо через volumeFactor."
+                  : "В режиме «Только LONG» это поле не используется. LONG-сетка строится из «Сумма в торговле» × плечо через volumeFactor."
               }
             >
               <span>
@@ -668,16 +614,13 @@ export function BacktestSettingsForm({
                   В LONG это поле игнорируется — там сумма сетки = маржа × плечо.
                 </Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 step={0.01}
                 min={0.01}
                 disabled={!willTradeShort}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono disabled:cursor-not-allowed"
                 value={settings.dca.firstOrderDepositPct}
-                onChange={(e) =>
-                  patchDca({ firstOrderDepositPct: Number(e.target.value) })
-                }
+                onValueChange={(n) => patchDca({ firstOrderDepositPct: n })}
               />
               {willTradeShort ? (
                 <span className="text-[10px] text-[#6b7280]">
@@ -692,7 +635,7 @@ export function BacktestSettingsForm({
                 </span>
               ) : (
                 <span className="text-[10px] text-[#6b7280]">
-                  Не применяется в LONG: размер LONG-сетки = «Маржа на сделку» × плечо.
+                  Не применяется в LONG: размер LONG-сетки = «Сумма в торговле» × плечо.
                 </span>
               )}
             </label>
@@ -702,11 +645,10 @@ export function BacktestSettingsForm({
               Перекрытие цены %
               <Tip>Общий диапазон усреднения от первой цены входа</Tip>
             </span>
-            <input
-              type="number"
+            <NumberInput
               className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
               value={settings.dca.priceOverlapPct}
-              onChange={(e) => patchDca({ priceOverlapPct: Number(e.target.value) })}
+              onValueChange={(n) => patchDca({ priceOverlapPct: n })}
             />
           </label>
           <div className="grid grid-cols-2 gap-2">
@@ -715,12 +657,11 @@ export function BacktestSettingsForm({
                 Price factor
                 <Tip>Рост расстояния между уровнями сетки</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 step={0.1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.priceFactor}
-                onChange={(e) => patchDca({ priceFactor: Number(e.target.value) })}
+                onValueChange={(n) => patchDca({ priceFactor: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -728,12 +669,11 @@ export function BacktestSettingsForm({
                 Volume factor
                 <Tip>Рост объёма каждого следующего ордера</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 step={0.1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.volumeFactor}
-                onChange={(e) => patchDca({ volumeFactor: Number(e.target.value) })}
+                onValueChange={(n) => patchDca({ volumeFactor: n })}
               />
             </label>
           </div>
@@ -745,12 +685,11 @@ export function BacktestSettingsForm({
                   От текущей средней позиции после каждого DCA, не от первого входа; при нескольких входах цель — средняя плюс этот процент.
                 </Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 step={0.01}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.takeProfitPct}
-                onChange={(e) => patchDca({ takeProfitPct: Number(e.target.value) })}
+                onValueChange={(n) => patchDca({ takeProfitPct: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -791,24 +730,20 @@ export function BacktestSettingsForm({
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1">
               <span>Комиссия % за сторону</span>
-              <input
-                type="number"
+              <NumberInput
                 step={0.001}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.feePctPerSide}
-                onChange={(e) => patchDca({ feePctPerSide: Number(e.target.value) })}
+                onValueChange={(n) => patchDca({ feePctPerSide: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
               <span>Funding % / 8ч</span>
-              <input
-                type="number"
+              <NumberInput
                 step={0.001}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.dca.fundingPctPer8h}
-                onChange={(e) =>
-                  patchDca({ fundingPctPer8h: Number(e.target.value) })
-                }
+                onValueChange={(n) => patchDca({ fundingPctPer8h: n })}
               />
             </label>
           </div>
@@ -862,16 +797,15 @@ export function BacktestSettingsForm({
                         : "Как `initial_capital` в Pine."}
                     </Tip>
                   </span>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     step={1}
                     className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
                     value={settings.dca.startDepositUsdt}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       onChange(
                         applyPifagorTvDefaults(settings, {
-                          startDepositUsdt: Number(e.target.value),
+                          startDepositUsdt: n,
                         }),
                       )
                     }
@@ -886,16 +820,15 @@ export function BacktestSettingsForm({
                         : "Как `default_qty_value` в Pine (strategy.cash)."}
                     </Tip>
                   </span>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     step={1}
                     className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-2 font-mono"
                     value={settings.pifagorAlts.entryNotionalUsdt}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       onChange(
                         applyPifagorTvDefaults(settings, {
-                          entryNotionalUsdt: Math.max(1, Number(e.target.value) || 0),
+                          entryNotionalUsdt: Math.max(1, n),
                         }),
                       )
                     }
@@ -967,13 +900,12 @@ export function BacktestSettingsForm({
                 keepP
                 <Tip>Сколько последних магнитов держать (старые удаляются)</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 max={490}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.keepP}
-                onChange={(e) => patchPv({ keepP: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ keepP: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -981,13 +913,12 @@ export function BacktestSettingsForm({
                 projBars
                 <Tip>Визуальная проекция магнита (только для UI, на торговлю не влияет)</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 max={100}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.projBars}
-                onChange={(e) => patchPv({ projBars: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ projBars: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -995,13 +926,12 @@ export function BacktestSettingsForm({
                 minMagnetAge
                 <Tip>Минимум баров до того, как магнит можно торговать. Касание раньше = pre-invalid (gray).</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0}
                 max={100}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.minMagnetAge}
-                onChange={(e) => patchPv({ minMagnetAge: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ minMagnetAge: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1009,14 +939,13 @@ export function BacktestSettingsForm({
                 Take Profit %
                 <Tip>% от цены входа</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0.1}
                 max={20}
                 step={0.1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.tpPct}
-                onChange={(e) => patchPv({ tpPct: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ tpPct: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1024,14 +953,13 @@ export function BacktestSettingsForm({
                 Stop Loss %
                 <Tip>% от цены входа</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0.1}
                 max={20}
                 step={0.1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.slPct}
-                onChange={(e) => patchPv({ slPct: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ slPct: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1039,14 +967,13 @@ export function BacktestSettingsForm({
                 Стартовый размер позиции %
                 <Tip>baseRiskPct — стартовая доля equity на сделку</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0.1}
                 max={100}
                 step={0.5}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.baseRiskPct}
-                onChange={(e) => patchPv({ baseRiskPct: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ baseRiskPct: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1054,14 +981,13 @@ export function BacktestSettingsForm({
                 Макс. размер позиции %
                 <Tip>maxRiskPct — потолок при мартингейле</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0.1}
                 max={500}
                 step={0.5}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.maxRiskPct}
-                onChange={(e) => patchPv({ maxRiskPct: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ maxRiskPct: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1069,14 +995,13 @@ export function BacktestSettingsForm({
                 Шаг увеличения после стопа %
                 <Tip>stepRiskPct — на сколько растёт размер позиции после каждого STOP</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0.1}
                 max={100}
                 step={0.5}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.stepRiskPct}
-                onChange={(e) => patchPv({ stepRiskPct: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ stepRiskPct: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1084,13 +1009,12 @@ export function BacktestSettingsForm({
                 Начальный капитал USDT
                 <Tip>initial_capital в Pine</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 step={1}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.initialCapitalUsdt}
-                onChange={(e) => patchPv({ initialCapitalUsdt: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ initialCapitalUsdt: n })}
               />
             </label>
             <label className="flex flex-col gap-1">
@@ -1098,13 +1022,12 @@ export function BacktestSettingsForm({
                 Комиссия % за сторону
                 <Tip>В Pine выключена (0). Тут — для what-if проверки fee impact.</Tip>
               </span>
-              <input
-                type="number"
+              <NumberInput
                 min={0}
                 step={0.01}
                 className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
                 value={settings.pivot21.feePctPerSide}
-                onChange={(e) => patchPv({ feePctPerSide: Number(e.target.value) })}
+                onValueChange={(n) => patchPv({ feePctPerSide: n })}
               />
             </label>
             <div className="flex items-end gap-4">

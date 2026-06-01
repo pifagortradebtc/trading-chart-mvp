@@ -11,6 +11,7 @@
 
 import { DEFAULT_CHAIK } from "@/lib/backtest/backtestDefaults";
 import type { ChaikKeltSettings } from "@/lib/backtest/types";
+import { NumberInput } from "./NumberInput";
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -19,6 +20,9 @@ function Tip({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
+
+const NUM_CLS =
+  "rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono";
 
 export function ChaikKeltSettingsForm({
   value,
@@ -67,20 +71,18 @@ export function ChaikKeltSettingsForm({
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1">
           <span>Chaikin fast</span>
-          <input
-            type="number"
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          <NumberInput
+            className={NUM_CLS}
             value={value.chaikinFast}
-            onChange={(e) => onChange({ chaikinFast: Number(e.target.value) })}
+            onValueChange={(n) => onChange({ chaikinFast: n })}
           />
         </label>
         <label className="flex flex-col gap-1">
           <span>Chaikin slow</span>
-          <input
-            type="number"
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          <NumberInput
+            className={NUM_CLS}
             value={value.chaikinSlow}
-            onChange={(e) => onChange({ chaikinSlow: Number(e.target.value) })}
+            onValueChange={(n) => onChange({ chaikinSlow: n })}
           />
         </label>
       </div>
@@ -90,11 +92,10 @@ export function ChaikKeltSettingsForm({
           ADX порог (боковик ≤)
           <Tip>Выше — тренд, ниже или равно — боковик в логике сигнала</Tip>
         </span>
-        <input
-          type="number"
-          className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+        <NumberInput
+          className={NUM_CLS}
           value={value.adxThreshold}
-          onChange={(e) => onChange({ adxThreshold: Number(e.target.value) })}
+          onValueChange={(n) => onChange({ adxThreshold: n })}
         />
       </label>
 
@@ -104,13 +105,10 @@ export function ChaikKeltSettingsForm({
             RSI range long &lt;
             <Tip>Порог RSI для LONG в боковике</Tip>
           </span>
-          <input
-            type="number"
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          <NumberInput
+            className={NUM_CLS}
             value={value.rsiRangeThresholdLong}
-            onChange={(e) =>
-              onChange({ rsiRangeThresholdLong: Number(e.target.value) })
-            }
+            onValueChange={(n) => onChange({ rsiRangeThresholdLong: n })}
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -118,65 +116,57 @@ export function ChaikKeltSettingsForm({
             RSI trend long &lt;
             <Tip>Порог RSI для LONG в тренде</Tip>
           </span>
-          <input
-            type="number"
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          <NumberInput
+            className={NUM_CLS}
             value={value.rsiTrendThresholdLong}
-            onChange={(e) =>
-              onChange({ rsiTrendThresholdLong: Number(e.target.value) })
-            }
+            onValueChange={(n) => onChange({ rsiTrendThresholdLong: n })}
           />
         </label>
       </div>
 
       <label className="flex flex-col gap-1">
         <span>Длина EMA отката</span>
-        <input
-          type="number"
-          className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+        <NumberInput
+          className={NUM_CLS}
           value={value.emaPullbackLen}
-          onChange={(e) => onChange({ emaPullbackLen: Number(e.target.value) })}
+          onValueChange={(n) => onChange({ emaPullbackLen: n })}
         />
       </label>
 
       <div className="grid grid-cols-3 gap-2">
         <label className="flex flex-col gap-1">
           <span>Keltner EMA</span>
-          <input
-            type="number"
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          <NumberInput
+            className={NUM_CLS}
             value={value.keltnerEmaLen}
-            onChange={(e) => onChange({ keltnerEmaLen: Number(e.target.value) })}
+            onValueChange={(n) => onChange({ keltnerEmaLen: n })}
           />
         </label>
         <label className="flex flex-col gap-1">
           <span>Keltner ATR</span>
-          <input
-            type="number"
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          <NumberInput
+            className={NUM_CLS}
             value={value.keltnerAtrLen}
-            onChange={(e) => onChange({ keltnerAtrLen: Number(e.target.value) })}
+            onValueChange={(n) => onChange({ keltnerAtrLen: n })}
           />
         </label>
         <label className="flex flex-col gap-1">
           <span>Keltner mult</span>
-          <input
-            type="number"
+          <NumberInput
             step={0.1}
-            className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            className={NUM_CLS}
             value={value.keltnerMult}
-            onChange={(e) => onChange({ keltnerMult: Number(e.target.value) })}
+            onValueChange={(n) => onChange({ keltnerMult: n })}
           />
         </label>
       </div>
 
       <label className="flex flex-col gap-1">
         <span>Cooldown (баров)</span>
-        <input
-          type="number"
-          className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+        <NumberInput
+          className={NUM_CLS}
           value={value.cooldownBars}
-          onChange={(e) => onChange({ cooldownBars: Number(e.target.value) })}
+          onValueChange={(n) => onChange({ cooldownBars: n })}
         />
       </label>
 
@@ -191,7 +181,7 @@ export function ChaikKeltSettingsForm({
         </span>
         <input
           type="text"
-          className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+          className={NUM_CLS}
           value={value.chaikinTf}
           onChange={(e) => onChange({ chaikinTf: e.target.value })}
         />
@@ -213,12 +203,11 @@ export function ChaikKeltSettingsForm({
           </label>
           <label className="flex flex-col gap-1">
             <span>k ATR (боковик)</span>
-            <input
-              type="number"
+            <NumberInput
               step={0.01}
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              className={NUM_CLS}
               value={value.limitRangeAtr}
-              onChange={(e) => onChange({ limitRangeAtr: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ limitRangeAtr: n })}
             />
           </label>
           <label className="flex items-center gap-2">
@@ -231,12 +220,11 @@ export function ChaikKeltSettingsForm({
           </label>
           <label className="flex flex-col gap-1">
             <span>k ATR (тренд)</span>
-            <input
-              type="number"
+            <NumberInput
               step={0.01}
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              className={NUM_CLS}
               value={value.limitTrendAtr}
-              onChange={(e) => onChange({ limitTrendAtr: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ limitTrendAtr: n })}
             />
           </label>
         </div>
@@ -265,66 +253,59 @@ export function ChaikKeltSettingsForm({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="flex flex-col gap-1">
             <span>Период ADX</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.adxLength}
-              onChange={(e) => onChange({ adxLength: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ adxLength: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>Окно диапазона (баров)</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.rangeBars}
-              onChange={(e) => onChange({ rangeBars: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ rangeBars: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>Макс. позиция лонг %</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.rangeMaxPctLong}
-              onChange={(e) => onChange({ rangeMaxPctLong: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ rangeMaxPctLong: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>Мин. позиция шорт %</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.rangeMinPctShort}
-              onChange={(e) => onChange({ rangeMinPctShort: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ rangeMinPctShort: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>Допуск отката к EMA %</span>
-            <input
-              type="number"
+            <NumberInput
               step={0.1}
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+              className={NUM_CLS}
               value={value.pullbackPct}
-              onChange={(e) => onChange({ pullbackPct: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ pullbackPct: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>Баров для импульса (lookback)</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.divLookback}
-              onChange={(e) => onChange({ divLookback: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ divLookback: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>Период RSI</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.rsiLen}
-              onChange={(e) => onChange({ rsiLen: Number(e.target.value) })}
+              onValueChange={(n) => onChange({ rsiLen: n })}
             />
           </label>
           <label className="flex items-center gap-2 pt-6">
@@ -337,24 +318,18 @@ export function ChaikKeltSettingsForm({
           </label>
           <label className="flex flex-col gap-1">
             <span>RSI шорт боковик &gt;</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.rsiRangeThresholdShort}
-              onChange={(e) =>
-                onChange({ rsiRangeThresholdShort: Number(e.target.value) })
-              }
+              onValueChange={(n) => onChange({ rsiRangeThresholdShort: n })}
             />
           </label>
           <label className="flex flex-col gap-1">
             <span>RSI шорт тренд &gt;</span>
-            <input
-              type="number"
-              className="rounded-lg border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono"
+            <NumberInput
+              className={NUM_CLS}
               value={value.rsiTrendThresholdShort}
-              onChange={(e) =>
-                onChange({ rsiTrendThresholdShort: Number(e.target.value) })
-              }
+              onValueChange={(n) => onChange({ rsiTrendThresholdShort: n })}
             />
           </label>
         </div>

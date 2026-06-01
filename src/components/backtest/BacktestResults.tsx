@@ -5,7 +5,7 @@ import {
   worstTradeDetailRu,
   type MetricsSummary,
 } from "@/lib/backtest/metrics";
-import type { OpenPositionSnapshot } from "@/lib/backtest/types";
+import type { BacktestSettings, OpenPositionSnapshot } from "@/lib/backtest/types";
 
 function Card({
   label,
@@ -41,10 +41,13 @@ function Card({
 export function BacktestResults({
   m,
   openPosition,
+  settings,
 }: {
   m: MetricsSummary | null;
   /** Если на последнем баре висит позиция — отдельной строкой показываем её просадку. */
   openPosition?: OpenPositionSnapshot | null;
+  /** Опционально — для оценки риска ликвидации по текущему плечу/марже. */
+  settings?: BacktestSettings;
 }) {
   if (!m) {
     return (
@@ -64,8 +67,86 @@ export function BacktestResults({
     openPosition?.maxDrawdownPct ?? 0,
   );
 
+  /**
+   * Приближённая точка ликвидации от средней цены: avg × (1 ± 1/L). Это «нижний
+   * предел» при полном заполнении сетки — реальная точка может быть дальше,
+   * если заполнились не все DCA-уровни (cumNotional < grid). На полном гриде
+   * совпадает с формулой движка.
+   */
+  const liqDistancePctApprox = settings && settings.dca.leverage > 0
+    ? (1 / settings.dca.leverage) * 100
+    : null;
+  /** Сигнал «должно было ликвидировать»: DD по firstPrice > точки ликвидации, но в trades 0 ликвидаций. */
+  const ddExceedsLiqApprox =
+    liqDistancePctApprox != null && worstOverallDd > liqDistancePctApprox * 4;
+  /** Помечаем «опасную» конфигурацию — высокое плечо + полное использование депозита под маржу. */
+  const isHighLeverageConfig = (() => {
+    if (!settings) return false;
+    const L = settings.dca.leverage;
+    if (L < 10) return false;
+    const wallet = settings.dca.startDepositUsdt;
+    const grid = settings.dca.gridTotalNotionalUsdt ?? wallet;
+    const marginPerTrade = L > 0 ? grid / L : 0;
+    const usagePct = wallet > 0 ? (marginPerTrade / wallet) * 100 : 0;
+    return usagePct >= 80; // > 80% депо под маржу одной сделки
+  })();
+
   return (
     <div className="space-y-4">
+      {/* Красный «уже случилось» — приоритетный баннер. */}
+      {m.liquidations > 0 ? (
+        <div className="flex items-start gap-3 rounded-xl border border-rose-500/60 bg-rose-500/[0.08] px-4 py-3 shadow-lg">
+          <span aria-hidden className="text-2xl leading-none">⚠</span>
+          <div className="flex-1">
+            <div className="text-sm font-semibold uppercase tracking-wide text-rose-200">
+              Внимание: ликвидации — {m.liquidations} шт.
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-rose-100/90">
+              В прогоне зафиксировано {m.liquidations} ликвидаций: цена прошла приближённую
+              точку{" "}
+              <code className="rounded bg-black/30 px-1 font-mono">avg × (1 − 1/L + mmRate)</code>{" "}
+              против позиции. На реальной бирже это полная потеря залога (либо всего кошелька
+              в Cross). Подсветка их видна в trade-table колонкой «Причина» и красными
+              стрелочками на графике.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Оранжевый «должно было» — когда DD ушла за приближённый порог, но ликвидаций нет. */}
+      {ddExceedsLiqApprox && m.liquidations === 0 && liqDistancePctApprox != null ? (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/55 bg-amber-500/[0.06] px-4 py-3">
+          <span aria-hidden className="text-2xl leading-none">⚠</span>
+          <div className="flex-1">
+            <div className="text-sm font-semibold uppercase tracking-wide text-amber-200">
+              Сомнительный результат: 0 ликвидаций при плече {settings?.dca.leverage}×
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-amber-100/90">
+              Худшая просадка{" "}
+              <span className="font-semibold text-amber-100">{worstOverallDd.toFixed(2)}%</span> от первой
+              цены входа сильно превышает приближённую точку ликвидации{" "}
+              <span className="font-semibold text-amber-100">~{liqDistancePctApprox.toFixed(2)}%</span>{" "}
+              от средней (1/L). Так бывает, когда DCA-сетка успевает усреднить позицию вниз и
+              avg уходит туда же, куда цена. Перепроверь: совпадают ли с реальностью
+              «Сумма в торговле», «Плечо», «Тип маржи». Если эти настройки честные — обнови
+              страницу (F5), чтобы перезапустить worker'а с актуальным движком.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Серый info — превентивно при опасных настройках, даже если ещё ничего не сломалось. */}
+      {settings && isHighLeverageConfig && m.liquidations === 0 && !ddExceedsLiqApprox ? (
+        <div className="flex items-start gap-3 rounded-xl border border-sky-500/35 bg-sky-500/[0.04] px-4 py-2.5">
+          <span aria-hidden className="text-base leading-none text-sky-300">ℹ</span>
+          <p className="flex-1 text-[11px] leading-relaxed text-sky-100/85">
+            Плечо {settings.dca.leverage}× с маржой ≈ депозиту: точка ликвидации ≈{" "}
+            <span className="font-semibold text-sky-100">{liqDistancePctApprox?.toFixed(2)}%</span>{" "}
+            от средней. Любое DCA-усреднение сдвигает её ниже вместе с avg — но запас до
+            wallet-wide ликвидации становится ~1% на каждое полное усреднение.
+          </p>
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card
           label="Итоговый PnL (USDT)"

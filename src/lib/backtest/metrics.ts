@@ -26,13 +26,13 @@ export function exitReasonLabelRu(r: TradeRecord["exitReason"]): string {
 export function worstTradeDetailRu(reason: TradeRecord["exitReason"]): string {
   switch (reason) {
     case "end_of_test":
-      return "К последней свече выборки цена не достигла лимитного TP — позиция закрыта по close последнего бара. Это не стоп и не ликвидация: при кросс-марже и без SL в движке других принудительных выходов нет.";
+      return "К последней свече выборки цена не достигла лимитного TP — позиция закрыта по close последнего бара. Это не стоп и не ликвидация: при отсутствии SL и реализации ликвидации в этом баре других принудительных выходов нет.";
     case "tp":
-      return "Выход по тейку от средней; отрицательный PnL бывает, если комиссии и фunding съели прибыль при узком TP.";
+      return "Выход по тейку от средней; отрицательный PnL бывает, если комиссии и funding съели прибыль при узком TP.";
     case "sl":
       return "В настройках задан Stop loss % — срабатывание стопа от средней.";
     case "liquidation":
-      return "Ветка ликвидации только при изолированной марже; при кросс-марже в бэктесте она отключена.";
+      return "Цена прошла приближённую точку ликвидации (avg × (1 − 1/L + mmRate)). В Cross используется effectiveLiquidationLeverage (масштабируется по wallet/deposit), в Isolated — номинальное плечо.";
     case "signal":
       return "Выход по условиям индикатора (например daily mult / diff), а не по TP.";
     default:

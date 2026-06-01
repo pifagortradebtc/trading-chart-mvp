@@ -7,13 +7,17 @@ import type { DcaGridRow, TradeRecord } from "./types";
 
 export type OverlayLevelKind = "entry" | "dca" | "avg" | "tp" | "liq";
 
-/** Упрощённая цена ликвидации на графике не показываем при кроссе (залог на всём счёте — не моделируем как изолированную линию). */
-function shouldDrawLiquidationLevel(tr: TradeRecord, last: DcaGridRow): boolean {
-  if (tr.marginMode === "cross") return false;
+/**
+ * Цена ликвидации показывается в обоих режимах маржи — в кроссе берётся
+ * `approxLiquidationPrice` по `effectiveLiquidationLeverage` (масштабируется
+ * по соотношению wallet/deposit). Раньше cross молча скрывался, и пользователь
+ * не видел линии ликвидации даже при экстремальных плечах вроде 90×.
+ */
+function shouldDrawLiquidationLevel(_tr: TradeRecord, last: DcaGridRow): boolean {
   const liq = last.approxLiquidationPrice;
   const avg = last.avgPrice;
   if (!Number.isFinite(liq) || !Number.isFinite(avg) || avg <= 0) return false;
-  if (tr.side === "long") return liq < avg;
+  if (_tr.side === "long") return liq < avg;
   return liq > avg;
 }
 

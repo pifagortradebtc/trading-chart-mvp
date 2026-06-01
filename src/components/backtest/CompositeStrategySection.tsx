@@ -34,6 +34,10 @@ import type {
   StrategySlot,
 } from "@/lib/backtest/types";
 import { ChaikKeltSettingsForm } from "./ChaikKeltSettingsForm";
+import { NumberInput } from "./NumberInput";
+
+const SLOT_NUM_CLS =
+  "rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]";
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -353,14 +357,13 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-3 gap-2">
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Уровень нуля</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      step={0.01}
+                      className={SLOT_NUM_CLS}
                       value={slot.buyForce.zeroLevel}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          buyForce: { ...slot.buyForce!, zeroLevel: Number(e.target.value) },
+                          buyForce: { ...slot.buyForce!, zeroLevel: n },
                         })
                       }
                     />
@@ -374,17 +377,16 @@ export function CompositeStrategySection({
                         TV-индикаторе.
                       </Tip>
                     </span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={1}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.buyForce.smoothingLength ?? 1}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           buyForce: {
                             ...slot.buyForce!,
-                            smoothingLength: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                            smoothingLength: Math.max(1, Math.floor(n)),
                           },
                         })
                       }
@@ -392,17 +394,16 @@ export function CompositeStrategySection({
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Задержка (баров)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.buyForce.cooldownBars}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           buyForce: {
                             ...slot.buyForce!,
-                            cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                            cooldownBars: Math.max(0, Math.floor(n)),
                           },
                         })
                       }
@@ -421,14 +422,13 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-3 gap-2">
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Уровень нуля</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      step={0.01}
+                      className={SLOT_NUM_CLS}
                       value={slot.sellForce.zeroLevel}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          sellForce: { ...slot.sellForce!, zeroLevel: Number(e.target.value) },
+                          sellForce: { ...slot.sellForce!, zeroLevel: n },
                         })
                       }
                     />
@@ -440,17 +440,16 @@ export function CompositeStrategySection({
                         1 = без сглаживания. &gt;1 = усреднение RO за N последних баров.
                       </Tip>
                     </span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={1}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.sellForce.smoothingLength ?? 1}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           sellForce: {
                             ...slot.sellForce!,
-                            smoothingLength: Math.max(1, Math.floor(Number(e.target.value) || 1)),
+                            smoothingLength: Math.max(1, Math.floor(n)),
                           },
                         })
                       }
@@ -458,17 +457,16 @@ export function CompositeStrategySection({
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Задержка (баров)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.sellForce.cooldownBars}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           sellForce: {
                             ...slot.sellForce!,
-                            cooldownBars: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                            cooldownBars: Math.max(0, Math.floor(n)),
                           },
                         })
                       }
@@ -551,16 +549,15 @@ export function CompositeStrategySection({
                         По умолчанию 0 (bid начал перевешивать ask).
                       </Tip>
                     </span>
-                    <input
-                      type="number"
-                      step="1000"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      step={1000}
+                      className={SLOT_NUM_CLS}
                       value={slot.bidAskSpread.threshold}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           bidAskSpread: {
                             ...slot.bidAskSpread!,
-                            threshold: Number(e.target.value) || 0,
+                            threshold: n,
                           },
                         })
                       }
@@ -576,17 +573,16 @@ export function CompositeStrategySection({
                         5-14 — мягкое сглаживание (как Off/SMA/EMA в TV).
                       </Tip>
                     </span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={1}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.bidAskSpread.smoothingLength}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           bidAskSpread: {
                             ...slot.bidAskSpread!,
-                            smoothingLength: Math.max(1, Number(e.target.value) || 1),
+                            smoothingLength: Math.max(1, n),
                           },
                         })
                       }
@@ -620,17 +616,16 @@ export function CompositeStrategySection({
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Задержка (баров)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.bidAskSpread.cooldownBars}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
                           bidAskSpread: {
                             ...slot.bidAskSpread!,
-                            cooldownBars: Math.max(0, Number(e.target.value) || 0),
+                            cooldownBars: Math.max(0, n),
                           },
                         })
                       }
@@ -678,72 +673,56 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-4 gap-2">
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Быстрая EMA</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={1}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.macd.fastLen}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          macd: {
-                            ...slot.macd!,
-                            fastLen: Math.max(1, Number(e.target.value) || 1),
-                          },
+                          macd: { ...slot.macd!, fastLen: Math.max(1, n) },
                         })
                       }
                     />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Медленная EMA</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={1}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.macd.slowLen}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          macd: {
-                            ...slot.macd!,
-                            slowLen: Math.max(1, Number(e.target.value) || 1),
-                          },
+                          macd: { ...slot.macd!, slowLen: Math.max(1, n) },
                         })
                       }
                     />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Сигнальная EMA</span>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={1}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.macd.signalLen}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          macd: {
-                            ...slot.macd!,
-                            signalLen: Math.max(1, Number(e.target.value) || 1),
-                          },
+                          macd: { ...slot.macd!, signalLen: Math.max(1, n) },
                         })
                       }
                     />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Задержка (баров)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.macd.cooldownBars}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          macd: {
-                            ...slot.macd!,
-                            cooldownBars: Math.max(0, Number(e.target.value) || 0),
-                          },
+                          macd: { ...slot.macd!, cooldownBars: Math.max(0, n) },
                         })
                       }
                     />
@@ -793,74 +772,58 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-4 gap-2">
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Период RSI</span>
-                    <input
-                      type="number"
-                      min="2"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={2}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.rsiThreshold.length}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          rsiThreshold: {
-                            ...slot.rsiThreshold!,
-                            length: Math.max(2, Number(e.target.value) || 14),
-                          },
+                          rsiThreshold: { ...slot.rsiThreshold!, length: Math.max(2, n) },
                         })
                       }
                     />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Перепроданность &lt;</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      max={100}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.rsiThreshold.oversoldThreshold}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          rsiThreshold: {
-                            ...slot.rsiThreshold!,
-                            oversoldThreshold: Number(e.target.value) || 30,
-                          },
+                          rsiThreshold: { ...slot.rsiThreshold!, oversoldThreshold: n },
                         })
                       }
                     />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Перекупленность &gt;</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      max={100}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.rsiThreshold.overboughtThreshold}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          rsiThreshold: {
-                            ...slot.rsiThreshold!,
-                            overboughtThreshold: Number(e.target.value) || 70,
-                          },
+                          rsiThreshold: { ...slot.rsiThreshold!, overboughtThreshold: n },
                         })
                       }
                     />
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[#787b86]">Задержка (баров)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                    <NumberInput
+                      min={0}
+                      step={1}
+                      className={SLOT_NUM_CLS}
                       value={slot.rsiThreshold.cooldownBars}
-                      onChange={(e) =>
+                      onValueChange={(n) =>
                         patchSlot(slot.id, {
-                          rsiThreshold: {
-                            ...slot.rsiThreshold!,
-                            cooldownBars: Math.max(0, Number(e.target.value) || 0),
-                          },
+                          rsiThreshold: { ...slot.rsiThreshold!, cooldownBars: Math.max(0, n) },
                         })
                       }
                     />
@@ -903,54 +866,42 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-3 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Быстрая EMA</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={1}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.emaCross.fastLen}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        emaCross: {
-                          ...slot.emaCross!,
-                          fastLen: Math.max(1, Number(e.target.value) || 50),
-                        },
+                        emaCross: { ...slot.emaCross!, fastLen: Math.max(1, n) },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Медленная EMA</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={1}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.emaCross.slowLen}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        emaCross: {
-                          ...slot.emaCross!,
-                          slowLen: Math.max(1, Number(e.target.value) || 200),
-                        },
+                        emaCross: { ...slot.emaCross!, slowLen: Math.max(1, n) },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Задержка (баров)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={0}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.emaCross.cooldownBars}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        emaCross: {
-                          ...slot.emaCross!,
-                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
-                        },
+                        emaCross: { ...slot.emaCross!, cooldownBars: Math.max(0, n) },
                       })
                     }
                   />
@@ -993,54 +944,42 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-3 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Период SMA</span>
-                  <input
-                    type="number"
-                    min="2"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={2}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.bollinger.length}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        bollinger: {
-                          ...slot.bollinger!,
-                          length: Math.max(2, Number(e.target.value) || 20),
-                        },
+                        bollinger: { ...slot.bollinger!, length: Math.max(2, n) },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Множитель σ</span>
-                  <input
-                    type="number"
-                    min="0.5"
-                    step="0.1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={0.5}
+                    step={0.1}
+                    className={SLOT_NUM_CLS}
                     value={slot.bollinger.stdDevMult}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        bollinger: {
-                          ...slot.bollinger!,
-                          stdDevMult: Number(e.target.value) || 2,
-                        },
+                        bollinger: { ...slot.bollinger!, stdDevMult: n },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Задержка (баров)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={0}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.bollinger.cooldownBars}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        bollinger: {
-                          ...slot.bollinger!,
-                          cooldownBars: Math.max(0, Number(e.target.value) || 0),
-                        },
+                        bollinger: { ...slot.bollinger!, cooldownBars: Math.max(0, n) },
                       })
                     }
                   />
@@ -1082,74 +1021,58 @@ export function CompositeStrategySection({
                 <div className="grid grid-cols-4 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Период %K</span>
-                  <input
-                    type="number"
-                    min="2"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={2}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.stochastic.kLength}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        stochastic: {
-                          ...slot.stochastic!,
-                          kLength: Math.max(2, Number(e.target.value) || 14),
-                        },
+                        stochastic: { ...slot.stochastic!, kLength: Math.max(2, n) },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Сглаживание %K</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={1}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.stochastic.kSmooth}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        stochastic: {
-                          ...slot.stochastic!,
-                          kSmooth: Math.max(1, Number(e.target.value) || 3),
-                        },
+                        stochastic: { ...slot.stochastic!, kSmooth: Math.max(1, n) },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Перепроданность &lt;</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={0}
+                    max={100}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.stochastic.oversoldThreshold}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        stochastic: {
-                          ...slot.stochastic!,
-                          oversoldThreshold: Number(e.target.value) || 20,
-                        },
+                        stochastic: { ...slot.stochastic!, oversoldThreshold: n },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Перекупленность &gt;</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={0}
+                    max={100}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.stochastic.overboughtThreshold}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        stochastic: {
-                          ...slot.stochastic!,
-                          overboughtThreshold: Number(e.target.value) || 80,
-                        },
+                        stochastic: { ...slot.stochastic!, overboughtThreshold: n },
                       })
                     }
                   />
@@ -1162,37 +1085,29 @@ export function CompositeStrategySection({
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Период ADX</span>
-                  <input
-                    type="number"
-                    min="2"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={2}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.adxFilter.length}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        adxFilter: {
-                          ...slot.adxFilter!,
-                          length: Math.max(2, Number(e.target.value) || 14),
-                        },
+                        adxFilter: { ...slot.adxFilter!, length: Math.max(2, n) },
                       })
                     }
                   />
                 </label>
                 <label className="flex flex-col gap-1">
                   <span className="text-[#787b86]">Порог силы тренда (ADX &gt;)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="rounded border border-[#2e3241] bg-[#131722] px-2 py-1 font-mono text-[#d1d4dc]"
+                  <NumberInput
+                    min={0}
+                    max={100}
+                    step={1}
+                    className={SLOT_NUM_CLS}
                     value={slot.adxFilter.threshold}
-                    onChange={(e) =>
+                    onValueChange={(n) =>
                       patchSlot(slot.id, {
-                        adxFilter: {
-                          ...slot.adxFilter!,
-                          threshold: Number(e.target.value) || 25,
-                        },
+                        adxFilter: { ...slot.adxFilter!, threshold: n },
                       })
                     }
                   />
@@ -1225,18 +1140,14 @@ export function CompositeStrategySection({
               с оператором И). 5–10 — мягкое подтверждение. 20+ — очень мягкое.
             </Tip>
           </span>
-          <input
-            type="number"
-            min="1"
-            max="200"
+          <NumberInput
+            min={1}
+            max={200}
             className="w-32 rounded border border-[#2e3241] bg-[#0c0e14] px-2 py-1 font-mono text-sm text-[#d1d4dc]"
             value={config.confirmWindowBars}
-            onChange={(e) =>
+            onValueChange={(n) =>
               patchComposite({
-                confirmWindowBars: Math.max(
-                  1,
-                  Math.min(200, Math.floor(Number(e.target.value) || 1)),
-                ),
+                confirmWindowBars: Math.max(1, Math.min(200, Math.floor(n))),
               })
             }
           />

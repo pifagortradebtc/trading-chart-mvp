@@ -189,11 +189,16 @@ function processLongBar(
 
   if (executionOrder === "conservative") {
     const liqP = liqNow();
-    if (
-      dca.marginMode !== "cross" &&
-      Number.isFinite(liqP) &&
-      low <= liqP
-    ) {
+    /**
+     * Ликвидация триггерится в обоих режимах:
+     *  - isolated: liqP по плечу позиции (приближение IM − MM).
+     *  - cross:    liqP по `effectiveLiquidationLeverage` (L × wallet/deposit) —
+     *              если walletBalance > deposit, точка ликвидации ближе к entry,
+     *              т.к. реально на счёте больше залога. При wallet == deposit
+     *              формула совпадает с isolated.
+     * Ранее cross молча пропускался — это давало 0 ликвидаций даже при 90×.
+     */
+    if (Number.isFinite(liqP) && low <= liqP) {
       return "liquidation";
     }
     const slP = slNow();
@@ -202,11 +207,16 @@ function processLongBar(
   } else {
     if (tpHit()) return "tp";
     const liqP = liqNow();
-    if (
-      dca.marginMode !== "cross" &&
-      Number.isFinite(liqP) &&
-      low <= liqP
-    ) {
+    /**
+     * Ликвидация триггерится в обоих режимах:
+     *  - isolated: liqP по плечу позиции (приближение IM − MM).
+     *  - cross:    liqP по `effectiveLiquidationLeverage` (L × wallet/deposit) —
+     *              если walletBalance > deposit, точка ликвидации ближе к entry,
+     *              т.к. реально на счёте больше залога. При wallet == deposit
+     *              формула совпадает с isolated.
+     * Ранее cross молча пропускался — это давало 0 ликвидаций даже при 90×.
+     */
+    if (Number.isFinite(liqP) && low <= liqP) {
       return "liquidation";
     }
     const slP = slNow();
@@ -269,11 +279,8 @@ function processShortBar(
 
   if (executionOrder === "conservative") {
     const liqP = liqNow();
-    if (
-      dca.marginMode !== "cross" &&
-      Number.isFinite(liqP) &&
-      high >= liqP
-    ) {
+    /** Ликвидация (short). См. комментарий в `processLongBar`. */
+    if (Number.isFinite(liqP) && high >= liqP) {
       return "liquidation";
     }
     const slP = slNow();
@@ -282,11 +289,8 @@ function processShortBar(
   } else {
     if (tpHit()) return "tp";
     const liqP = liqNow();
-    if (
-      dca.marginMode !== "cross" &&
-      Number.isFinite(liqP) &&
-      high >= liqP
-    ) {
+    /** Ликвидация (short). См. комментарий в `processLongBar`. */
+    if (Number.isFinite(liqP) && high >= liqP) {
       return "liquidation";
     }
     const slP = slNow();
