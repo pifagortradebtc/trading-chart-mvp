@@ -105,6 +105,8 @@ export function ResearchShell({
     retPct?: number;
     maxDdPct?: number;
     trades?: number;
+    /** Кол-во ликвидаций в прогоне. 0 показываем тоже — пользователь хочет видеть явно. */
+    liquidations?: number;
   };
   runProgress: number | null;
   stickyActions: ReactNode;
@@ -197,6 +199,13 @@ export function ResearchShell({
                     )}
                     {heroStats.trades != null && (
                       <StatChip label="Сделок" value={String(heroStats.trades)} />
+                    )}
+                    {heroStats.liquidations != null && (
+                      <StatChip
+                        label="Ликвидаций"
+                        value={String(heroStats.liquidations)}
+                        warn={heroStats.liquidations > 0}
+                      />
                     )}
                   </div>
                 )}

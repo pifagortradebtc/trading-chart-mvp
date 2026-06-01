@@ -269,6 +269,8 @@ export function BacktestPage() {
       retPct: metrics?.totalReturnPct,
       maxDdPct: metrics != null ? worstDd : undefined,
       trades: metrics?.trades,
+      /** Показываем «0» тоже — чтобы видеть «было/не было», а не догадываться. */
+      liquidations: metrics?.liquidations,
     };
   }, [
     isPortfolioMode,
