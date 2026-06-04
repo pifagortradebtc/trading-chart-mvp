@@ -1002,6 +1002,55 @@ export function runBacktest(
     if (typeof ax === "number" && Number.isFinite(ax)) lastBarAtrKelt = ax;
   }
 
+  /**
+   * Резолв сигнала на ПОСЛЕДНЕМ баре. Если индикатор сработал на самой последней
+   * свече, in-loop логика для market_next_open («ставлю pendingLongOpen / pendingSignalBar
+   * только если i+1 < n») сигнал молча роняет — нет следующей свечи, на open которой
+   * можно войти. Юзер видит «индикатор кричит» в TradingView, но в бэктесте никакой
+   * висящей позиции нет, и непонятно «а где же моя сделка?».
+   *
+   * Здесь эмулируем: открываем по close последнего бара (close ≈ open следующей свечи,
+   * которой у нас в данных нет). Сделка попадает в openPositionAtDataEnd → на чарте
+   * появляется entry/AVG/TP/grid; метрики её фильтруют (isOpenPosition=true в finalize).
+   *
+   * Не трогаем pendingLongOpen с kind="limit_first" — там бот ЖДЁТ когда low дойдёт
+   * до firstRow.price, и close > firstRow.price означает «лимит не сработал бы»;
+   * рисовать там «висящую сделку» = вводить в заблуждение.
+   */
+  if (!open && n > 0) {
+    const lastIdx = n - 1;
+    const cLast = candles[lastIdx]!;
+    const lastSignalDir = resolveDirection(lastIdx, longActive, shortActive, settings);
+    if (lastSignalDir === "long" || lastSignalDir === "short") {
+      const grid = buildDcaGrid(lastSignalDir, cLast.close, settings.dca);
+      const firstRow = grid.rows[0];
+      const marginOk =
+        firstRow &&
+        firstRow.orderUsdt / settings.dca.leverage <=
+          maxMarginAvailableUsdt(settings.dca, equity) + 1e-9;
+      if (marginOk) {
+        const o = createOpenTrade({
+          id: tradeSeq++,
+          symbol,
+          dir: lastSignalDir,
+          signalBar: lastIdx,
+          settings,
+          meta: meta[lastIdx] ?? null,
+          grid,
+          entryBar: lastIdx,
+          simulationFromBar: lastIdx,
+          firstPrice: grid.firstEntryPrice,
+          firstFillTimeMs: cLast.time * 1000,
+          firstEntryKind: "market",
+        });
+        if (o) {
+          open = o;
+          signalsOut[lastIdx] = true;
+        }
+      }
+    }
+  }
+
   if (open && n > 0) {
     const cLast = candles[n - 1]!;
     const tMsEnd = cLast.time * 1000;
