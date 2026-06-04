@@ -210,11 +210,53 @@ export function BacktestResults({
                 : ""}
               {" "}— значит RO просто не cross-апнулся на этом баре. Скорее всего edge
               был раньше и сигнал уже использовался для одной из ранее открытых сделок
-              (sustained вверх ≠ повторный edge). Либо сработал cooldown. Проверь в TV:
-              был ли на последней свече ИМЕННО переход RO снизу-вверх через zero_level,
-              или RO просто остаётся положительным.
+              (sustained вверх ≠ повторный edge). Либо сработал cooldown.
             </>
           )}
+          {/* RO-значения последних баров — самая объективная диагностика. */}
+          {lastBarSignal.recentRo && lastBarSignal.recentRo.length > 0 ? (
+            <div className="mt-2 rounded-md border border-white/5 bg-black/30 px-3 py-2 font-mono text-[10.5px]">
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-[#787b86]">
+                RO последних {lastBarSignal.recentRo.length} баров (что движок реально
+                посчитал — сверь с TV)
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3 md:grid-cols-5">
+                {lastBarSignal.recentRo.map((row) => {
+                  const ts = new Date(row.timeMs);
+                  const dd = String(ts.getUTCDate()).padStart(2, "0");
+                  const mm = String(ts.getUTCMonth() + 1).padStart(2, "0");
+                  const isLast =
+                    row === lastBarSignal.recentRo![lastBarSignal.recentRo!.length - 1];
+                  const sign =
+                    row.ro == null
+                      ? "text-rose-300"
+                      : row.ro > 0
+                        ? "text-emerald-300"
+                        : row.ro < 0
+                          ? "text-amber-300"
+                          : "text-[#9aa0a6]";
+                  return (
+                    <div
+                      key={row.timeMs}
+                      className={`flex justify-between gap-2 ${isLast ? "rounded bg-white/[0.04] px-1" : ""}`}
+                    >
+                      <span className="text-[#9aa0a6]">{dd}.{mm}</span>
+                      <span className={sign}>
+                        {row.ro == null ? "NaN" : row.ro.toFixed(3)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-1.5 text-[10px] leading-snug text-[#9aa0a6]">
+                Edge-cross триггерится когда RO переходит из{" "}
+                <span className="text-amber-300">≤0</span> в{" "}
+                <span className="text-emerald-300">&gt;0</span> между двумя
+                соседними барами. Если у тебя в TV cross виден, а тут — нет, значит
+                наш RO считается по depth-серии Pifagor VPS (отличается от TV).
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

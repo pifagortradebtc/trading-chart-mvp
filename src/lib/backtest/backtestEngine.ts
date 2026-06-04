@@ -547,6 +547,8 @@ export function runBacktest(
   let shortActive: boolean[];
   let meta: (SignalBarState | null)[];
   let series: ChaikComputedSeries;
+  /** RO-серия первого BuyForce/SellForce-слота — для диагностики последнего бара. */
+  let depthRoSeriesForDiag: number[] | null = null;
 
   if (settings.strategyKind === "buyforce_dca") {
     if (!depthBars?.length) {
@@ -555,6 +557,7 @@ export function runBacktest(
       );
     }
     const r = computeBuyForceSignals(candles, depthBars, settings.buyForce);
+    depthRoSeriesForDiag = r.ro;
     longActive = r.active;
     shortActive = new Array<boolean>(n).fill(false);
     meta = new Array<SignalBarState | null>(n).fill(null);
@@ -566,6 +569,7 @@ export function runBacktest(
       );
     }
     const r = computeSellForceSignals(candles, depthBars, settings.sellForce);
+    depthRoSeriesForDiag = r.ro;
     longActive = new Array<boolean>(n).fill(false);
     shortActive = r.active;
     meta = new Array<SignalBarState | null>(n).fill(null);
@@ -598,6 +602,7 @@ export function runBacktest(
           depthBars ?? [],
           slot.buyForce ?? settings.buyForce,
         );
+        if (depthRoSeriesForDiag === null) depthRoSeriesForDiag = r.ro;
         return { long: r.active, short: new Array<boolean>(n).fill(false) };
       }
       if (slot.kind === "sellforce_dca") {
@@ -606,6 +611,7 @@ export function runBacktest(
           depthBars ?? [],
           slot.sellForce ?? settings.sellForce,
         );
+        if (depthRoSeriesForDiag === null) depthRoSeriesForDiag = r.ro;
         return { long: new Array<boolean>(n).fill(false), short: r.active };
       }
       if (slot.kind === "bidask_spread") {
@@ -1098,11 +1104,29 @@ export function runBacktest(
         };
       }
     } else {
+      /**
+       * Достаём последние 10 RO-значений первого BuyForce/SellForce-слота —
+       * юзер сможет глазами свериться с TV: «вот что движок реально считает».
+       */
+      const recentRoBars: NonNullable<
+        NonNullable<BacktestResult["lastBarSignal"]>["recentRo"]
+      > = [];
+      if (depthRoSeriesForDiag != null) {
+        const from = Math.max(0, n - 10);
+        for (let i = from; i < n; i++) {
+          const ro = depthRoSeriesForDiag[i];
+          recentRoBars.push({
+            timeMs: candles[i]!.time * 1000,
+            ro: Number.isFinite(ro) ? (ro as number) : null,
+          });
+        }
+      }
       lastBarSignalDiag = {
         resolvedDir: null,
         opened: false,
         reason: "no_signal",
         depthCoverage: depthCoverageDiag,
+        recentRo: recentRoBars.length ? recentRoBars : undefined,
       };
     }
 

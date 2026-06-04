@@ -398,6 +398,12 @@ export interface BacktestResult {
       /** Сколько свечей подряд с конца БЕЗ depth (>0 → VPS-лаг). */
       gapAtEndBars: number;
     };
+    /**
+     * Сырые RO-значения для последних 10 баров первого BuyForce/SellForce-слота
+     * композита. Помогают понять «реально ли был cross», когда юзер видит TV и
+     * не верит баннеру «cross не было». NaN = depth missing для этого бара.
+     */
+    recentRo?: Array<{ timeMs: number; ro: number | null }>;
   };
 }
 
