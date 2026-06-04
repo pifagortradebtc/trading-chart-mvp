@@ -1,5 +1,5 @@
 import { intervalToChartTimeframe } from "@/lib/chart/intervalToChartTimeframe";
-import type { TradeRecord } from "@/lib/backtest/types";
+import type { BacktestResult, TradeRecord } from "@/lib/backtest/types";
 import type { Candle, Timeframe } from "@/types/candle";
 import type { ChartFetchParams } from "@/store/useBacktestOverlayStore";
 
@@ -15,6 +15,12 @@ export interface BacktestChartHandoff {
   timeframe: Timeframe;
   /** Для мгновенного отображения до подгрузки `/api/ohlcv`. */
   candles?: Candle[];
+  /**
+   * Диагностика последнего бара (см. BacktestResult.lastBarSignal). Прокидываем
+   * в handoff, чтобы /chart показал «почему нет сделки #N+1» без перехода на
+   * /backtest. Если undefined — handoff из старой версии движка.
+   */
+  lastBarSignal?: BacktestResult["lastBarSignal"];
 }
 
 /**
@@ -91,6 +97,18 @@ export function buildTradeChartHandoff(
   };
 }
 
+function lastBarSuffix(diag?: BacktestResult["lastBarSignal"]): string {
+  if (!diag) return "";
+  if (diag.opened) {
+    const dir = diag.resolvedDir === "long" ? "LONG" : "SHORT";
+    return ` · последний бар: ${dir} (висящая позиция)`;
+  }
+  if (diag.reason === "no_signal") return " · последний бар: сигнала нет";
+  if (diag.reason === "trade_already_open") return " · последний бар: сделка уже открыта";
+  if (diag.reason === "margin_blocked") return " · последний бар: сигнал есть, но маржи не хватило";
+  return "";
+}
+
 export function buildSessionChartHandoff(
   trades: TradeRecord[],
   symbolBinance: string,
@@ -99,6 +117,7 @@ export function buildSessionChartHandoff(
   toMs: number,
   candles: Candle[] = [],
   padMs = PAD_DEFAULT_MS,
+  lastBarSignal?: BacktestResult["lastBarSignal"],
 ): BacktestChartHandoff {
   const sym = symbolBinance.replace("/", "").toUpperCase();
   const tf = intervalToChartTimeframe(interval);
@@ -107,10 +126,13 @@ export function buildSessionChartHandoff(
   return {
     sessionTrades: trades,
     fetchParams: { symbolBinance: sym, interval, startMs, endMs },
-    metaTitle: `Бэктест · ${sym} · ${interval} · ${trades.length} сделок`,
+    metaTitle:
+      `Бэктест · ${sym} · ${interval} · ${trades.length} сделок` +
+      lastBarSuffix(lastBarSignal),
     cleanChartUi: true,
     symbol: sym,
     timeframe: tf,
     candles: candles.length ? candles : undefined,
+    lastBarSignal,
   };
 }

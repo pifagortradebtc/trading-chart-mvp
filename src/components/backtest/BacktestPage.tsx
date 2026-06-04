@@ -422,6 +422,8 @@ export function BacktestPage() {
         result.dataRange.fromMs,
         result.dataRange.toMs,
         result.candles ?? [],
+        undefined, // padMs — дефолт
+        result.lastBarSignal, // для пометки «последний бар» в заголовке /chart
       ),
     );
   }, [result, effectiveSymbol, interval]);
