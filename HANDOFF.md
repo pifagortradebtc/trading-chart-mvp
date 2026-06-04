@@ -731,3 +731,147 @@ Visual: пустой draft → красная рамка (`!border-rose-500 !rin
 
 - 4 коммита сегодня: `6298a44`, `78e4adb`, `d90ca57`, `2f3836b` + хотфикс.
 - HANDOFF.md = 715+ строк, эта секция последняя.
+
+---
+
+# Сессия 2026-06-04 (продолжение): диагностика «почему нет сделки» → корневой OHLCV-баг
+
+Коммиты этой сессии (8 шт, ветка `master`):
+```
+d592a7d  fix(backtest): резолв сигнала на последнем баре → openPositionAtDataEnd
+df8262a  chore(backtest): обновить дефолты под актуальный пресет юзера
+d425ed1  feat(backtest): диагностический баннер «последний бар»
+6febadc  feat(chart): диагностика последнего бара в заголовке /chart
+cf36d34  feat(backtest): различать «VPS лагает» vs «RO не cross-апнулся»
+f4eb0cc  ui(backtest): полишь баннер «VPS лагает» — склонение баров
+f5a4a6d  feat(backtest): показать RO последних 10 баров прямо в баннере
+3d950e5  fix(ohlcv): tighten daily fwd tolerance 7d→1.5d + force=1 на сервер ⭐
+```
+
+## Главный баг сессии (объяснил месяцы недоумения)
+
+Юзер днями подряд жаловался: «в TradingView вижу сигнал BuyForce на 2 июня, а в моём бэктестере сделка не открывается». Я долго гонял по разным гипотезам:
+1. Edge-cross vs sustained signal — не оно.
+2. VPS depth-лаг — частично, но не корень.
+3. Зависание dataset на 31 мая — да, но почему?
+
+**Корень оказался в `src/lib/backtest/ohlcvUtils.ts:52`:**
+
+```ts
+export function ohlcvForwardGapToleranceMs(barMs: number): number {
+  const week = 7 * 24 * 3600 * 1000;
+  if (barMs >= 24 * 3600_000) return week;  // ← для 1d — целая неделя
+  ...
+}
+
+// usage in /api/ohlcv:
+needFwd: lastMs < endMs - fwdTol,
+```
+
+На daily-ТФ сервер считал кеш «свежим» пока gap до `endMs` < 7 дней. Юзер последний раз грузил OHLCV 31 мая. Сегодня 4 июня. Gap = 4 дня. **4 < 7 → `needFwd = false` → сервер не догоняет данные с биржи** → возвращает старый ряд без июньских свечей.
+
+Галочка «Полная перезагрузка» в UI чистила только клиентский IndexedDB-кеш, но НЕ доходила до сервера — серверный disk-cache продолжал отдавать stale ряд.
+
+### Фикс (commit `3d950e5`)
+
+1. `ohlcvUtils.ts` — tolerance с 7 дней до **1.5 дня** для daily. Хватает чтобы пережить незакрытую сегодняшнюю свечу (Binance не отдаёт её до 00:00 UTC), но любой реальный gap триггерит forward-fetch.
+
+2. `/api/ohlcv` — новый query param `?force=1`. Когда установлен — игнорируется disk-cache, идёт fresh fetch с биржи.
+
+3. `dataProvider.ts` `loadOhlcvViaServerApi` — пробрасывает `force=1` когда `opts.forceRefresh === true`. Теперь галочка «Полная перезагрузка» работает end-to-end.
+
+## Что ещё сделали (по убыванию ценности)
+
+### Last-bar signal resolve (commit `d592a7d`)
+
+Engine при сигнале на последнем баре раньше молча терял его (см. Lesson #15). Сейчас после главного loop проверяется `resolveDirection(n-1)`; если есть сигнал — open position по close последнего бара, falls into `openPositionAtDataEnd`. На чарте появляется entry/AVG/TP/grid висящей позиции.
+
+### Диагностический баннер «последний бар» (commits `d425ed1`, `6febadc`, `cf36d34`, `f4eb0cc`, `f5a4a6d`)
+
+Прогрессивно обогащённый баннер над hero-карточками. Финальный вид:
+
+- 🟢 `opened: true` → «сигнал LONG сработал, открыта висящая позиция»
+- 🟧 `reason: trade_already_open` → «сделка уже открыта, новый сигнал не нужен»
+- 🟧 `reason: margin_blocked` → «сигнал был, но маржи не хватило»
+- 🟧 `reason: no_signal + depthCoverage.depthForLastCandle: false` → **«VPS лагает: collector отстаёт от Binance OHLCV на N баров»**
+- ⚪ `reason: no_signal + depth есть` → «RO не cross-апнулся (sustained / cooldown)»
+
+Плюс в обоих ⚪/🟧 рендерится **мини-таблица RO последних 10 баров** (емералд > 0, амбер < 0, роуз NaN). Это объективный источник — юзер сам сверяет с TV.
+
+И всё это пробрасывается в /chart через `BacktestChartHandoff.lastBarSignal` → суффикс в `metaTitle`.
+
+### Default settings update (commit `df8262a`)
+
+Под рабочий пресет юзера:
+- symbol: ETHUSDT → BTCUSDT, interval: 15m → 1d
+- composite default slot: chaik_dca → buyforce_dca
+- DCA: ordersCount 7→3, priceOverlapPct 25→6, priceFactor 1.6→4, volumeFactor 1.2→0.5, takeProfitPct 0.6→2
+- `gridTotalNotionalUsdt: 40_000` (= margin 10k × leverage 4)
+- depthInterval: 1h → 1d
+
+## Lessons — bug patterns + как НЕ допустить
+
+### Lesson #16. Server-side cache с large fwd-tolerance ≠ невидимый прозрачный кеш ❌ ⭐
+
+**Симптом:** Сервер `/api/ohlcv` имеет disk-cache с tolerance 7 дней для daily. Кеш отстаёт на 4 дня — сервер думает «всё ок, не пойду на биржу». Клиент не имеет способа форсировать обновление: галочка «Полная перезагрузка» сбрасывает только client IndexedDB. Юзер видит старые свечи в бэктесте и НЕ понимает почему.
+
+**Как избежать:**
+1. **Tolerance ≤ 1 бар + safety**. Для 1d это max ~1.5 дня (одна незакрытая сегодняшняя свеча). Для intraday — несколько баров. Не «недели».
+2. **Force-refresh должен идти end-to-end**: UI флаг → client → query param → server → skip cache. Любое звено что молча проигнорирует force-параметр = invisible bug.
+3. **Серверный кеш должен СВЕТИТЬ свою свежесть**. Отдавать в ответе `cachedAt: ISO` + `fwdGapDays: N` — клиент мог бы показать «cache cтарше N дней» и предложить refresh.
+4. **Логи на сервере: «cache hit, gap=Nd, returning N candles»** — без этого диагностика занимает часы.
+
+**Идеал:** ETag/Last-Modified headers на /api/ohlcv. Если клиент шлёт If-None-Match — сервер мгновенно отвечает 304 либо полноценный 200 с обновлёнными данными.
+
+### Lesson #17. «Покажи юзеру что движок РЕАЛЬНО посчитал» побеждает 5 раундов «давай я объясню логику»
+
+**Симптом:** 6+ сообщений я объяснял юзеру edge-cross логику BuyForce. Юзер не верил («ну на TV же видно cross!»). Каждый раз мы крутились вокруг одной точки.
+
+**Что сработало:** Показал в баннере **сырые RO-значения за последние 10 баров** (commit `f5a4a6d`). Юзер увидел собственными глазами: RO с 22.05 по 30.05 всё отрицательный (от −2.3 к −0.2), 31.05 NaN. Стало однозначно понятно что в `dataset` нет июня вообще → дальше я нашёл root cause (cache 7d tolerance).
+
+**Как избежать:** Когда юзер не верит логике — **выдавай данные**. RO значения, signal flags, cooldown timers, depth gap counts — всё что движок реально считает. UI с numbers вместо текстовых объяснений = на порядок более убедительно. Принцип: «show, don't tell» применим и к багам.
+
+### Lesson #18. «Я не понимаю» от юзера = виновата UI, не юзер
+
+**Симптом:** Когда юзер пишет «я не понял» / «ничего не работает» / «сделай по-другому» — НЕ надо повторять то же объяснение в других словах. Это значит UI не сообщил то что нужно (или сообщил не там где смотрят).
+
+**Как избежать:** Каждый «не понял» от юзера = todo на улучшение UI:
+- баннер не там где смотрят → перенести / продублировать
+- терминология не интуитивна → переименовать
+- скрытая инфо → вывести в hover/tooltip
+- данные есть в коде но не в UI → пробросить
+
+Лучшее что я могу — повышать качество UI с каждым раундом, не упорствовать в текстовой переписке.
+
+## Где лежит код сессии (быстрая навигация)
+
+| Что | Файл | Ключевые места |
+|-----|------|----------------|
+| OHLCV cache fix | `src/lib/backtest/ohlcvUtils.ts` | `ohlcvForwardGapToleranceMs` line 52 |
+| `?force=1` на /api/ohlcv | `src/app/api/ohlcv/route.ts` | params parsing + `handleStableV2` signature |
+| force в client | `src/lib/backtest/dataProvider.ts` | `loadOhlcvViaServerApi` query params |
+| Last-bar signal resolve | `src/lib/backtest/backtestEngine.ts` | ~line 1005 (post-loop block) |
+| `BacktestResult.lastBarSignal` | `src/lib/backtest/types.ts` | line 377-410 |
+| Диагностический баннер | `src/components/backtest/BacktestResults.tsx` | line 158-260 |
+| Чип «Ликвидаций» | `src/components/research/ResearchShell.tsx` | StatChip rendering |
+| Handoff с lastBarSignal | `src/lib/chart/openBacktestChart.ts` | `lastBarSuffix` + `buildSessionChartHandoff` |
+| Default settings | `src/lib/backtest/backtestDefaults.ts` | `DEFAULT_DCA`, `DEFAULT_COMPOSITE`, `DEFAULT_BACKTEST` |
+| Default symbol/TF | `src/components/backtest/BacktestPage.tsx` | useState инициализация |
+
+## Открытые вопросы для следующей сессии
+
+1. **Depth-lag для VPS** — отдельный вопрос. Pifagor VPS live-collector отстаёт на 1 бар. Можно ли ускорить? Cron-job, polling, push? Это вопрос к VPS-сервису, не к бэктестеру.
+2. **Magnitude-режим для BuyForce/SellForce** — юзер хотел чтобы спайки RO (а не только zero-crosses) триггерили сделки. Сейчас это решается поднятием `zeroLevel`, но это не очевидно. Можно добавить отдельный `signalMode: "edge_cross" | "spike_above"` с явным параметром `spikeThreshold`.
+3. **Run-блок при пустых полях** — NumberInput красит border красным, но Run не дизейблится. Lift validity state через context.
+4. **Portfolio mode + Ликвидаций chip** — `portfolioAltsTypes.ts` пока не агрегирует liquidations. Добавить.
+5. **Pre-push hook** — `npx tsc --noEmit && npx next lint --dir src && npm test`. Чтобы fail типа `no-unescaped-entities` не доходил до Render.
+6. **ETag/Last-Modified для /api/ohlcv** — см. Lesson #16. Сейчас работает, но грубо.
+
+## Состояние на конец сессии
+
+- **8 коммитов** запушены: `d592a7d` → `3d950e5`.
+- **158/158 tests** passing, `tsc --noEmit` clean, `next lint --dir src` clean.
+- Render автоматически задеплоит `3d950e5` (force-refresh OHLCV + tightened tolerance).
+- HANDOFF.md обновлён этой секцией.
+
+**Главное на завтра:** если юзер опять видит stale-данные — проверь сначала `/api/ohlcv` server-cache (не только client-IndexedDB). Сразу спроси «галочка Полная перезагрузка стоит?» — это финальный test для cache-related issues.
