@@ -417,6 +417,15 @@ async function loadOhlcvViaServerApi(opts: LoadOptions): Promise<{
   if (opts.yearsBack != null) {
     params.set("yearsBack", String(opts.yearsBack));
   }
+  /**
+   * Пробрасываем forceRefresh на сервер. Раньше галочка «Полная перезагрузка»
+   * сбрасывала только клиентский IndexedDB-кеш, а серверный disk-cache всё
+   * равно отдавал старый ответ если gap до now меньше fwd-tolerance. Сейчас
+   * с force=1 сервер игнорирует disk и тянет с биржи свежий ряд.
+   */
+  if (opts.forceRefresh) {
+    params.set("force", "1");
+  }
 
   const res = await fetch(`/api/ohlcv?${params}`);
   if (!res.ok) return null;

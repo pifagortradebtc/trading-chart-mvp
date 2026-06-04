@@ -46,13 +46,18 @@ export function binanceIntervalToMs(interval: string): number {
 }
 
 /**
- * Допустимый «хвост» без докачки: дневные TF — до 7 дней; intraday — 2 суток или 10 баров.
- * Иначе каждый новый день endMs=Date.now() ломает кеш и тянет Binance заново.
+ * Допустимый «хвост» без докачки: 1.5 дня для дневных TF, 2 дня для intraday.
+ *
+ * Раньше для 1d стояла НЕДЕЛЯ — это означало что 4-дневное отставание cache от
+ * «сейчас» считалось ОК. Юзер видел старые свечи и не мог нормально бэктестить
+ * до самого свежего бара. Поджали до 1.5 дня: хватает чтобы пережить незакрытую
+ * сегодняшнюю дневную свечу (Binance не возвращает её до 00:00 UTC закрытия),
+ * но любое реальное отставание тут же триггерит forward-fetch с биржи.
  */
 export function ohlcvForwardGapToleranceMs(barMs: number): number {
-  const week = 7 * 24 * 3600 * 1000;
+  const oneAndHalfDay = 1.5 * 24 * 3600 * 1000;
   const twoDays = 2 * 24 * 3600 * 1000;
-  if (barMs >= 24 * 3600_000) return week;
+  if (barMs >= 24 * 3600_000) return oneAndHalfDay;
   return Math.max(twoDays, barMs * 10);
 }
 

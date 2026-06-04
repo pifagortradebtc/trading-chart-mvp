@@ -82,7 +82,7 @@ interface CachePayloadV2 {
   cachedAt: string;
 }
 
-/** GET /api/ohlcv?symbol=ETHUSDT&interval=15m&startMs=&endMs=&yearsBack=8 */
+/** GET /api/ohlcv?symbol=ETHUSDT&interval=15m&startMs=&endMs=&yearsBack=8&force=1 */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const symbol = url.searchParams.get("symbol")?.toUpperCase() ?? "";
@@ -92,6 +92,8 @@ export async function GET(req: Request) {
   const yearsBackRaw = url.searchParams.get("yearsBack");
   const hasYearsBack = yearsBackRaw != null && yearsBackRaw !== "";
   const yearsBack = hasYearsBack ? Number(yearsBackRaw) : NaN;
+  /** `force=1` — игнорировать серверный disk-cache и перетянуть с биржи. */
+  const force = url.searchParams.get("force") === "1";
 
   if (!validSymbol(symbol)) {
     return NextResponse.json({ error: "Некорректный symbol" }, { status: 400 });
@@ -120,7 +122,7 @@ export async function GET(req: Request) {
   }
 
   const { source, note } = pickOhlcvSource(symbol);
-  return handleStableV2(symbol, interval, startMs, endMs, yearsBack, source, note);
+  return handleStableV2(symbol, interval, startMs, endMs, yearsBack, source, note, force);
 }
 
 /** Похоже на «нет такого тикера на бирже» — Binance/OKX/Bybit отдают похожие тексты ошибок. */
@@ -315,6 +317,8 @@ async function handleStableV2(
   yearsBack: number,
   source: OhlcvSource,
   sourceNote: string | undefined,
+  /** force=1 → игнорируем disk-cache, тянем с биржи свежий ряд. */
+  force: boolean = false,
 ): Promise<NextResponse> {
   const iv = binanceIntervalToMs(interval);
   const fileName = stableOhlcvFileName(
@@ -330,9 +334,17 @@ async function handleStableV2(
   let oldestAvailableMs: number | null = null;
   let warning: string | undefined;
 
-  const fromDisk = await readJsonFile<CachePayloadV2>(cachePath);
-  if (fromDisk?.version === 2 && Array.isArray(fromDisk.candles)) {
-    merged = trimCandlesOlderThan(fromDisk.candles, endMs, yearsBack, iv);
+  /**
+   * При force=true НЕ читаем disk-cache — это нужно когда юзер чувствует что
+   * данные устарели (Полная перезагрузка в UI). Без force сервер мог отдать
+   * cached ответ если gap до endMs меньше fwd-tolerance, и фронт получит
+   * старые свечи даже после очистки своего IndexedDB.
+   */
+  if (!force) {
+    const fromDisk = await readJsonFile<CachePayloadV2>(cachePath);
+    if (fromDisk?.version === 2 && Array.isArray(fromDisk.candles)) {
+      merged = trimCandlesOlderThan(fromDisk.candles, endMs, yearsBack, iv);
+    }
   }
 
   if (!merged.length) {
