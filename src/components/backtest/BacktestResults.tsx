@@ -184,13 +184,21 @@ export function BacktestResults({
           ) : lastBarSignal.depthCoverage?.depthRequested &&
             !lastBarSignal.depthCoverage.depthForLastCandle ? (
             <>
-              <strong>VPS лагает</strong> — для последней свечи (и
-              {" "}{lastBarSignal.depthCoverage.gapAtEndBars - 1} ранее
-              {" "}{lastBarSignal.depthCoverage.gapAtEndBars > 1 ? "" : "(нулевой gap)"})
-              depth-данных с Pifagor VPS НЕТ. Live-collector ещё не дописал стакан за
-              {" "}{lastBarSignal.depthCoverage.gapAtEndBars} баров.
-              BuyForce/SellForce без depth → RO=NaN → cross не определить.
-              Подожди пока VPS догонит данные либо переключи ТФ повыше (1d depth-история
+              <strong>VPS лагает</strong>: live-collector Pifagor отстаёт от Binance OHLCV
+              на{" "}
+              <strong>
+                {lastBarSignal.depthCoverage.gapAtEndBars}{" "}
+                {lastBarSignal.depthCoverage.gapAtEndBars === 1
+                  ? "бар"
+                  : lastBarSignal.depthCoverage.gapAtEndBars < 5
+                    ? "бара"
+                    : "баров"}
+              </strong>{" "}
+              — для последних свеч depth-данных нет, RO считается как NaN, cross не
+              определить. TradingView показывает сигнал потому что считает по своей
+              live-серии Binance L2 (там полные данные сразу), а наш бэктестер берёт
+              depth с VPS, который синхронизируется отдельно. Подожди пока collector
+              догонит (обычно несколько часов) либо переключи ТФ повыше (1d depth-история
               стабильнее 1m/5m).
             </>
           ) : (
