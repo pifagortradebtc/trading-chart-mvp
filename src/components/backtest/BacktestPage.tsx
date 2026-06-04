@@ -82,9 +82,9 @@ const inp =
 export function BacktestPage() {
   const [researchTab, setResearchTab] = useState<ResearchTabId>("strategy");
   const [settings, setSettings] = useState<BacktestSettings>(DEFAULT_BACKTEST);
-  const [symbol, setSymbol] = useState("ETHUSDT");
+  const [symbol, setSymbol] = useState("BTCUSDT");
   const [customPair, setCustomPair] = useState("");
-  const [interval, setInterval] = useState<(typeof INTERVALS)[number]>("15m");
+  const [interval, setInterval] = useState<(typeof INTERVALS)[number]>("1d");
   const [yearsBack, setYearsBack] = useState(8);
   /**
    * Опциональный пользовательский период бэктеста — срез внутри загруженных `yearsBack`.

@@ -89,21 +89,19 @@ export const DEFAULT_PIFAGOR_ALTS: PifagorAltsSettings = {
 
 export const DEFAULT_DCA: DcaBotSettings = {
   startDepositUsdt: 10_000,
-  /**
-   * Полный баланс счёта = депозит + доп. свободный баланс под другие стратегии.
-   * По умолчанию = startDepositUsdt (доп. баланс 0) — UI «Доп. свободный баланс» нулевой.
-   */
+  /** В упрощённой UI-модели walletBalance == startDeposit. */
   walletBalanceUsdt: 10_000,
   marginMode: "cross",
   /** 7% от торгового депозита — первый ордер сетки. */
   firstOrderDepositPct: 7,
   leverage: 4,
-  ordersCount: 7,
-  priceOverlapPct: 25,
-  priceFactor: 1.6,
-  volumeFactor: 1.2,
+  /** Юзер-дефолт 2026-06-02: 3 ордера, шаг сетки 6%, рост priceFactor 4, volumeFactor 0.5, TP 2%. */
+  ordersCount: 3,
+  priceOverlapPct: 6,
+  priceFactor: 4,
+  volumeFactor: 0.5,
   /** % от текущей средней позиции (после каждого DCA), не от первого входа. */
-  takeProfitPct: 0.6,
+  takeProfitPct: 2,
   stopLossPct: null,
   feePctPerSide: 0.055,
   fundingPctPer8h: 0,
@@ -111,6 +109,12 @@ export const DEFAULT_DCA: DcaBotSettings = {
   allowShort: false,
   mode: "long",
   takeProfitOnClose: true,
+  /**
+   * Полный номинал позиции (face value) = «Сумма в торговле» × leverage.
+   * При marginPerTrade = 10000 и leverage = 4 → 40 000. UI «Сумма в торговле»
+   * читает это поле и делит на leverage обратно.
+   */
+  gridTotalNotionalUsdt: 40_000,
 };
 
 /** DCA-поля бэктеста, совпадающие с `strategy(...)` Pine Pifagor ALTS 3.7. */
@@ -199,9 +203,9 @@ export const DEFAULT_COMPOSITE: CompositeStrategyConfig = {
   slots: [
     {
       id: "slot-1",
-      kind: "chaik_dca",
+      kind: "buyforce_dca",
       joinRule: "and",
-      chaikKelt: DEFAULT_CHAIK,
+      buyForce: DEFAULT_BUYFORCE_SETTINGS,
     },
   ],
   /** 1 = строго один и тот же бар. Юзер просил такой дефолт. */
@@ -220,7 +224,8 @@ export const DEFAULT_BACKTEST: BacktestSettings = {
   buyForce: DEFAULT_BUYFORCE_SETTINGS,
   sellForce: DEFAULT_SELLFORCE_SETTINGS,
   composite: DEFAULT_COMPOSITE,
-  depthInterval: "1h",
+  /** ТФ депт-данных идёт за ТФ графика (default — 1d, как у композита BuyForce). */
+  depthInterval: "1d",
 };
 
 /** Допустимые значения BacktestStrategyKind для нормализации raw input. */
