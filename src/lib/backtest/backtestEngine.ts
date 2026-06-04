@@ -1017,11 +1017,21 @@ export function runBacktest(
    * до firstRow.price, и close > firstRow.price означает «лимит не сработал бы»;
    * рисовать там «висящую сделку» = вводить в заблуждение.
    */
-  if (!open && n > 0) {
+  /** Диагностика последнего бара — будет в result.lastBarSignal, видна в UI. */
+  let lastBarSignalDiag: BacktestResult["lastBarSignal"] = undefined;
+
+  if (n > 0) {
     const lastIdx = n - 1;
     const cLast = candles[lastIdx]!;
     const lastSignalDir = resolveDirection(lastIdx, longActive, shortActive, settings);
-    if (lastSignalDir === "long" || lastSignalDir === "short") {
+
+    if (open) {
+      lastBarSignalDiag = {
+        resolvedDir: lastSignalDir,
+        opened: false,
+        reason: "trade_already_open",
+      };
+    } else if (lastSignalDir === "long" || lastSignalDir === "short") {
       const grid = buildDcaGrid(lastSignalDir, cLast.close, settings.dca);
       const firstRow = grid.rows[0];
       const marginOk =
@@ -1046,8 +1056,44 @@ export function runBacktest(
         if (o) {
           open = o;
           signalsOut[lastIdx] = true;
+          lastBarSignalDiag = { resolvedDir: lastSignalDir, opened: true };
+        } else {
+          lastBarSignalDiag = {
+            resolvedDir: lastSignalDir,
+            opened: false,
+            reason: "margin_blocked",
+          };
         }
+      } else {
+        lastBarSignalDiag = {
+          resolvedDir: lastSignalDir,
+          opened: false,
+          reason: "margin_blocked",
+        };
       }
+    } else {
+      lastBarSignalDiag = {
+        resolvedDir: null,
+        opened: false,
+        reason: "no_signal",
+      };
+    }
+
+    /**
+     * Также вывалим в DevTools — на случай если нужно проверить ещё депт-данные
+     * и per-slot сигналы (юзер должен открыть Console и поискать [backtest]).
+     */
+    if (typeof console !== "undefined" && typeof console.info === "function") {
+      console.info("[backtest] last-bar signal diagnostics", {
+        n,
+        lastBarTimeISO: new Date(cLast.time * 1000).toISOString(),
+        lastBarClose: cLast.close,
+        longActiveLast: longActive[lastIdx],
+        shortActiveLast: shortActive[lastIdx],
+        openExistsAtEnd: !!open,
+        resolvedDir: lastSignalDir,
+        diag: lastBarSignalDiag,
+      });
     }
   }
 
@@ -1086,5 +1132,6 @@ export function runBacktest(
     dataRange: { fromMs, toMs, requestedFromMs },
     lastBarAtrKelt,
     openPositionAtDataEnd,
+    lastBarSignal: lastBarSignalDiag,
   };
 }

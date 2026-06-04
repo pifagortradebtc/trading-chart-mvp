@@ -5,7 +5,11 @@ import {
   worstTradeDetailRu,
   type MetricsSummary,
 } from "@/lib/backtest/metrics";
-import type { BacktestSettings, OpenPositionSnapshot } from "@/lib/backtest/types";
+import type {
+  BacktestResult,
+  BacktestSettings,
+  OpenPositionSnapshot,
+} from "@/lib/backtest/types";
 
 function Card({
   label,
@@ -42,12 +46,15 @@ export function BacktestResults({
   m,
   openPosition,
   settings,
+  lastBarSignal,
 }: {
   m: MetricsSummary | null;
   /** Если на последнем баре висит позиция — отдельной строкой показываем её просадку. */
   openPosition?: OpenPositionSnapshot | null;
   /** Опционально — для оценки риска ликвидации по текущему плечу/марже. */
   settings?: BacktestSettings;
+  /** Диагностика последнего бара (resolvedDir/opened/reason). */
+  lastBarSignal?: BacktestResult["lastBarSignal"];
 }) {
   if (!m) {
     return (
@@ -147,6 +154,45 @@ export function BacktestResults({
           </p>
         </div>
       ) : null}
+
+      {/* Диагностика последнего бара — отвечает на «почему сейчас не открылась сделка?» */}
+      {lastBarSignal ? (
+        <div
+          className={
+            lastBarSignal.opened
+              ? "rounded-xl border border-emerald-500/40 bg-emerald-500/[0.06] px-4 py-2 text-xs text-emerald-100"
+              : lastBarSignal.reason === "no_signal"
+                ? "rounded-xl border border-slate-500/30 bg-white/[0.02] px-4 py-2 text-xs text-[#9aa0a6]"
+                : "rounded-xl border border-amber-500/40 bg-amber-500/[0.06] px-4 py-2 text-xs text-amber-100"
+          }
+        >
+          <span className="font-semibold uppercase tracking-wide">Последний бар: </span>
+          {lastBarSignal.opened ? (
+            <>
+              сигнал {lastBarSignal.resolvedDir === "long" ? "LONG" : "SHORT"} сработал,
+              открыта висящая позиция (видна на графике как «open position», в метрики
+              не входит — только реализованные сделки).
+            </>
+          ) : lastBarSignal.reason === "trade_already_open" ? (
+            <>сделка уже открыта на момент последней свечи — новый сигнал не нужен.</>
+          ) : lastBarSignal.reason === "margin_blocked" ? (
+            <>
+              сигнал {lastBarSignal.resolvedDir === "long" ? "LONG" : "SHORT"} был, но
+              маржи не хватило на первый ордер сетки. Уменьши «Сумма в торговле» или
+              «Ордеров в сетке».
+            </>
+          ) : (
+            <>
+              сигнала нет (longActive/shortActive на последней свече = false). Возможные
+              причины: BuyForce/SellForce — для этой свечи нет depth-данных с Pifagor VPS
+              (live-collector ещё не дописал); ЧайкКельт/MACD/RSI — фильтры
+              ADX/RSI/cooldown отсекают. Подробности в DevTools → Console: ищи
+              «[backtest] last-bar signal diagnostics».
+            </>
+          )}
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card
           label="Итоговый PnL (USDT)"

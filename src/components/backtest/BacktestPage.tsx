@@ -1156,6 +1156,7 @@ export function BacktestPage() {
               m={metrics}
               openPosition={result?.openPositionAtDataEnd ?? null}
               settings={settings}
+              lastBarSignal={result?.lastBarSignal}
             />
             {result && metrics ? (
               <BacktestStrategyDashboard result={result} settings={settings} interval={interval} />

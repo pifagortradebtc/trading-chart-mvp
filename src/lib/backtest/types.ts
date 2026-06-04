@@ -366,6 +366,22 @@ export interface BacktestResult {
   lastBarAtrKelt?: number;
   /** Снимок позиции перед закрытием на конце данных; `null` — позиции не было. */
   openPositionAtDataEnd: OpenPositionSnapshot | null;
+  /**
+   * Диагностика «сигнала на самой последней свече» — чтобы юзер видел в UI
+   * почему сделка не открылась «прямо сейчас», без DevTools.
+   *
+   *   resolvedDir — что выдал resolveDirection(n-1): "long"/"short" или null.
+   *   opened      — true если post-loop фикс открыл сделку.
+   *   reason      — короткая причина отказа при opened=false.
+   */
+  lastBarSignal?: {
+    resolvedDir: "long" | "short" | null;
+    opened: boolean;
+    reason?:
+      | "no_signal"
+      | "trade_already_open"
+      | "margin_blocked";
+  };
 }
 
 export interface FetchProgress {
