@@ -181,13 +181,30 @@ export function BacktestResults({
               маржи не хватило на первый ордер сетки. Уменьши «Сумма в торговле» или
               «Ордеров в сетке».
             </>
+          ) : lastBarSignal.depthCoverage?.depthRequested &&
+            !lastBarSignal.depthCoverage.depthForLastCandle ? (
+            <>
+              <strong>VPS лагает</strong> — для последней свечи (и
+              {" "}{lastBarSignal.depthCoverage.gapAtEndBars - 1} ранее
+              {" "}{lastBarSignal.depthCoverage.gapAtEndBars > 1 ? "" : "(нулевой gap)"})
+              depth-данных с Pifagor VPS НЕТ. Live-collector ещё не дописал стакан за
+              {" "}{lastBarSignal.depthCoverage.gapAtEndBars} баров.
+              BuyForce/SellForce без depth → RO=NaN → cross не определить.
+              Подожди пока VPS догонит данные либо переключи ТФ повыше (1d depth-история
+              стабильнее 1m/5m).
+            </>
           ) : (
             <>
-              сигнала нет (longActive/shortActive на последней свече = false). Возможные
-              причины: BuyForce/SellForce — для этой свечи нет depth-данных с Pifagor VPS
-              (live-collector ещё не дописал); ЧайкКельт/MACD/RSI — фильтры
-              ADX/RSI/cooldown отсекают. Подробности в DevTools → Console: ищи
-              «[backtest] last-bar signal diagnostics».
+              сигнала нет (longActive/shortActive на последней свече = false). Depth для
+              последнего бара ЕСТЬ
+              {lastBarSignal.depthCoverage
+                ? ` (загружено ${lastBarSignal.depthCoverage.depthLoaded} баров)`
+                : ""}
+              {" "}— значит RO просто не cross-апнулся на этом баре. Скорее всего edge
+              был раньше и сигнал уже использовался для одной из ранее открытых сделок
+              (sustained вверх ≠ повторный edge). Либо сработал cooldown. Проверь в TV:
+              был ли на последней свече ИМЕННО переход RO снизу-вверх через zero_level,
+              или RO просто остаётся положительным.
             </>
           )}
         </div>

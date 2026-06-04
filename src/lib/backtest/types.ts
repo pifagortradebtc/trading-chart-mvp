@@ -381,6 +381,23 @@ export interface BacktestResult {
       | "no_signal"
       | "trade_already_open"
       | "margin_blocked";
+    /**
+     * Доп. контекст для случая reason="no_signal" со стратегией использующей depth.
+     * Помогает различить «нет depth для последнего бара» (VPS лагает) vs
+     * «depth есть, но RO не cross-апнулся» (sustained / cooldown).
+     */
+    depthCoverage?: {
+      /** depthBars передавался движку (composite со BuyForce/SellForce/BidAsk). */
+      depthRequested: boolean;
+      /** Сколько depth-баров реально загружено. 0 = depth не запрошен. */
+      depthLoaded: number;
+      /** Есть ли depth-запись для свечи n-1. */
+      depthForLastCandle: boolean;
+      /** Есть ли depth-запись для свечи n-2. */
+      depthForPrevCandle: boolean;
+      /** Сколько свечей подряд с конца БЕЗ depth (>0 → VPS-лаг). */
+      gapAtEndBars: number;
+    };
   };
 }
 

@@ -1020,6 +1020,32 @@ export function runBacktest(
   /** Диагностика последнего бара — будет в result.lastBarSignal, видна в UI. */
   let lastBarSignalDiag: BacktestResult["lastBarSignal"] = undefined;
 
+  /**
+   * Считаем покрытие depth-баров в хвосте — нужно когда сигнал на n-1 ожидался,
+   * но не сработал: даёт юзеру понять «VPS лагает» vs «RO просто не cross-апнулся».
+   */
+  let depthCoverageDiag:
+    | NonNullable<BacktestResult["lastBarSignal"]>["depthCoverage"]
+    | undefined = undefined;
+  if (n > 0 && depthBars !== undefined) {
+    const depthTimes = new Set<number>();
+    for (const b of depthBars) depthTimes.add(b.t);
+    const depthForLast = depthTimes.has(candles[n - 1]!.time);
+    const depthForPrev = n >= 2 ? depthTimes.has(candles[n - 2]!.time) : false;
+    let gap = 0;
+    for (let i = n - 1; i >= 0; i--) {
+      if (depthTimes.has(candles[i]!.time)) break;
+      gap++;
+    }
+    depthCoverageDiag = {
+      depthRequested: true,
+      depthLoaded: depthBars.length,
+      depthForLastCandle: depthForLast,
+      depthForPrevCandle: depthForPrev,
+      gapAtEndBars: gap,
+    };
+  }
+
   if (n > 0) {
     const lastIdx = n - 1;
     const cLast = candles[lastIdx]!;
@@ -1076,6 +1102,7 @@ export function runBacktest(
         resolvedDir: null,
         opened: false,
         reason: "no_signal",
+        depthCoverage: depthCoverageDiag,
       };
     }
 
