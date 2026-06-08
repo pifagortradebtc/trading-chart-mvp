@@ -51,6 +51,9 @@ describe("deltaVsLive", () => {
     ],
     lastChangedAt: "2026-05-01T00:00:00Z",
     fundUrl: "https://pifagor.fund",
+    source: "ledger",
+    missingPriceSymbols: [],
+    fetchedAt: 0,
   };
 
   it("считает delta = target - live", () => {

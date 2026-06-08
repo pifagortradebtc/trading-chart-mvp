@@ -29,6 +29,13 @@ interface FundPublicItem {
 interface FundPublicResponse {
   items: FundPublicItem[];
   lastChangedAt?: string | null;
+  /** Новое поле фонда (после миграции на transactions-ledger):
+   *  "ledger" — веса вычислены из qty × current price (live AUM-weighted),
+   *  "operator" — старая статичная операторская раскладка.
+   */
+  source?: string | null;
+  /** Символы из ledger'а, для которых price-feed не смог получить цену. */
+  missingPriceSymbols?: string[];
 }
 
 /**
@@ -50,11 +57,17 @@ interface CachedPayload {
     items: FundPublicItem[];
     lastChangedAt: string | null;
     fundUrl: string;
+    source: string | null;
+    missingPriceSymbols: string[];
   };
   expiresAt: number;
 }
 
-const TTL_MS = 60_000;
+// TTL уменьшен 60s → 30s после того как фонд начал отдавать ledger-derived
+// composition: composition фонда теперь меняется при каждом trade'е оператора
+// (а не только при ручном save), и хочется чтобы research-tool видел свежие
+// веса в течение полминуты после сделки.
+const TTL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 8_000;
 
 let cache: CachedPayload | null = null;
@@ -137,6 +150,11 @@ export async function GET(): Promise<NextResponse> {
     items,
     lastChangedAt: json?.lastChangedAt ?? null,
     fundUrl,
+    // Прокидываем новые поля фонда. Если фонд старой версии (без них) — null/[].
+    source: typeof json?.source === "string" ? json.source : null,
+    missingPriceSymbols: Array.isArray(json?.missingPriceSymbols)
+      ? json.missingPriceSymbols.filter((s): s is string => typeof s === "string")
+      : [],
   };
   cache = { body, expiresAt: Date.now() + TTL_MS };
   return NextResponse.json(body);

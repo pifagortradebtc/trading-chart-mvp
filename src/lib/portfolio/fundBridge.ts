@@ -37,6 +37,17 @@ export interface FundLiveComposition {
   lastChangedAt: string | null;
   /** Raw URL фонда — для UI-показа «откуда тащим». */
   fundUrl: string;
+  /**
+   * "ledger" — фонд считает веса из ledger'а сделок × текущих цен
+   * (price-adjusted, live AUM). Меняется при каждой сделке + при движении цен.
+   * "operator" — старая логика, веса = последняя ручная раскладка оператора.
+   * null — старая версия фонда без поля.
+   */
+  source: string | null;
+  /** Символы из ledger'а, для которых не удалось получить актуальную цену. */
+  missingPriceSymbols: string[];
+  /** Локальный timestamp успешного fetch'а — для «обновлено N сек назад» в UI. */
+  fetchedAt: number;
 }
 
 /**
@@ -82,6 +93,8 @@ export async function fetchLiveFundComposition(): Promise<FundLiveComposition | 
       }>;
       lastChangedAt?: string | null;
       fundUrl?: string;
+      source?: string | null;
+      missingPriceSymbols?: string[];
     };
     if (!json?.items || !Array.isArray(json.items)) return null;
 
@@ -109,6 +122,11 @@ export async function fetchLiveFundComposition(): Promise<FundLiveComposition | 
       items,
       lastChangedAt: json.lastChangedAt ?? null,
       fundUrl: typeof json.fundUrl === "string" ? json.fundUrl : "",
+      source: typeof json.source === "string" ? json.source : null,
+      missingPriceSymbols: Array.isArray(json.missingPriceSymbols)
+        ? json.missingPriceSymbols.filter((s): s is string => typeof s === "string")
+        : [],
+      fetchedAt: Date.now(),
     };
   } catch {
     return null;
@@ -131,6 +149,15 @@ export interface UseLiveFundCompositionState {
   error: string | null;
   refresh: () => void;
 }
+
+/**
+ * Auto-refresh каденс: фонд теперь считает live composition по ledger'у
+ * (qty × current price), поэтому веса меняются и при сделке оператора,
+ * и при движении цен. 60-секундный poll — компромисс между свежестью
+ * (юзер видит ребаланс/импакт цен в течение минуты) и нагрузкой на
+ * фонд (60s интервал × минимальное количество reseachers).
+ */
+const AUTO_REFRESH_MS = 60_000;
 
 export function useLiveFundComposition(): UseLiveFundCompositionState {
   const [data, setData] = useState<FundLiveComposition | null>(null);
@@ -159,6 +186,26 @@ export function useLiveFundComposition(): UseLiveFundCompositionState {
       cancelled = true;
     };
   }, [tick]);
+
+  // Auto-refresh: интервал + при возврате фокуса в окно.
+  useEffect(() => {
+    const onInterval = () => setTick((t) => t + 1);
+    const onVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        setTick((t) => t + 1);
+      }
+    };
+    const handle = setInterval(onInterval, AUTO_REFRESH_MS);
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibility);
+    }
+    return () => {
+      clearInterval(handle);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibility);
+      }
+    };
+  }, []);
 
   return { data, loading, error, refresh: () => setTick((t) => t + 1) };
 }

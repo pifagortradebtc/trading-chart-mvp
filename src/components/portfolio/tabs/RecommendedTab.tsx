@@ -18,7 +18,7 @@ import {
   Timer,
   Workflow,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatPercent, prettySymbol } from "@/lib/portfolio/format";
 import { portfolioDailyReturns } from "@/lib/portfolio/strategyMetrics";
 import type { Data, Layout } from "plotly.js";
@@ -2009,17 +2009,31 @@ function ModelContributionCard({
   );
 }
 
+/** «обновлено N сек/мин назад» — short, no-second-precision human ago. */
+function humanAgo(timestampMs: number): string {
+  const diffMs = Date.now() - timestampMs;
+  if (diffMs < 0) return "только что";
+  if (diffMs < 60_000) return `${Math.max(1, Math.floor(diffMs / 1000))} сек назад`;
+  if (diffMs < 3600_000) return `${Math.floor(diffMs / 60_000)} мин назад`;
+  return `${Math.floor(diffMs / 3600_000)} ч назад`;
+}
+
 /**
  * Δ vs Live Fund — read-only мост к Криптофонду.
  *
+ * Auto-syncs current weights from the fund (every 60s + on focus). When the
+ * fund's `/portfolio/public` endpoint runs in ledger-mode, weights reflect
+ * live AUM (qty × current price) — so operator trades and price moves
+ * propagate into Rebalance Plan automatically within ~30-60s.
+ *
  * Если PIFAGOR_FUND_API_URL не задан или фонд недоступен — блок ничего не
  * рендерит (graceful: research работает standalone, без зависимости от
- * фонда). При успешном fetch — таблица target vs live + кнопка Import
- * current → заполняет Rebalance Plan актуальными весами фонда.
+ * фонда).
  *
  * Конвенция: target = что engine рекомендует сейчас; live = что в фонде
- * (после последнего Copy NAV + ручного PUT оператора). Δ = target - live;
- * BUY если положительная (надо докупить), SELL если отрицательная.
+ * (live AUM-weighted из ledger'а либо последняя operator-set раскладка,
+ * см. data.source). Δ = target - live; BUY если положительная (надо
+ * докупить), SELL если отрицательная.
  */
 function FundBridgeCard({
   targetWeights,
@@ -2035,6 +2049,36 @@ function FundBridgeCard({
     () => deltaVsLive(targetWeights, data, { band: 0.01 }),
     [targetWeights, data],
   );
+
+  // Дайджест весов — используем чтобы триггерить auto-import ТОЛЬКО когда
+  // composition реально изменилась. Иначе каждые 60s интервал будет
+  // перетирать `currentWeights` тем же значением и сбрасывать ручные правки
+  // (если оператор их зачем-то делал — например, тестировал сценарий).
+  const weightsDigest = useMemo(() => {
+    if (!data) return "";
+    return data.items
+      .map((i) => `${i.symbol}:${i.weight.toFixed(6)}`)
+      .sort()
+      .join("|");
+  }, [data]);
+
+  // Auto-import: при первом получении data + каждый раз когда веса фактически
+  // изменились (e.g. оператор сделал сделку в фонде → composition обновился
+  // → research-tool автоматом подтягивает в Current %).
+  const lastImportedDigestRef = useRef<string>("");
+  useEffect(() => {
+    if (!data || !onImportCurrent) return;
+    if (data.items.length === 0) return;
+    if (weightsDigest === lastImportedDigestRef.current) return;
+    lastImportedDigestRef.current = weightsDigest;
+    const next: Record<string, number> = {};
+    for (const item of data.items) {
+      if (basketSymbols.includes(item.symbol)) {
+        next[item.symbol] = item.weight;
+      }
+    }
+    onImportCurrent(next);
+  }, [data, weightsDigest, basketSymbols, onImportCurrent]);
 
   // Skip block entirely if fund API не сконфигурирован — это норма для
   // локальной разработки. Показываем только если есть ошибка-кроме-503
@@ -2103,12 +2147,40 @@ function FundBridgeCard({
 
       {data && (
         <>
-          <p className="mt-2 font-mono text-[10px] text-ink-faint">
-            {data.lastChangedAt
-              ? `last change: ${new Date(data.lastChangedAt).toISOString().slice(0, 16).replace("T", " ")} UTC · `
-              : ""}
-            band ±1pp ⇒ HOLD; вне диапазона — BUY/SELL
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[10px] text-ink-faint">
+            {/* Source chip — "ledger" значит фонд live-считает веса из сделок ×
+                текущих цен (price-adjusted). "operator" — старая статичная
+                раскладка. null — старая версия фонда без поля. */}
+            {data.source === "ledger" ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-200"
+                title="Веса вычислены фондом из ledger'а сделок × текущих цен — отражают реальное состояние портфеля с учётом движения цен"
+              >
+                live · ledger
+              </span>
+            ) : data.source === "operator" ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-amber-200"
+                title="Веса — последняя ручная раскладка оператора (не price-adjusted)"
+              >
+                operator
+              </span>
+            ) : null}
+            {data.missingPriceSymbols.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-rose-200"
+                title={`Фонд не получил цену для: ${data.missingPriceSymbols.join(", ")} — веса этих активов посчитаны без price-adjustment`}
+              >
+                нет цены: {data.missingPriceSymbols.length}
+              </span>
+            )}
+            <span>
+              {data.lastChangedAt
+                ? `last change: ${new Date(data.lastChangedAt).toISOString().slice(0, 16).replace("T", " ")} UTC · `
+                : ""}
+              обновлено {humanAgo(data.fetchedAt)} · auto-sync 60s · band ±1pp
+            </span>
+          </div>
           <table className="mt-3 w-full text-xs">
             <thead className="text-[10px] uppercase tracking-[0.18em] text-ink-faint">
               <tr className="border-b border-surface-border">
