@@ -2077,6 +2077,15 @@ function FundBridgeCard({
         next[item.symbol] = item.weight;
       }
     }
+    // Edge case: фонд держит активы вне нашей корзины (например, 100% USDT
+    // в CASH-категории — а у нас в корзине BTCUSDT/ETHUSDT/... без USDT).
+    // Без этого гарда `next` был бы пустым {} → setCurrentWeights({}) → юзер
+    // увидел бы старые ручные значения из localStorage и не понял что фонд
+    // реально на 0%. Явно проставляем 0 для всех basket-символов, чтобы UI
+    // показал «BTC 0% / ETH 0% / ...» — отражает реальность фонда.
+    if (Object.keys(next).length === 0 && basketSymbols.length > 0) {
+      for (const sym of basketSymbols) next[sym] = 0;
+    }
     onImportCurrent(next);
   }, [data, weightsDigest, basketSymbols, onImportCurrent]);
 
@@ -2101,6 +2110,13 @@ function FundBridgeCard({
       if (basketSymbols.includes(item.symbol)) {
         next[item.symbol] = item.weight;
       }
+    }
+    // Edge case: см. комментарий в useEffect выше. Если фонд = 100% cash
+    // и USDT не в корзине — явно ставим 0 на все basket-символы, чтобы
+    // ручная кнопка «Import current» вела себя так же предсказуемо как
+    // auto-sync и не оставляла залипшие значения из localStorage.
+    if (Object.keys(next).length === 0 && basketSymbols.length > 0) {
+      for (const sym of basketSymbols) next[sym] = 0;
     }
     onImportCurrent(next);
   };
