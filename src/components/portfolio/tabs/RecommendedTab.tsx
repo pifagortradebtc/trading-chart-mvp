@@ -9,7 +9,6 @@ import {
   Crown,
   Droplets,
   Eye,
-  Gauge,
   Landmark,
   Layers2,
   Network,
@@ -32,7 +31,6 @@ import { buildRotationSuggestions, type RotationSuggestion } from "@/lib/portfol
 import { computeModelContributions, type ModelContribution } from "@/lib/portfolio/modelContribution";
 import { buildWatchlist, type WatchlistEntry } from "@/lib/portfolio/watchlist";
 import { buildWhyNarrative, type WhyParagraph } from "@/lib/portfolio/whyTheseWeights";
-import { buildVolTargetAdvisory, type VolTargetAdvisory } from "@/lib/portfolio/volTarget";
 import { walkForwardHRPEquity, type WalkForwardResult } from "@/lib/portfolio/walkForward";
 import {
   assessLiquidity,
@@ -199,11 +197,6 @@ export function RecommendedTab({
     [strategy, symbols, dataQuality]
   );
 
-  const volTargetAdvisory = useMemo<VolTargetAdvisory | null>(
-    () => (strategy ? buildVolTargetAdvisory(strategy.metrics.volatility) : null),
-    [strategy]
-  );
-
   const whyNarrative = useMemo<WhyParagraph[]>(() => {
     if (!strategy || !allStrategies || !dataQuality) return [];
     return buildWhyNarrative({
@@ -290,8 +283,6 @@ export function RecommendedTab({
       ) : (
         <ConfidencePlaceholder />
       )}
-
-      {volTargetAdvisory && <VolTargetCard advisory={volTargetAdvisory} />}
 
       {whyNarrative.length > 0 && <WhyNarrativeCard paragraphs={whyNarrative} />}
 
@@ -1824,77 +1815,6 @@ function WalkForwardChart({ times, equity }: { times: number[]; equity: number[]
         modeBarButtonsToRemove: ["lasso2d", "select2d"],
       }}
     />
-  );
-}
-
-/**
- * Compact vol-target advisory card. Three states encoded by border tone:
- *   ok        — within target, no buffer needed
- *   stretched — slightly over, soft recommendation
- *   exceeded  — well over target, strong recommendation
- *
- * Designed to live right under the Confidence badge — both are quick triage
- * signals: confidence answers "should I act", vol-target answers "how much".
- */
-function VolTargetCard({ advisory }: { advisory: VolTargetAdvisory }) {
-  const tone =
-    advisory.level === "ok"
-      ? { border: "border-emerald-500/30", chip: "text-emerald-300", label: "On target" }
-      : advisory.level === "stretched"
-        ? { border: "border-amber-500/40", chip: "text-amber-200", label: "Stretched" }
-        : { border: "border-rose-500/40", chip: "text-rose-300", label: "Exceeded" };
-  return (
-    <section className={`rounded-2xl border ${tone.border} bg-surface p-5 backdrop-blur-xl shadow-card`}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-border pb-3">
-        <div className="flex items-center gap-2">
-          <Gauge size={14} className="text-brand" />
-          <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
-            Vol target advisory
-          </h3>
-        </div>
-        <span className={`font-mono text-[10px] uppercase tracking-[0.22em] ${tone.chip}`}>
-          {tone.label}
-        </span>
-      </header>
-
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Tile label="Target σ p.a." value={`${(advisory.target * 100).toFixed(0)}%`} />
-        <Tile label="Actual σ p.a." value={`${(advisory.actual * 100).toFixed(1)}%`} />
-        <Tile
-          label="Cash buffer"
-          value={`${(advisory.cashBuffer * 100).toFixed(0)}%`}
-          accent={advisory.cashBuffer > 0 ? "amber" : "neutral"}
-        />
-      </div>
-      <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
-        {advisory.advice}
-      </p>
-      <p className="mt-2 text-[10px] text-ink-faint">
-        Exposure {(advisory.exposure * 100).toFixed(0)}% — рекомендуемая доля
-        капитала, развёрнутая по весам выше. Остальное держится в стейблах /
-        кеше для приведения σ к цели.
-      </p>
-    </section>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: "amber" | "neutral";
-}) {
-  const cls = accent === "amber" ? "text-amber-200" : "text-ink";
-  return (
-    <div className="rounded-xl border border-surface-border bg-white/[0.02] p-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
-        {label}
-      </p>
-      <p className={`mt-1.5 font-mono text-xl font-semibold ${cls}`}>{value}</p>
-    </div>
   );
 }
 

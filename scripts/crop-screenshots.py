@@ -112,9 +112,6 @@ crop("tab-recommended.png", (1050, 30, 1410, 130), "30-recommended-buttons.png")
 # Confidence badge
 crop("tab-recommended.png", (30, 230, 1410, 600), "31-confidence.png")
 
-# Vol Target card
-crop("tab-recommended.png", (30, 620, 1410, 900), "32-vol-target.png")
-
 # Why narrative
 crop("tab-recommended.png", (30, 920, 1410, 1480), "33-why.png")
 

@@ -80,7 +80,6 @@
 | `29-recommended.png` | Верхняя часть вкладки Recommended (header + Confidence) |
 | `30-recommended-buttons.png` | Кнопки Copy JSON / Copy NAV / Print в шапке |
 | `31-confidence.png` | Confidence badge с разбором факторов |
-| `32-vol-target.png` | Карточка Vol Target |
 | `33-why.png` | Why narrative (5 параграфов) |
 | `34-donuts.png` | Две donut-диаграммы (Spot + Total Fund) |
 | `35-clusters.png` | Cluster Exposure bar |

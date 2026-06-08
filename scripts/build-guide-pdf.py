@@ -810,13 +810,6 @@ story.append(bul("<font color='#c9a962'><b>🟡 Medium (40–70)</b></font> — 
 story.append(bul("<font color='#c9526a'><b>🔴 Low (&lt; 40)</b></font> — не публикуй без ревью комитета"))
 story.append(screen("31-confidence.png — Confidence badge", height=4 * cm))
 
-story.append(micro("Vol Target advisory"))
-story.append(p(
-    "Рекомендация по cash-buffer'у на основе текущей реализованной волатильности. "
-    "Например: «фонд σ=55%, цель=45%, добавь 15% USDT-cash»."
-))
-story.append(screen("32-vol-target.png — Vol Target card", height=3.5 * cm))
-
 story.append(micro("Why narrative"))
 story.append(p(
     "5 параграфов обычным языком — <b>почему</b> такая раскладка. Готовый текст "

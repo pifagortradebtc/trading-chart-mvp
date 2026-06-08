@@ -351,19 +351,13 @@ Dropdown наверху — выбери, какую стратегию тест
 
 Под бейджем — разбор по 8 факторам: data quality, model agreement, liquidity, momentum, и т.д.
 
-### 8.3 Vol Target
-
-![Vol Target](./images/32-vol-target.png)
-
-Рекомендация: «фонд имеет σ=55%, цель=45%, добавь 15% USDT-cash». Подсказка по cash-buffer.
-
-### 8.4 Why narrative
+### 8.3 Why narrative
 
 ![Why](./images/33-why.png)
 
 5 параграфов **обычным языком**, почему такая раскладка. Можно копировать в отчёт инвесторам.
 
-### 8.5 Два donut-диаграммы
+### 8.4 Два donut-диаграммы
 
 ![Donuts](./images/34-donuts.png)
 
@@ -379,7 +373,7 @@ Dropdown наверху — выбери, какую стратегию тест
 
 Пример: «BTC 57.0% всего фонда» (71.3% × 80% = 57.0%).
 
-### 8.6 Cluster Exposure
+### 8.5 Cluster Exposure
 
 ![Clusters](./images/35-clusters.png)
 
@@ -387,7 +381,7 @@ Dropdown наверху — выбери, какую стратегию тест
 
 Цветовая полоска показывает превышение / соответствие.
 
-### 8.7 Δ vs Live Fund
+### 8.6 Δ vs Live Fund
 
 ![Delta vs live](./images/36-delta-fund.png)
 
@@ -403,7 +397,7 @@ Dropdown наверху — выбери, какую стратегию тест
 - **Import current** — автозаполнить Rebalance Plan живыми весами фонда
 - **Refresh** — обновить с фонда
 
-### 8.8 Rebalance Plan
+### 8.7 Rebalance Plan
 
 ![Rebalance Plan](./images/37-rebalance.png)
 
@@ -414,7 +408,7 @@ Dropdown наверху — выбери, какую стратегию тест
 - Каждая позиция: **BUY / SELL / HOLD / WATCH ONLY**
 - Приоритет: **High / Medium / Low**
 
-### 8.9 Rotation Suggestions
+### 8.8 Rotation Suggestions
 
 ![Rotation](./images/38-rotation.png)
 
@@ -424,7 +418,7 @@ Dropdown наверху — выбери, какую стратегию тест
 - «Актив в red liquidity tier — снизить до 2%»
 - «BTC+ETH ниже floor — добавить»
 
-### 8.10 Watchlist
+### 8.9 Watchlist
 
 ![Watchlist](./images/39-watchlist.png)
 
@@ -434,7 +428,7 @@ Dropdown наверху — выбери, какую стратегию тест
 - **Effectively-zero**: в universe, но 0%
 - **Honorary**: tracked для контекста (XRP, ADA, AVAX)
 
-### 8.11 Liquidity Layer
+### 8.10 Liquidity Layer
 
 ![Liquidity](./images/40-liquidity.png)
 
@@ -445,13 +439,13 @@ Dropdown наверху — выбери, какую стратегию тест
 - **Max executable ticket** — сколько можно купить (5% от ADV)
 - **Basket score 0-100** — оценка корзины в целом
 
-### 8.12 Model Contribution
+### 8.11 Model Contribution
 
 ![Model contribution](./images/41-model-contrib.png)
 
 Топ-моделей по влиянию на финальную раскладку. Помогает понять «какая модель победила».
 
-### 8.13 Equity curves
+### 8.12 Equity curves
 
 ![Equity curves](./images/42-equity.png)
 
@@ -459,13 +453,13 @@ Dropdown наверху — выбери, какую стратегию тест
 - **Backtested equity** — что было бы, если держать веса весь период (in-sample)
 - **Walk-forward equity** — то же, но с переобучением (out-of-sample, честнее)
 
-### 8.14 «Why this allocation» — 4 reason cards
+### 8.13 «Why this allocation» — 4 reason cards
 
 ![Reasons](./images/43-reasons.png)
 
 Краткое резюме в 4 пунктах: BL + tilt, caps applied, CVaR defense, model agreement.
 
-### 8.15 Disclaimer
+### 8.14 Disclaimer
 
 ![Disclaimer](./images/44-disclaimer.png)
 

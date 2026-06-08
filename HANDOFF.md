@@ -12,7 +12,7 @@ GitHub: `pifagortradebtc/trading-chart-mvp`, ветка `master`.
 
 - ✅ **Этап 1** — Data Quality, Calmar/Ulcer/β, Modes, Rebalance Plan, Confidence
 - ✅ **Этап 2** — HRP, MaxDiv, Cluster Analysis, Rotation, Model Contribution
-- ✅ **Этап 3** — Watchlist, Why narrative, Momentum, Kelly, Vol Target, Walk-forward
+- ✅ **Этап 3** — Watchlist, Why narrative, Momentum, Kelly, Walk-forward
 - ✅ **Этап 4** — Liquidity Layer, Resampled Markowitz, polish
 - ✅ **Этап 5** — NAV-экспорт в Криптофонд, vitest unit-suite (77 тестов), Playwright E2E (6 сценариев)
 - ✅ **Этап 6** — Multi-source OHLCV (Binance + OKX + CoinGecko), MNT в universe, alignSeries guard, 26 новых тестов
@@ -85,7 +85,7 @@ UI: новая кнопка **«Copy NAV»** в Recommended Tab рядом с Co
 - `liquidity.test.ts` — tier classification, max ticket, basket score
 - `confidence.test.ts` — 8 факторов
 - `walkForward.test.ts` — out-of-sample HRP equity
-- `watchlist.test.ts`, `volTarget.test.ts`, `modelContribution.test.ts`, `navExport.test.ts`
+- `watchlist.test.ts`, `modelContribution.test.ts`, `navExport.test.ts`
 - `strategies.integration.test.ts` — end-to-end 14-strategy bundle
 
 Запуск: `npm test` → ~1 секунду. Конфиг в `vitest.config.ts`.
@@ -263,19 +263,18 @@ PrintCoverPage (только в Print/PDF)
 header (eyebrow + title + JSON copy + Print button)
 ─────────────────────────────────────────
 1.  Confidence badge / Awaiting placeholder
-2.  Vol Target advisory                          ← этап 3
-3.  Why narrative                                ← этап 3
-4.  Spot + Total Fund allocation donuts
-5.  Cluster Exposure card                        ← этап 2
-6.  Rebalance Plan (operator-input current)
-7.  Rotation Suggestions (4 sources: dq / cluster / liquidity / core)
-8.  Watchlist                                    ← этап 3
-9.  Liquidity Layer card                         ← этап 4
-10. Model Contribution                           ← этап 2
-11. Backtested equity curve (in-sample static weights)
-12. Walk-forward equity (HRP OOS retraining)     ← этап 3
-13. "Why this allocation" 4 reason cards
-14. Disclaimer
+2.  Why narrative                                ← этап 3
+3.  Spot + Total Fund allocation donuts
+4.  Cluster Exposure card                        ← этап 2
+5.  Rebalance Plan (operator-input current)
+6.  Rotation Suggestions (4 sources: dq / cluster / liquidity / core)
+7.  Watchlist                                    ← этап 3
+8.  Liquidity Layer card                         ← этап 4
+9.  Model Contribution                           ← этап 2
+10. Backtested equity curve (in-sample static weights)
+11. Walk-forward equity (HRP OOS retraining)     ← этап 3
+12. "Why this allocation" 4 reason cards
+13. Disclaimer
 ```
 
 ---
@@ -310,7 +309,6 @@ header (eyebrow + title + JSON copy + Print button)
 | `rotation.ts` | strategic trim/add tickets (4 sources) |
 | `watchlist.ts` | tracked-but-not-held tickers |
 | `whyTheseWeights.ts` | 5-paragraph narrative generator |
-| `volTarget.ts` | cash buffer recommendation |
 | `liquidity.ts` | USD-volume tier + executable ticket + basket score |
 | `walkForward.ts` | HRP retraining-based OOS equity |
 | `modelContribution.ts` | influence ranking by L1 distance |

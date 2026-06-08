@@ -19,7 +19,7 @@
 - **Strategies** — 14 параллельных моделей: Market Cap, Equal Weight, Min Vol, Max Sharpe, Max Sortino, Risk Parity, Black-Litterman (view-tilt), CVaR-Optimal, HRP, Max Diversification, Momentum Overlay, Fractional Kelly, Resampled Markowitz (Michaud), Final Fund Portfolio. Карточки + сравнительная таблица с CSV-экспортом.
 - **Risk Caps & Views** — pill-кнопки Conservative/Balanced/Aggressive presets, per-asset min/max, агрегатные правила (BTC+ETH floor, small-alts ceiling), CVaR-defense порог, fund sleeves (bot / manual), Black-Litterman views (expected return + confidence + max weight).
 - **Stress Test** — историческая CVaR-95/99 + сценарные шоки + tail-contribution chart.
-- **Recommended** — финальный premium-вид: Confidence Score, Vol Target advisory, Why-narrative, два donut'а (spot / total fund), Cluster Exposure, Rebalance Plan, Rotation Suggestions, Watchlist, Liquidity Layer, Model Contribution, equity curve, walk-forward HRP equity (OOS retraining), JSON snapshot и Print/PDF с титульной страницей.
+- **Recommended** — финальный premium-вид: Confidence Score, Why-narrative, два donut'а (spot / total fund), Cluster Exposure, Rebalance Plan, Rotation Suggestions, Watchlist, Liquidity Layer, Model Contribution, equity curve, walk-forward HRP equity (OOS retraining), JSON snapshot и Print/PDF с титульной страницей.
 
 Источники данных:
 - **OHLCV** (закрытия дневные/часовые) — Binance Spot через `/api/ohlcv` с дисковым кэшем.

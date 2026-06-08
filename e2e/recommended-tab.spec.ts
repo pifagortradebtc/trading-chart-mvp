@@ -26,11 +26,10 @@ test.describe("Recommended tab", () => {
     });
   });
 
-  test("shows Confidence + Vol Target + Why narrative + Cluster + Liquidity", async ({ page }) => {
+  test("shows Confidence + Why narrative + Cluster + Liquidity", async ({ page }) => {
     // These are unique headers per advisory block.
     for (const label of [
       /Confidence/i,
-      /Vol target advisory/i,
       /Why these weights/i,
       /Cluster exposure/i,
       /Rebalance Plan/i,
