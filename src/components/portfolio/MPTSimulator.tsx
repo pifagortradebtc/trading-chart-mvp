@@ -12,7 +12,6 @@ import {
   ShieldAlert,
   Settings2,
   TrendingDown,
-  Wallet,
 } from "lucide-react";
 import { PifagorFundHeader } from "@/components/PifagorFundHeader";
 import { AssetSelector } from "./AssetSelector";
@@ -23,7 +22,6 @@ import { SimulationTab } from "./tabs/SimulationTab";
 import { StrategiesTab } from "./tabs/StrategiesTab";
 import { RiskCapsTab } from "./tabs/RiskCapsTab";
 import { StressTestTab } from "./tabs/StressTestTab";
-import { HoldingsTab } from "./tabs/HoldingsTab";
 import { RecommendedTab } from "./tabs/RecommendedTab";
 import { JournalTab } from "./tabs/JournalTab";
 import { computeParamsHash, type EngineRunParams } from "@/lib/portfolio/engineRuns";
@@ -37,18 +35,15 @@ import { useMPTWorker } from "@/lib/portfolio/use-mpt-worker";
 import {
   addPinned,
   deletePreset,
-  loadHoldings,
   loadPinned,
   loadPolicy,
   loadPresets,
   removePinned,
   resetPolicy,
-  saveHoldings,
   savePinned,
   savePolicy,
   savePreset,
 } from "@/lib/portfolio/storage";
-import type { HoldingsPayload } from "@/lib/portfolio/holdings";
 import {
   DEFAULT_AGGREGATE_RULES,
   DEFAULT_RISK_CAPS,
@@ -106,14 +101,13 @@ const PIN_COLOR_PALETTE = [
   "#d63ec8",
 ];
 
-type TabId = "sim" | "strategies" | "caps" | "stress" | "holdings" | "recommended" | "journal";
+type TabId = "sim" | "strategies" | "caps" | "stress" | "recommended" | "journal";
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
   { id: "sim", label: "Simulation", icon: ChartCandlestick },
   { id: "strategies", label: "Strategies", icon: Layers },
   { id: "caps", label: "Risk Caps & Views", icon: ShieldAlert },
   { id: "stress", label: "Stress Test", icon: TrendingDown },
-  { id: "holdings", label: "Мои активы", icon: Wallet },
   { id: "recommended", label: "Recommended", icon: Crown },
   { id: "journal", label: "Journal", icon: BookOpen },
 ];
@@ -165,7 +159,6 @@ export function MPTSimulator() {
   const [manualSleeve, setManualSleeve] = useState<number>(0.05);
   const [liveMarketCaps, setLiveMarketCaps] = useState<Record<string, number> | null>(null);
   const [policyHydrated, setPolicyHydrated] = useState(false);
-  const [holdingsPayload, setHoldingsPayload] = useState<HoldingsPayload>(() => loadHoldings());
 
   const worker = useMPTWorker();
 
@@ -250,12 +243,6 @@ export function MPTSimulator() {
     recommendationMode,
     currentWeights,
   ]);
-
-  // Persist holdings on change (debounced 500ms) — separate channel from policy.
-  useEffect(() => {
-    const handle = setTimeout(() => saveHoldings(holdingsPayload), 500);
-    return () => clearTimeout(handle);
-  }, [holdingsPayload]);
 
   const handleResetPolicy = useCallback(() => {
     resetPolicy();
@@ -853,18 +840,6 @@ export function MPTSimulator() {
             priceSeries={priceSeries}
             activeId={activeStrategyId}
             onSelect={setActiveStrategyId}
-          />
-        )}
-
-        {tab === "holdings" && (
-          <HoldingsTab
-            payload={holdingsPayload}
-            onPayloadChange={setHoldingsPayload}
-            basketSymbols={liveSymbols}
-            onPipeToRebalance={(weights) => {
-              setCurrentWeights(weights);
-              setTab("recommended");
-            }}
           />
         )}
 
