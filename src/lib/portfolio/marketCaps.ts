@@ -115,3 +115,60 @@ export async function fetchLiveMarketCaps(): Promise<Record<string, number> | nu
     return null;
   }
 }
+
+/**
+ * Approximate spot USD prices per bare ticker — used as offline/error
+ * fallback when `/api/spotprices` is unreachable or returns an error.
+ * Snapshot date: 2026-05. Keep in sync with `MARKET_CAP_SNAPSHOT` symbols.
+ */
+export const SPOT_PRICE_SNAPSHOT: Record<string, number> = {
+  BTC: 65000,
+  ETH: 2400,
+  BNB: 300,
+  SOL: 150,
+  OKB: 45,
+  MNT: 0.6,
+  HYPE: 18,
+  TON: 5,
+  XRP: 0.55,
+  ADA: 0.45,
+  DOGE: 0.12,
+  AVAX: 30,
+  LINK: 14,
+  DOT: 6.5,
+  ATOM: 8,
+  LTC: 75,
+  USDT: 1.0,
+  USDC: 1.0,
+};
+
+/**
+ * Fetches live spot USD prices from the local /api/spotprices proxy. Optional
+ * `symbols` filter is passed as a comma-joined `?symbols=BTC,ETH` query string
+ * (bare tickers, no USDT suffix). Returns null on SSR, network errors, or
+ * non-200 responses — callers should treat null as "fall back to
+ * `SPOT_PRICE_SNAPSHOT`". Never throws.
+ */
+export async function fetchLivePrices(
+  symbols?: string[]
+): Promise<Record<string, number> | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const qs =
+      symbols && symbols.length > 0
+        ? `?symbols=${encodeURIComponent(symbols.join(","))}`
+        : "";
+    const res = await fetch(`/api/spotprices${qs}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { prices?: Record<string, number> };
+    if (!data?.prices || typeof data.prices !== "object") return null;
+    // Filter out non-finite/negative values defensively.
+    const clean: Record<string, number> = {};
+    for (const [k, v] of Object.entries(data.prices)) {
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) clean[k] = v;
+    }
+    return Object.keys(clean).length > 0 ? clean : null;
+  } catch {
+    return null;
+  }
+}

@@ -46,6 +46,7 @@ const COINGECKO_IDS: Record<string, string> = {
 
 interface CachedPayload {
   caps: Record<string, number>;
+  prices: Record<string, number>;
   cachedAt: string;
   source: "coingecko" | "disk";
 }
@@ -53,6 +54,7 @@ interface CachedPayload {
 interface CoinGeckoRow {
   id: string;
   market_cap: number;
+  current_price: number;
 }
 
 function cacheFile(): string {
@@ -69,6 +71,7 @@ export async function GET(): Promise<NextResponse> {
     if (Number.isFinite(age) && age < TTL_MS && cached.caps) {
       return NextResponse.json({
         caps: cached.caps,
+        prices: cached.prices ?? {},
         cachedAt: cached.cachedAt,
         source: "disk",
       } satisfies CachedPayload);
@@ -128,11 +131,15 @@ export async function GET(): Promise<NextResponse> {
   }
 
   const caps: Record<string, number> = {};
+  const prices: Record<string, number> = {};
   for (const row of rows) {
     const ticker = idToTicker[row.id];
     if (!ticker) continue;
     if (typeof row.market_cap === "number" && Number.isFinite(row.market_cap) && row.market_cap > 0) {
       caps[ticker] = row.market_cap;
+    }
+    if (typeof row.current_price === "number" && Number.isFinite(row.current_price) && row.current_price > 0) {
+      prices[ticker] = row.current_price;
     }
   }
 
@@ -145,6 +152,7 @@ export async function GET(): Promise<NextResponse> {
 
   const payload: CachedPayload = {
     caps,
+    prices,
     cachedAt: new Date().toISOString(),
     source: "coingecko",
   };
