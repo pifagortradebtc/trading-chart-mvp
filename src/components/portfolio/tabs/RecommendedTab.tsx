@@ -2089,19 +2089,13 @@ function FundBridgeCard({
     onImportCurrent(next);
   }, [data, weightsDigest, basketSymbols, onImportCurrent]);
 
-  // Skip block entirely if fund API не сконфигурирован — это норма для
-  // локальной разработки. Показываем только если есть ошибка-кроме-503
-  // или live-data есть.
+  // ⚠️ Раньше тут был silent-hide когда error matches "недоступен или не
+  // сконфигурирован" — но это маскировало РЕАЛЬНЫЕ проблемы (fund down,
+  // 502, network error и т.д.), и юзер не понимал почему Current % не
+  // обновляются. Теперь блок ВСЕГДА рендерится с диагностикой — оператор
+  // сразу видит состояние. Скрываем только если совсем нет ничего (даже
+  // не было попытки фетча — корректно для SSR-режима).
   if (!loading && !data && !error) return null;
-  if (
-    !loading &&
-    !data &&
-    error &&
-    error.includes("недоступен или не сконфигурирован")
-  ) {
-    // Тихо скрываем — фонд не подключён, не отвлекаем оператора.
-    return null;
-  }
 
   const handleImport = () => {
     if (!data || !onImportCurrent) return;
@@ -2157,8 +2151,20 @@ function FundBridgeCard({
         </div>
       </header>
 
-      {error && !error.includes("недоступен или не сконфигурирован") && (
-        <p className="mt-3 text-xs text-rose-300">{error}</p>
+      {/* Диагностика когда нет data — показываем что произошло, чтобы юзер
+          мог быстро понять причину (env var? fetch fail? deploy in progress?). */}
+      {!data && !loading && error && (
+        <div className="mt-3 rounded-md border border-rose-500/30 bg-rose-500/5 px-3 py-2">
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-rose-300">
+            🔴 Auto-sync с фондом недоступен
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-rose-200">{error}</p>
+          <p className="mt-1.5 font-mono text-[10px] text-ink-faint">
+            Скорее всего: (a) PIFAGOR_FUND_API_URL не задан в Render env,
+            либо (b) фонд временно недоступен. Жми Refresh когда фонд
+            вернётся — auto-sync продолжит работу.
+          </p>
+        </div>
       )}
 
       {data && (
