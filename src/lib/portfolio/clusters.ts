@@ -76,7 +76,7 @@ export const CLUSTERS: ClusterDef[] = [
     label: "Exchange",
     description: "Биржевые токены: counterparty-риск к платформе, не к протоколу.",
     color: "#a78bfa",
-    softCeiling: 0.1,
+    softCeiling: 1.0,
     symbols: new Set([
       "BNBUSDT",
       "OKBUSDT",

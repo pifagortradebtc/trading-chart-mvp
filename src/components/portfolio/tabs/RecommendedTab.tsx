@@ -1422,7 +1422,7 @@ function ClusterExposureCard({ exposures }: { exposures: ClusterExposure[] }) {
         {visible.map((e) => (
           <span
             key={e.cluster.id}
-            title={`${e.cluster.label}: ${(e.weight * 100).toFixed(1)}% (soft-ceiling ${(e.cluster.softCeiling * 100).toFixed(0)}%)`}
+            title={`${e.cluster.label}: ${(e.weight * 100).toFixed(1)}%${e.cluster.softCeiling >= 1 ? " (без ограничения)" : ` (soft-ceiling ${(e.cluster.softCeiling * 100).toFixed(0)}%)`}`}
             style={{
               width: `${(e.weight / total) * 100}%`,
               backgroundColor: e.cluster.color,
@@ -1458,7 +1458,9 @@ function ClusterExposureCard({ exposures }: { exposures: ClusterExposure[] }) {
               </div>
               <div className="mt-1 flex items-center justify-between text-[10px] text-ink-faint">
                 <span>
-                  soft-ceiling {(e.cluster.softCeiling * 100).toFixed(0)}%
+                  {e.cluster.softCeiling >= 1
+                    ? "без ограничения"
+                    : `soft-ceiling ${(e.cluster.softCeiling * 100).toFixed(0)}%`}
                   {overshoot && (
                     <span className="ml-2 text-amber-300">
                       +{(e.overshoot * 100).toFixed(1)}pp
