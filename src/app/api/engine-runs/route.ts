@@ -23,6 +23,14 @@ export const runtime = "nodejs";
 
 const MAX_SERVER_RUNS = 200;
 
+// SECURITY: hard caps на body. Раньше валидация шейпа была, но не размера —
+// auth-юзер мог забить диск Render-плана отправляя body на сотни МБ. Engine
+// run snapshot — это metadata (≤ ~5КБ в нормальной форме), 50КБ с большим
+// запасом.
+const MAX_BODY_BYTES = 50_000;
+const MAX_ASSETS = 100;
+const MAX_NOTE_CHARS = 500;
+
 interface EngineRunSnapshot {
   id: string;
   paramsHash: string;
@@ -55,45 +63,93 @@ function isFiniteRecord(v: unknown): v is Record<string, number> {
 function validateSnapshot(body: unknown): body is EngineRunSnapshot {
   if (!body || typeof body !== "object") return false;
   const b = body as Record<string, unknown>;
-  return (
-    isValidId(b.id) &&
-    typeof b.paramsHash === "string" &&
-    b.paramsHash.length > 0 &&
-    b.paramsHash.length <= 128 &&
-    typeof b.createdAt === "number" &&
-    Number.isFinite(b.createdAt) &&
-    typeof b.mode === "string" &&
-    Array.isArray(b.assets) &&
-    b.assets.every((s) => typeof s === "string") &&
-    isFiniteRecord(b.weights) &&
-    typeof b.confidence === "number" &&
-    typeof b.liveMarketCapsUsed === "boolean"
-  );
+  // SECURITY: array/string length caps добавлены — раньше assets/weights
+  // могли быть произвольно большими.
+  if (
+    !isValidId(b.id) ||
+    typeof b.paramsHash !== "string" ||
+    b.paramsHash.length <= 0 ||
+    b.paramsHash.length > 128 ||
+    typeof b.createdAt !== "number" ||
+    !Number.isFinite(b.createdAt) ||
+    typeof b.mode !== "string" ||
+    b.mode.length > 64 ||
+    !Array.isArray(b.assets) ||
+    b.assets.length > MAX_ASSETS ||
+    !b.assets.every((s) => typeof s === "string" && s.length <= 32) ||
+    !isFiniteRecord(b.weights) ||
+    Object.keys(b.weights as Record<string, number>).length > MAX_ASSETS ||
+    typeof b.confidence !== "number" ||
+    !Number.isFinite(b.confidence) ||
+    typeof b.liveMarketCapsUsed !== "boolean"
+  ) {
+    return false;
+  }
+  if (b.note !== undefined && (typeof b.note !== "string" || b.note.length > MAX_NOTE_CHARS)) {
+    return false;
+  }
+  if (
+    b.publishedAt !== undefined &&
+    (typeof b.publishedAt !== "number" || !Number.isFinite(b.publishedAt))
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
-  let body: unknown;
+  // SECURITY: body size cap ДО JSON.parse. Защита от DoS — раньше юзер
+  // мог отправить 1ГБ JSON и сервер сначала бы парсил его в память.
+  let raw: string;
   try {
-    body = await req.json();
+    raw = await req.text();
+  } catch {
+    return NextResponse.json({ error: "Не удалось прочитать body" }, { status: 400 });
+  }
+  if (raw.length > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: `Body слишком большой (>${MAX_BODY_BYTES} байт)` },
+      { status: 413 },
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Невалидный JSON" }, { status: 400 });
   }
-  if (!validateSnapshot(body)) {
+  if (!validateSnapshot(parsed)) {
     return NextResponse.json(
       { error: "Некорректная схема snapshot" },
       { status: 400 },
     );
   }
-  const filePath = path.join(engineRunsDir(), `${body.id}.json`);
+  // SECURITY: field whitelist — пишем ТОЛЬКО известные поля. Раньше писали
+  // весь body, что позволяло атакующему пристёгивать произвольные поля
+  // (которые потом могли попасть в логи / экспорты / UI).
+  const body = parsed as EngineRunSnapshot;
+  const sanitized: EngineRunSnapshot = {
+    id: body.id,
+    paramsHash: body.paramsHash,
+    createdAt: body.createdAt,
+    publishedAt: body.publishedAt,
+    mode: body.mode,
+    assets: body.assets,
+    weights: body.weights,
+    confidence: body.confidence,
+    liveMarketCapsUsed: body.liveMarketCapsUsed,
+    note: body.note,
+  };
+  const filePath = path.join(engineRunsDir(), `${sanitized.id}.json`);
   try {
-    await writeJsonFile(filePath, body);
+    await writeJsonFile(filePath, sanitized);
   } catch (e) {
     console.error("engine-runs write failed", e);
     return NextResponse.json({ error: "disk write failed" }, { status: 500 });
   }
   // Best-effort prune — не блокируем response при ошибке prune
   prune().catch((e) => console.error("engine-runs prune failed", e));
-  return NextResponse.json({ ok: true, id: body.id });
+  return NextResponse.json({ ok: true, id: sanitized.id });
 }
 
 export async function GET(req: Request): Promise<NextResponse> {
