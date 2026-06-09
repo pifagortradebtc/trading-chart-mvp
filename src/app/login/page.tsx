@@ -117,7 +117,25 @@ function LoginForm() {
       // race condition (cookie set, но Next.js RSC fetch уходил параллельно
       // и иногда успевал ДО применения cookie → редирект обратно на /login,
       // кнопка зависала на «Проверка…»).
-      const safe = nextPath.startsWith("/") ? nextPath : "/portfolio";
+      //
+      // SECURITY: open-redirect защита. Раньше проверка `startsWith("/")`
+      // пропускала protocol-relative URL `//evil.com/phish` — атакующий
+      // мог послать `https://research/login?next=//evil.com/phish`, юзер
+      // логинился на реальной странице и попадал на фишинговый клон.
+      // Теперь: парсим URL с base = window.location.origin и проверяем
+      // что origin совпадает.
+      const safe = (() => {
+        if (!nextPath.startsWith("/")) return "/portfolio";
+        if (nextPath.startsWith("//")) return "/portfolio";
+        if (nextPath.startsWith("/\\")) return "/portfolio";
+        try {
+          const url = new URL(nextPath, window.location.origin);
+          if (url.origin !== window.location.origin) return "/portfolio";
+          return url.pathname + url.search;
+        } catch {
+          return "/portfolio";
+        }
+      })();
       window.location.assign(safe);
 
       // Фоллбек: если через 3 сек страница не сменилась — значит
