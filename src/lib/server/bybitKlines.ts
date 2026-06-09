@@ -26,6 +26,7 @@
 
 import type { Candle } from "@/types/candle";
 import { mergeCandlesSorted } from "@/lib/backtest/ohlcvUtils";
+import { fetchWithTimeout } from "@/lib/server/safeFetch";
 
 interface BybitKlineResponse {
   retCode: number;
@@ -86,7 +87,7 @@ async function fetchBybitOnce(opts: {
   url.searchParams.set("end", String(opts.endMs));
   url.searchParams.set("limit", String(opts.limit ?? 1000));
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout(url.toString());
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`Bybit HTTP ${res.status}: ${txt}`);

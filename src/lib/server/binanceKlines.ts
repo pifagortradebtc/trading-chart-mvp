@@ -4,6 +4,7 @@
 
 import type { Candle } from "@/types/candle";
 import { binanceRowToCandle, mergeCandlesSorted } from "@/lib/backtest/ohlcvUtils";
+import { fetchWithTimeout } from "@/lib/server/safeFetch";
 
 /** Свечи с startTime ≥ startMs вперёд до endMs (постранично). */
 export async function fetchBinanceKlinesForward(opts: {
@@ -27,7 +28,7 @@ export async function fetchBinanceKlinesForward(opts: {
     url.searchParams.set("endTime", String(endMs));
     url.searchParams.set("limit", "1000");
 
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`Binance ${res.status}: ${txt}`);
@@ -74,7 +75,7 @@ export async function fetchBinanceKlinesServer(opts: {
     url.searchParams.set("endTime", String(end));
     url.searchParams.set("limit", "1000");
 
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`Binance ${res.status}: ${txt}`);

@@ -2123,9 +2123,13 @@ function FundBridgeCard({
           <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
             Δ vs Live Fund
           </h3>
-          {data?.fundUrl && (
+          {/* SECURITY: раньше рендерили `← {new URL(data.fundUrl).host}` — это
+              утекало env-var в UI. Если PIFAGOR_FUND_API_URL когда-то ставился
+              на internal host (debugging / staging) — host попал бы клиенту.
+              Теперь статичный label. */}
+          {data && (
             <span className="font-mono text-[10px] text-ink-faint">
-              ← {new URL(data.fundUrl).host}
+              ← Pifagor Fund
             </span>
           )}
         </div>

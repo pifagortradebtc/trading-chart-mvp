@@ -304,8 +304,17 @@ async function handleLegacyV1(
       cachedAt: payload.cachedAt,
     });
   } catch (e) {
+    // SECURITY: не утекаем upstream error в response — может содержать
+    // internal URL paths, log fragments. Логируем серверно, клиенту отдаём
+    // generic message.
     const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: msg }, { status: 502 });
+    if (typeof console !== "undefined") {
+      console.warn(`[ohlcv] upstream error: ${msg}`);
+    }
+    return NextResponse.json(
+      { error: "OHLCV upstream unavailable" },
+      { status: 502 },
+    );
   }
 }
 

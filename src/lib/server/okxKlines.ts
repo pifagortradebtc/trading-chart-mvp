@@ -19,6 +19,7 @@
 
 import type { Candle } from "@/types/candle";
 import { mergeCandlesSorted } from "@/lib/backtest/ohlcvUtils";
+import { fetchWithTimeout } from "@/lib/server/safeFetch";
 
 interface OkxResponse {
   code: string;
@@ -98,7 +99,7 @@ export async function fetchOkxKlinesServer(opts: {
     url.searchParams.set("after", String(after));
     url.searchParams.set("limit", "100");
 
-    const res = await fetch(url.toString());
+    const res = await fetchWithTimeout(url.toString());
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`OKX ${res.status}: ${txt}`);

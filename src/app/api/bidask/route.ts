@@ -42,6 +42,7 @@ import {
   stableBidaskFileName,
   writeJsonFile,
 } from "@/lib/server/persistentStore";
+import { safeUrl } from "@/lib/server/safeFetch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,9 +87,20 @@ interface CachePayloadV1 {
 
 // ─── Конфиг ──────────────────────────────────────────────────────────────────
 
-const VPS_BASE =
+// SECURITY: в проде требуем явный env-var. Раньше дефолтился на хардкоженный
+// IP (`pifagor.153.80.192.107.nip.io`) — это: (a) раскрывало origin за CDN
+// и (b) обходило бы CDN/WAF когда они появятся. Локалка может использовать
+// IP-фоллбек для удобства.
+const VPS_BASE_RAW =
   process.env.PIFAGOR_VPS_BASE?.trim() ||
-  "https://pifagor.153.80.192.107.nip.io";
+  (process.env.NODE_ENV === "production"
+    ? ""
+    : "https://pifagor.153.80.192.107.nip.io");
+
+// SECURITY: SSRF guard — отсекает приватные/loopback URL из env. Защищает
+// от misconfig (PIFAGOR_VPS_BASE = http://localhost:6379 или http://169.254.169.254).
+const VPS_URL = VPS_BASE_RAW ? safeUrl(VPS_BASE_RAW) : null;
+const VPS_BASE = VPS_URL ? VPS_URL.toString().replace(/\/+$/, "") : "";
 
 const VPS_TIMEOUT_MS = 30_000;
 
@@ -185,6 +197,13 @@ async function fetchFromVps(
   startMs: number,
   endMs: number,
 ): Promise<{ bars: DepthBar[]; warning?: string }> {
+  // SECURITY: fail-fast если VPS_BASE отсутствует/rejected SSRF guard'ом —
+  // не хотим случайно вызвать relative `/api/v1/bidask` обратно на наш Next.js.
+  if (!VPS_BASE) {
+    throw new Error(
+      "bidask: PIFAGOR_VPS_BASE env-var not set (или rejected SSRF guard'ом)",
+    );
+  }
   const resolution = INTERVAL_TO_VPS_RESOLUTION[interval];
   const fromSec = Math.floor(startMs / 1000);
   const toSec = Math.ceil(endMs / 1000);
@@ -216,19 +235,21 @@ async function fetchFromVps(
   }
 
   if (!resp.ok) {
+    // SECURITY: не утекаем upstream body в response — может содержать internal
+    // паттерны (path, log fragments). Логируем серверно, клиенту отдаём
+    // sanitized version.
     const body = await resp.text().catch(() => "");
-    throw new Error(
-      `bidask: VPS responded ${resp.status} ${resp.statusText} — ${body.slice(0, 200)}`,
-    );
+    if (typeof console !== "undefined") {
+      console.warn(`[bidask] VPS ${resp.status} ${resp.statusText}: ${body.slice(0, 500)}`);
+    }
+    throw new Error(`bidask: VPS upstream unavailable (${resp.status})`);
   }
 
   let data: VpsResponse;
   try {
     data = (await resp.json()) as VpsResponse;
-  } catch (e) {
-    throw new Error(
-      `bidask: VPS returned non-JSON: ${e instanceof Error ? e.message : String(e)}`,
-    );
+  } catch {
+    throw new Error("bidask: VPS returned invalid JSON");
   }
 
   if (!Array.isArray(data.bars)) {

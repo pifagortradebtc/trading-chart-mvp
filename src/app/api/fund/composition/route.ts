@@ -16,6 +16,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { safeUrl } from "@/lib/server/safeFetch";
 
 export const runtime = "nodejs";
 
@@ -73,8 +74,8 @@ const FETCH_TIMEOUT_MS = 8_000;
 let cache: CachedPayload | null = null;
 
 export async function GET(): Promise<NextResponse> {
-  const fundUrl = process.env.PIFAGOR_FUND_API_URL?.trim() ?? "";
-  if (!fundUrl) {
+  const fundUrlRaw = process.env.PIFAGOR_FUND_API_URL?.trim() ?? "";
+  if (!fundUrlRaw) {
     return NextResponse.json(
       {
         error:
@@ -83,6 +84,24 @@ export async function GET(): Promise<NextResponse> {
       { status: 503 },
     );
   }
+
+  // SECURITY: SSRF guard. Если env-var указывает на private/loopback/link-local
+  // (типа http://169.254.169.254 — AWS metadata, http://127.0.0.1:6379 — Redis,
+  // http://10.0.0.5/admin — internal LAN service) — откажемся стучаться. Это
+  // защищает от misconfig + от инсайдера который может set env.
+  const validated = safeUrl(fundUrlRaw);
+  if (!validated) {
+    if (typeof console !== "undefined") {
+      console.warn(
+        `[fund/composition] PIFAGOR_FUND_API_URL rejected by SSRF guard: ${fundUrlRaw}`,
+      );
+    }
+    return NextResponse.json(
+      { error: "PIFAGOR_FUND_API_URL invalid (must be https URL to non-private host)" },
+      { status: 503 },
+    );
+  }
+  const fundUrl = validated.toString().replace(/\/+$/, "");
 
   // Cache hit
   if (cache && cache.expiresAt > Date.now()) {
@@ -114,8 +133,12 @@ export async function GET(): Promise<NextResponse> {
   }
 
   if (!res.ok) {
+    // SECURITY: не утекаем status text — может содержать internal trace ID.
+    if (typeof console !== "undefined") {
+      console.warn(`[fund/composition] upstream ${res.status} ${res.statusText}`);
+    }
     return NextResponse.json(
-      { error: `Fund ${res.status} ${res.statusText}` },
+      { error: `Fund upstream unavailable (${res.status})` },
       { status: 502 },
     );
   }
@@ -123,9 +146,9 @@ export async function GET(): Promise<NextResponse> {
   let json: FundPublicResponse;
   try {
     json = (await res.json()) as FundPublicResponse;
-  } catch (e) {
+  } catch {
     return NextResponse.json(
-      { error: `Fund отдал невалидный JSON: ${e instanceof Error ? e.message : "parse error"}` },
+      { error: "Fund upstream returned invalid JSON" },
       { status: 502 },
     );
   }

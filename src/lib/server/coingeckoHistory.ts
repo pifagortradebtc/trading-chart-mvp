@@ -30,6 +30,7 @@
 
 import type { Candle } from "@/types/candle";
 import { mergeCandlesSorted } from "@/lib/backtest/ohlcvUtils";
+import { fetchWithTimeout } from "@/lib/server/safeFetch";
 
 interface MarketChartResponse {
   prices: [number, number][];
@@ -99,7 +100,7 @@ export async function fetchCoinGeckoDailyServer(opts: {
   url.searchParams.set("days", String(days));
   url.searchParams.set("interval", "daily");
 
-  const res = await fetch(url.toString());
+  const res = await fetchWithTimeout(url.toString());
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`CoinGecko ${res.status}: ${txt}`);

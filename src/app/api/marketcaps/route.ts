@@ -99,19 +99,27 @@ export async function GET(): Promise<NextResponse> {
       cache: "no-store",
     });
     if (!res.ok) {
+      // SECURITY: don't leak upstream status text to client.
+      if (typeof console !== "undefined") {
+        console.warn(`[marketcaps] CoinGecko ${res.status} ${res.statusText}`);
+      }
       return NextResponse.json(
-        { error: `CoinGecko ${res.status} ${res.statusText}` },
+        { error: `CoinGecko upstream unavailable (${res.status})` },
         { status: 502 }
       );
     }
     rows = (await res.json()) as CoinGeckoRow[];
   } catch (e) {
+    // SECURITY: log full error server-side, return generic message to client.
     const message =
       e instanceof Error
         ? e.name === "AbortError"
           ? "CoinGecko request timed out (10s)"
-          : e.message
+          : "CoinGecko request failed"
         : "CoinGecko request failed";
+    if (typeof console !== "undefined" && e instanceof Error) {
+      console.warn(`[marketcaps] fetch error: ${e.message}`);
+    }
     return NextResponse.json({ error: message }, { status: 502 });
   } finally {
     clearTimeout(timer);
