@@ -55,7 +55,11 @@ export function stableBrowserCacheKey(
   interval: string,
   yearsBack: number,
 ): string {
-  const sym = symbol.replace("/", "").toUpperCase();
+  // CORRECTNESS FIX: было `replace("/", "")` — заменяет только ПЕРВЫЙ слеш.
+  // Если symbol имел >1 слеша (типа "BTC/USDT/PERP") — оставался ломаный
+  // ключ. Server-side persistentStore нормализует строже, потенциальная
+  // cache-fragmentation. Теперь убираем ВСЕ не-alphanumerics.
+  const sym = symbol.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   return `v2_${sym}_${interval}_y${yearsBack}`;
 }
 

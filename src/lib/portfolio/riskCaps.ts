@@ -155,12 +155,23 @@ export function applyRiskCaps(
   }
 
   // 4. Final re-clip (handles rare cases where core injection pushed BTC over its cap).
-  for (let i = 0; i < n; i++) {
-    const cap = caps[symbols[i]];
-    const hi = cap?.max ?? 1;
-    if (w[i] > hi + 1e-9) w[i] = hi;
+  // CORRECTNESS FIX: раньше делалось ОДНОРАЗОВО — clip + renormalize.
+  // После renormalize веса могли снова превысить cap (perfectly possible когда
+  // суммарный «излишек» был большой). Теперь итерируем до сходимости (макс
+  // 5 итераций — на практике обычно 1-2 хватает).
+  for (let iter = 0; iter < 5; iter++) {
+    let anyClipped = false;
+    for (let i = 0; i < n; i++) {
+      const cap = caps[symbols[i]];
+      const hi = cap?.max ?? 1;
+      if (w[i] > hi + 1e-9) {
+        w[i] = hi;
+        anyClipped = true;
+      }
+    }
+    if (!anyClipped) break;
+    w = renormalize(w);
   }
-  w = renormalize(w);
 
   // 5. Data-quality ceiling. Each asset is clamped to its max-allowed weight
   // implied by available history (good=100%, limited=5%, very-limited=2%,

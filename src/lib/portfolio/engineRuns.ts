@@ -120,13 +120,41 @@ export function loadLocalRuns(): EngineRunSnapshot[] {
 
 function saveLocalRuns(runs: EngineRunSnapshot[]): void {
   if (typeof window === "undefined") return;
+  // CORRECTNESS FIX: раньше silently глотался ЛЮБОЙ throw, включая
+  // QuotaExceededError — новый run просто терялся без feedback. Теперь
+  // явно ловим quota и пытаемся fallback на меньший срез (последние 5
+  // вместо MAX_LOCAL_RUNS=20). Если и это не помогло — logging.
+  const truncated = runs.slice(0, MAX_LOCAL_RUNS);
   try {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(runs.slice(0, MAX_LOCAL_RUNS)),
-    );
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(truncated));
+    return;
+  } catch (e) {
+    const isQuota =
+      e instanceof Error &&
+      (e.name === "QuotaExceededError" || e.message.includes("quota"));
+    if (!isQuota) {
+      // Non-quota error — log и пропускаем (durable copy на сервере)
+      if (typeof console !== "undefined") {
+        console.warn("[engineRuns] saveLocalRuns failed (non-quota):", e);
+      }
+      return;
+    }
+  }
+  // Quota — пробуем компактнее (5 свежих вместо 20)
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(runs.slice(0, 5)));
+    if (typeof console !== "undefined") {
+      console.warn(
+        "[engineRuns] localStorage quota — сохранили 5 свежих runs вместо 20. Серверная durable copy не задета.",
+      );
+    }
   } catch {
-    // quota exceeded — ignore, durable copy на сервере
+    // Если даже 5 не лезут — что-то совсем не так с localStorage
+    if (typeof console !== "undefined") {
+      console.warn(
+        "[engineRuns] localStorage полностью забит — runs не сохранены. Server copy используется.",
+      );
+    }
   }
 }
 

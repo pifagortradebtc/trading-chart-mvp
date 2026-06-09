@@ -80,5 +80,22 @@ export async function readJsonFile<T>(fullPath: string): Promise<T | null> {
 
 export async function writeJsonFile(fullPath: string, data: unknown): Promise<void> {
   await ensureDir(path.dirname(fullPath));
-  await fs.writeFile(fullPath, JSON.stringify(data), "utf-8");
+  // CORRECTNESS FIX: atomic write — записываем в tmp файл, потом rename
+  // на финальное имя. fs.rename атомарен на одной FS — concurrent reader
+  // увидит либо старую версию, либо новую, но никогда truncated/partial.
+  // Раньше прямой writeFile создавал TOCTOU окно: GET в момент write
+  // мог прочитать неполный JSON и закешировать invalid state.
+  const tmpPath = `${fullPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(tmpPath, JSON.stringify(data), "utf-8");
+    await fs.rename(tmpPath, fullPath);
+  } catch (e) {
+    // Best-effort cleanup of tmp on failure
+    try {
+      await fs.unlink(tmpPath);
+    } catch {
+      // ignore
+    }
+    throw e;
+  }
 }

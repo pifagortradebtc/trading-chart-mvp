@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -161,6 +161,12 @@ export function MPTSimulator() {
   const [policyHydrated, setPolicyHydrated] = useState(false);
 
   const worker = useMPTWorker();
+  // CORRECTNESS FIX (security finding): worker-multiplexing race. Раньше поздний
+  // promise мог перетереть setStrategies от более нового ввода — оператор видел
+  // устаревшую аллокацию. Теперь каждый job increments version, и в async
+  // колбэках мы сверяем что текущая версия не сменилась — если сменилась,
+  // dropping результат (новый job уже летит).
+  const workerJobVersion = useRef(0);
 
   useEffect(() => {
     setPresets(loadPresets());
@@ -403,6 +409,7 @@ export function MPTSimulator() {
         return found ?? d;
       });
 
+      const myVersion = ++workerJobVersion.current;
       const { result: mptResult, strategies: strats, dataQuality: dq, durationMs: elapsed } =
         await worker.runWithStrategies({
           priceSeries: aligned,
@@ -415,6 +422,8 @@ export function MPTSimulator() {
           cvarDefenseThreshold,
           liveMarketCaps,
         });
+      // Race guard: если новый job уже стартанул — dropping результат.
+      if (workerJobVersion.current !== myVersion) return;
       setPriceSeries(aligned);
       setResult(mptResult);
       setStrategies(strats);
@@ -455,6 +464,7 @@ export function MPTSimulator() {
         const found = views.find((v) => v.symbol === d.symbol);
         return found ?? d;
       });
+      const myVersion = ++workerJobVersion.current;
       const { strategies: strats, dataQuality: dq } = await worker.computeStrategies({
         priceSeries,
         riskFreeRate,
@@ -465,6 +475,8 @@ export function MPTSimulator() {
         cvarDefenseThreshold,
         liveMarketCaps,
       });
+      // Race guard — см. комментарий выше.
+      if (workerJobVersion.current !== myVersion) return;
       setStrategies(strats);
       setDataQuality(dq);
     } catch (e) {

@@ -446,10 +446,17 @@ export function finalFundPortfolio(
       }
     }
     if (nonCoreSum > 0) {
-      const takeFactor = Math.min(1, shift / nonCoreSum);
+      // CORRECTNESS FIX: раньше брали `min(shift, nonCoreSum)` из не-core,
+      // а к BTC/ETH всегда добавляли полный `shift`. Если nonCoreSum < shift
+      // (всё уже в core) — добавляли больше чем брали, sum > 1, renormalize
+      // схлопывала всё → фактический +X% к BTC/ETH был меньше чем сообщал
+      // warning. Теперь используем actualShift везде → математически
+      // консистентно.
+      const actualShift = Math.min(shift, nonCoreSum);
+      const takeFactor = actualShift / nonCoreSum;
       for (const i of nonCoreIdx) w[i] *= 1 - takeFactor;
-      if (btcIdx >= 0) w[btcIdx] += shift * 0.6;
-      if (ethIdx >= 0) w[ethIdx] += shift * 0.4;
+      if (btcIdx >= 0) w[btcIdx] += actualShift * 0.6;
+      if (ethIdx >= 0) w[ethIdx] += actualShift * 0.4;
     }
     // Re-project to keep caps honored
     const step2 = applyRiskCaps(w, symbols, riskCaps, aggregateRules, dataQuality);

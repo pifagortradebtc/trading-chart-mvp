@@ -154,33 +154,45 @@ MNT на Binance Spot есть (листинг 2023, ≥1000 дней истор
 
 ## Что добавил этап 8
 
-### HTTP Basic Auth — пароль на весь сайт
+### Cookie-session auth + security hardening
 
-Этап 8 закрывает пробел в безопасности: до этого `/portfolio` был доступен любому без аутентификации. Теперь — единый пароль на весь сайт через Next.js middleware.
+Изначально на этапе 8 был HTTP Basic Auth (browser-native dialog). Эта схема позже эволюционировала в custom cookie-session с iat-embedded HMAC tokens (см. security hardening commits a608c62, cb2ac46, a4dc863).
 
-**Файл**: [src/middleware.ts](src/middleware.ts)
+**Файлы**:
+- [src/middleware.ts](src/middleware.ts) — cookie-session gate + CSRF check
+- [src/lib/server/auth.ts](src/lib/server/auth.ts) — token format + verify
+- [src/app/api/auth/login/route.ts](src/app/api/auth/login/route.ts) — login + rate-limit
+- [src/app/api/auth/logout/route.ts](src/app/api/auth/logout/route.ts) — logout + Origin check
+- [src/app/login/page.tsx](src/app/login/page.tsx) — custom login form (single-field)
+- [src/lib/server/safeFetch.ts](src/lib/server/safeFetch.ts) — SSRF guard для proxy routes
 
-**Поведение**:
-- Если env-var `RESEARCH_PASSWORD` **задана** → middleware требует HTTP Basic Auth. Браузер показывает native dialog «введите пароль» при первом заходе. Кешируется до закрытия вкладки.
-- Если **не задана** → middleware пропускает всё (для локальной разработки без overhead'а).
+**Текущее поведение**:
+- Если env-var `RESEARCH_PASSWORD` **задана** → middleware требует валидную cookie. Юзер вводит пароль на `/login`, получает HttpOnly cookie на 7 дней.
+- Если **не задана** в проде → middleware возвращает 503 «Auth misconfigured» (fail-CLOSED).
+- Если **не задана** в dev (NODE_ENV !== production) → middleware пропускает всё (локальная разработка).
 
-**Защищены**: все страницы (`/`, `/portfolio`, `/backtest`, `/chart`) + все API-routes (`/api/ohlcv`, `/api/engine-runs`, `/api/fund/composition`, и т.д.).
+**Token format**: `${iatMs}.${HMAC(password, "v2:${iatMs}")}`. iat embedded в payload → server-side TTL enforcement (7 дней), каждый login выдаёт уникальный token (защита от session-fixation).
 
-**НЕ защищены**: `_next/static/*`, `_next/image/*`, `favicon.ico`, `fonts/*`, `images/*`, `public/*` — иначе браузер не сможет загрузить ассеты для 401-страницы.
+**CSRF protection**:
+- Cookie `SameSite=Lax` (не None — никаких cross-origin GET).
+- Middleware проверяет `Origin` header на всех non-GET → 403 если origin не совпадает с host.
+- Logout требует валидную auth-cookie + дополнительный Origin check.
 
-**Безопасность**:
-- Constant-time string compare (защита от timing attacks).
-- Single-password setup (имя пользователя игнорируется) — для команды 3-5 человек проще общий пароль, чем per-user accounts.
+**Rate-limit**: 5 попыток за 15 минут per-IP (через `x-forwarded-for`). После лимита 429 + Retry-After.
+
+**Timing-constant**: login отвечает за ≥250ms независимо от outcome (защита от timing oracle).
+
+**Защищены**: все страницы кроме `/`, `/login`, `/api/auth/login` + все API-routes кроме них.
+
+**Force-logout всех**: ротировать RESEARCH_PASSWORD в Render env → все existing cookies невалидны (HMAC не сходится).
 
 **Setup на Render**:
 1. Dashboard → `trading-chart-mvp` → Environment → Add Environment Variable
-2. Key: `RESEARCH_PASSWORD`, Value: твой пароль
-3. Save → auto-redeploy ~2 минуты
-4. После redeploy любой заход на сайт требует пароль
+2. Key: `RESEARCH_PASSWORD`, Value: random 16+ char string
+3. Save → auto-redeploy ~2-5 минут
+4. После redeploy любой заход на site требует пароль через `/login`
 
-**Setup для команды**: один общий пароль, передавать через защищённый канал (1Password, Bitwarden, и т.д.). Не пересылать в открытом Telegram/email.
-
-**Migration path к per-user accounts** (если когда-нибудь понадобится): NextAuth.js или интеграция с Telegram OIDC Криптофонда. Сейчас single-password — это not over-engineered MVP, легко мигрировать.
+**Setup для команды**: один общий пароль, передавать через защищённый канал (1Password, Bitwarden). Не пересылать в открытом Telegram/email.
 
 ---
 

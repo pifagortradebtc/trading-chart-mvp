@@ -681,7 +681,11 @@ export function runBacktest(
   let openPositionAtDataEnd: OpenPositionSnapshot | null = null;
 
   const pushEquity = (tMs: number) => {
-    const dd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+    // CORRECTNESS FIX: clamp [0, 100]. На leveraged-конфигах equity может
+    // уйти ниже нуля → раньше получали dd > 100% (нефизическая величина).
+    // Теперь клампим — UI больше не показывает «-150% drawdown».
+    const rawDd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+    const dd = Math.max(0, Math.min(100, rawDd));
     equityCurve.push({ time: tMs, equity, drawdownPct: dd, peakEquity: peak });
   };
 
@@ -761,7 +765,13 @@ export function runBacktest(
     /** Funding */
     if (open && settings.dca.fundingPctPer8h > 0 && i > 0) {
       const prev = candles[i - 1]!;
-      const dtMs = (c.time - prev.time) * 1000;
+      // CORRECTNESS FIX: cap dtMs на 24 часа. Раньше если между барами был gap
+      // (пропавший день, нерабочий период биржи, лакуна в OHLCV-данных),
+      // funding компонился за весь gap — нефизический выброс в equity-кривой.
+      // 24h это разумный универсальный cap для любого интервала (даже daily
+      // gaps редко превышают сутки — биржа закрытая >1 дня уже event).
+      const MAX_DT_MS = 24 * 3600 * 1000;
+      const dtMs = Math.min((c.time - prev.time) * 1000, MAX_DT_MS);
       const fundingFee =
         open.cumNotional * (settings.dca.fundingPctPer8h / 100) * (dtMs / (8 * 3600 * 1000));
       open.fundingUsdt += fundingFee;

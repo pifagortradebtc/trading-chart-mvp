@@ -323,7 +323,16 @@ function sortinoRatio(
   riskFreeRate: number
 ): number {
   const n = w.length;
+  if (n === 0 || assetReturns.length !== n) return NaN;
   const T = assetReturns[0].length;
+  // CORRECTNESS FIX: invariant — все asset returns должны иметь одинаковую
+  // длину T. Раньше функция использовала assetReturns[0].length без проверки;
+  // если caller передавал не-выравненные ряды (разная история по активам),
+  // внутренний цикл silently читал undefined → NaN propagation. Теперь
+  // явная проверка — возвращаем NaN с явной семантикой.
+  for (let i = 1; i < n; i++) {
+    if (assetReturns[i].length !== T) return NaN;
+  }
   let sumRet = 0;
   let sumDownSq = 0;
   for (let t = 0; t < T; t++) {
