@@ -121,12 +121,17 @@ export async function GET(): Promise<NextResponse> {
     });
   } catch (e) {
     clearTimeout(timer);
+    // SECURITY: не утекаем e.message клиенту — может содержать resolved
+    // hostname / network-детали (getaddrinfo ENOTFOUND <fund-host>).
+    // Логируем серверно, клиенту — generic. Timeout различаем явно (полезно
+    // оператору, internal-инфы не раскрывает).
+    if (typeof console !== "undefined" && e instanceof Error) {
+      console.warn(`[fund/composition] fetch error: ${e.message}`);
+    }
     const msg =
-      e instanceof Error
-        ? e.name === "AbortError"
-          ? `Fund запрос timed out (${FETCH_TIMEOUT_MS}ms)`
-          : e.message
-        : "Fund fetch failed";
+      e instanceof Error && e.name === "AbortError"
+        ? `Fund запрос timed out (${FETCH_TIMEOUT_MS}ms)`
+        : "Fund upstream unreachable";
     return NextResponse.json({ error: msg }, { status: 502 });
   } finally {
     clearTimeout(timer);

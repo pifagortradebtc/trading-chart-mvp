@@ -15,6 +15,11 @@ import {
 
 export const runtime = "nodejs";
 
+// SECURITY: hard cap на body ДО JSON.parse. PATCH меняет только note (≤500
+// символов) + publishedAt (число) — реальное тело ≤ ~1КБ. 10КБ с запасом.
+// Раньше req.json() парсил неограниченный body в память (auth-gated DoS).
+const MAX_BODY_BYTES = 10_000;
+
 interface EngineRunSnapshot {
   id: string;
   paramsHash: string;
@@ -40,9 +45,21 @@ export async function PATCH(
   if (!isValidId(id)) {
     return NextResponse.json({ error: "Некорректный id" }, { status: 400 });
   }
+  let raw: string;
+  try {
+    raw = await req.text();
+  } catch {
+    return NextResponse.json({ error: "Не удалось прочитать body" }, { status: 400 });
+  }
+  if (raw.length > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: `Body слишком большой (>${MAX_BODY_BYTES} байт)` },
+      { status: 413 },
+    );
+  }
   let patch: Record<string, unknown>;
   try {
-    patch = await req.json();
+    patch = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "Невалидный JSON" }, { status: 400 });
   }

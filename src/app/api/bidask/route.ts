@@ -395,16 +395,23 @@ export async function GET(req: NextRequest) {
         bars = trimOlderThan(bars, cutoffSec);
         if (res.warning) warning = res.warning;
       } catch (e) {
+        // SECURITY: не утекаем e.message клиенту — внутренний throw в
+        // fetchFromVps содержит resolved hostname / network-ошибку
+        // (getaddrinfo ENOTFOUND <internal-host>), что раскрывает origin за
+        // CDN. Логируем серверно, клиенту — generic.
+        if (typeof console !== "undefined") {
+          console.warn(
+            `[bidask] VPS unreachable: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
         // Если VPS недоступен но в кеше что-то есть — отдаём что есть с warning.
         if (bars.length === 0) {
           return NextResponse.json(
-            {
-              error: `bidask: VPS unreachable and no cached data: ${e instanceof Error ? e.message : String(e)}`,
-            },
+            { error: "bidask: VPS upstream unreachable and no cached data" },
             { status: 502 },
           );
         }
-        warning = `bidask: VPS unreachable, served stale cache: ${e instanceof Error ? e.message : String(e)}`;
+        warning = "bidask: VPS upstream unreachable, served stale cache";
       }
     }
   }
