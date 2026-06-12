@@ -15,16 +15,15 @@ describe("buildNavExport", () => {
     expect(out.warnings.length).toBe(0);
   });
 
-  it("emits a CASH row when sleeveFraction > 0", () => {
+  it("exports pure-spot payload — all items are SPOT category", () => {
+    // Фонд 100% spot (sleeve-логика удалена) — никаких CASH/BOT/MANUAL строк.
     const out = buildNavExport({
       weights: [0.7, 0.3],
       symbols: ["BTCUSDT", "ETHUSDT"],
-      sleeveFraction: 0.1,
     });
-    const cash = out.payload.items.find((i) => i.category === "CASH");
-    expect(cash).toBeDefined();
-    expect(cash?.symbol).toBe("USDT");
-    expect(cash?.weight).toBeCloseTo(10, 2);
+    expect(out.payload.items.every((i) => i.category === "SPOT")).toBe(true);
+    const sum = out.payload.items.reduce((a, b) => a + b.weight, 0);
+    expect(sum).toBeCloseTo(100, 2);
   });
 
   it("drops tickers not in the fund whitelist with a warning", () => {
@@ -55,13 +54,4 @@ describe("buildNavExport", () => {
     expect(sum).toBeCloseTo(100, 4); // backend tolerance is 0.01
   });
 
-  it("sorts CASH last", () => {
-    const out = buildNavExport({
-      weights: [0.6, 0.4],
-      symbols: ["BTCUSDT", "ETHUSDT"],
-      sleeveFraction: 0.05,
-    });
-    const cats = out.payload.items.map((i) => i.category);
-    expect(cats.indexOf("CASH")).toBe(cats.length - 1);
-  });
 });

@@ -20,7 +20,12 @@
 
 import { prettySymbol } from "./format";
 
-export type NavCategory = "SPOT" | "BOT_TRADING" | "MANUAL_TRADING" | "CASH";
+/**
+ * Фонд работает 100% spot (боты и ручная торговля свёрнуты, user decision
+ * 2026-06-12). BOT_TRADING / MANUAL_TRADING удалены; CASH остаётся для
+ * USDT-позиции, если она когда-либо появится в basket'е.
+ */
+export type NavCategory = "SPOT" | "CASH";
 
 export interface NavCompositionItem {
   symbol: string;
@@ -87,17 +92,15 @@ const ASSET_NAMES: Record<string, string> = {
  *   - Renormalizes remaining weights to sum to exactly 100.0%.
  *   - Drops dust positions (< 0.05% after renormalize) to avoid 50+ tickers
  *     from numerical noise — the backend hard-caps items at 50.
- *   - Optionally appends a CASH row for the sleeve buffer.
  *
+ * Фонд 100% spot — sleeve-логика (bot/manual → CASH) удалена.
  * Returns the full JSON payload, plus diagnostic warnings.
  */
 export function buildNavExport(args: {
   weights: number[];
   symbols: string[];
-  /** Total sleeve fraction (bot + manual) — emitted as CASH if > 0. */
-  sleeveFraction?: number;
 }): NavExportResult {
-  const { weights, symbols, sleeveFraction = 0 } = args;
+  const { weights, symbols } = args;
   const warnings: string[] = [];
 
   // 1. Map to fund tickers; collect unmapped.
@@ -119,17 +122,12 @@ export function buildNavExport(args: {
     );
   }
 
-  // 2. Apply sleeve scaling — spot rows are scaled down by (1 - sleeve), the
-  // remainder goes to a CASH USDT row. Sleeve = 0 reduces to a pure-spot export.
-  const sleeve = Math.max(0, Math.min(0.95, sleeveFraction));
-  const spotScale = 1 - sleeve;
+  // 2. Merge duplicate tickers (e.g. BTCUSDT + BTCUSDC both map to BTC).
+  // Фонд 100% spot — никакого sleeve-скейлинга, веса идут как есть.
   const merged = new Map<string, number>();
   for (const r of mapped) {
     const cur = merged.get(r.symbol) ?? 0;
-    merged.set(r.symbol, cur + r.raw * spotScale);
-  }
-  if (sleeve > 1e-6) {
-    merged.set("USDT", (merged.get("USDT") ?? 0) + sleeve);
+    merged.set(r.symbol, cur + r.raw);
   }
 
   // 3. Drop dust (< 0.05% of total).

@@ -63,13 +63,19 @@ UI: `LiquidityCard` в Recommended Tab — таблица с per-asset tier, max
 
 ### NAV-экспорт в Криптофонд (`navExport.ts`)
 
-`buildNavExport({ weights, symbols, sleeveFraction })` собирает JSON в формате `PUT /admin/portfolio/composition` Криптофонда:
+`buildNavExport({ weights, symbols })` собирает JSON в формате `PUT /admin/portfolio/composition` Криптофонда:
 - Маппит trading-chart-mvp тикеры (`BTCUSDT`) в фундовые (`BTC`)
 - Drops неподдерживаемые тикеры с warning'ом (whitelist: BTC/ETH/BNB/SOL/OKB/MNT/HYPE/TON/USDT)
-- Sleeve → CASH USDT row автоматически
 - Renormalize до точной суммы 100% (backend tolerance ±0.01)
 - Drops dust < 0.05% чтобы payload не превышал 50-item cap
 - Сортировка: SPOT desc, CASH last
+
+> **2026-06-12:** sleeve-логика (bot strategies + manual book → CASH row)
+> полностью удалена — фонд работает 100% spot, боты и ручная торговля
+> свёрнуты решением управляющего. `sleeveFraction` параметра больше нет,
+> категории `BOT_TRADING`/`MANUAL_TRADING` удалены из типов
+> (navExport.ts, fundBridge.ts), UI-секция «Fund sleeves» убрана из
+> Risk Caps, в Recommended один donut вместо двух.
 
 UI: новая кнопка **«Copy NAV»** в Recommended Tab рядом с Copy JSON и Print. Direct cross-domain POST не делаем (admin-cookie живёт на домене фонда) — operator копирует JSON и вставляет в админ-форму или вызывает curl с admin-cookie.
 

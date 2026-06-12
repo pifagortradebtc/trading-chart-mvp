@@ -155,8 +155,6 @@ export function MPTSimulator() {
   const [cvarDefenseThreshold, setCvarDefenseThreshold] = useState<number>(
     DEFAULT_CVAR_DEFENSE_THRESHOLD
   );
-  const [botSleeve, setBotSleeve] = useState<number>(0.05);
-  const [manualSleeve, setManualSleeve] = useState<number>(0.05);
   const [liveMarketCaps, setLiveMarketCaps] = useState<Record<string, number> | null>(null);
   const [policyHydrated, setPolicyHydrated] = useState(false);
 
@@ -184,12 +182,6 @@ export function MPTSimulator() {
     }
     if (typeof stored.cvarDefenseThreshold === "number" && Number.isFinite(stored.cvarDefenseThreshold)) {
       setCvarDefenseThreshold(stored.cvarDefenseThreshold);
-    }
-    if (typeof stored.botSleeve === "number" && Number.isFinite(stored.botSleeve)) {
-      setBotSleeve(stored.botSleeve);
-    }
-    if (typeof stored.manualSleeve === "number" && Number.isFinite(stored.manualSleeve)) {
-      setManualSleeve(stored.manualSleeve);
     }
     if (
       typeof stored.activeTab === "string" &&
@@ -229,8 +221,6 @@ export function MPTSimulator() {
         aggregateRules,
         views,
         cvarDefenseThreshold,
-        botSleeve,
-        manualSleeve,
         activeTab: tab,
         recommendationMode,
         currentWeights,
@@ -243,8 +233,6 @@ export function MPTSimulator() {
     aggregateRules,
     views,
     cvarDefenseThreshold,
-    botSleeve,
-    manualSleeve,
     tab,
     recommendationMode,
     currentWeights,
@@ -256,8 +244,6 @@ export function MPTSimulator() {
     setAggregateRules({ ...DEFAULT_AGGREGATE_RULES });
     setViews(defaultViewsForSymbols(assets));
     setCvarDefenseThreshold(DEFAULT_CVAR_DEFENSE_THRESHOLD);
-    setBotSleeve(0.05);
-    setManualSleeve(0.05);
     setRecommendationMode(undefined);
     setCurrentWeights({});
   }, [assets]);
@@ -268,8 +254,6 @@ export function MPTSimulator() {
       setRiskCaps({ ...cfg.riskCaps });
       setAggregateRules({ ...cfg.aggregateRules });
       setCvarDefenseThreshold(cfg.cvarDefenseThreshold);
-      setBotSleeve(cfg.botSleeve);
-      setManualSleeve(cfg.manualSleeve);
       setRecommendationMode(mode);
     },
     []
@@ -828,15 +812,11 @@ export function MPTSimulator() {
             aggregateRules={aggregateRules}
             views={views}
             cvarDefenseThreshold={cvarDefenseThreshold}
-            botSleeve={botSleeve}
-            manualSleeve={manualSleeve}
             strategies={strategies}
             onRiskCapsChange={setRiskCaps}
             onAggregateChange={setAggregateRules}
             onViewsChange={setViews}
             onCvarDefenseThresholdChange={setCvarDefenseThreshold}
-            onBotSleeveChange={setBotSleeve}
-            onManualSleeveChange={setManualSleeve}
             onResetPolicy={handleResetPolicy}
             onApply={reapplyStrategies}
             loading={busy}
@@ -860,8 +840,6 @@ export function MPTSimulator() {
             strategy={finalStrategy}
             symbols={liveSymbols}
             priceSeries={priceSeries}
-            botSleeve={botSleeve}
-            manualSleeve={manualSleeve}
             cvarDefenseThreshold={cvarDefenseThreshold}
             dataQuality={dataQuality}
             allStrategies={strategies}

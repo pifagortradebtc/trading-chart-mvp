@@ -56,8 +56,6 @@ interface Props {
   symbols: string[];
   /** Aligned daily price series — used to build the historical equity curve. */
   priceSeries?: PriceSeries[] | null;
-  botSleeve?: number;
-  manualSleeve?: number;
   /** Daily CVaR-95 trigger from the policy editor, e.g. -0.08. */
   cvarDefenseThreshold?: number;
   /** Per-asset data-quality assessment from the worker — drives confidence + rebalance reasons. */
@@ -94,16 +92,16 @@ const SPOT_PALETTE = [
 
 /**
  * Premium "Recommended Fund Allocation" view.
- *   - Left donut: spot allocation (the Final Fund strategy weights).
- *   - Right donut: total fund (spot × (1 - bot - manual) + bot + manual).
+ *   - Donut: fund allocation (the Final Fund strategy weights, 100% spot).
  *   - Explanation card: why these weights — BL → caps → CVaR defense.
+ *
+ * Фонд работает 100% spot — sleeve-логика (bot/manual) удалена
+ * (user decision 2026-06-12).
  */
 export function RecommendedTab({
   strategy,
   symbols,
   priceSeries,
-  botSleeve = 0.05,
-  manualSleeve = 0.05,
   cvarDefenseThreshold = -0.08,
   dataQuality,
   allStrategies,
@@ -113,7 +111,6 @@ export function RecommendedTab({
   views,
   engineMeta,
 }: Props) {
-  const sleeveTotalPct = ((botSleeve + manualSleeve) * 100).toFixed(0);
   const cvarPct = (cvarDefenseThreshold * 100).toFixed(1);
   const spotRows = useMemo(
     () =>
@@ -222,18 +219,6 @@ export function RecommendedTab({
     confidence,
   ]);
 
-  const spotScale = Math.max(0, 1 - botSleeve - manualSleeve);
-  const totalRows = useMemo(() => {
-    const rows = spotRows.map((r) => ({
-      symbol: r.symbol,
-      label: prettySymbol(r.symbol),
-      weight: r.weight * spotScale,
-    }));
-    rows.push({ symbol: "BOT", label: "Bot strategies", weight: botSleeve });
-    rows.push({ symbol: "MANUAL", label: "Manual book", weight: manualSleeve });
-    return rows;
-  }, [spotRows, botSleeve, manualSleeve, spotScale]);
-
   if (!strategy) {
     return (
       <div className="rounded-2xl border border-surface-border bg-surface p-8 text-center text-sm text-ink-muted">
@@ -253,8 +238,8 @@ export function RecommendedTab({
             <span className="accent-serif text-brand-light">Recommended</span> Fund Allocation
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-ink-muted">
-            Black-Litterman базовые веса → risk caps → CVaR-защита. Premium-картинка
-            с двумя срезами: spot-портфель и общий портфель фонда.
+            Black-Litterman базовые веса → risk caps → CVaR-защита.
+            Фонд работает 100% spot — рекомендация и есть полный портфель.
           </p>
         </div>
         <div className="print:hidden flex items-center gap-2">
@@ -262,15 +247,11 @@ export function RecommendedTab({
             strategy={strategy}
             symbols={symbols}
             spotRows={spotRows}
-            totalRows={totalRows}
-            botSleeve={botSleeve}
-            manualSleeve={manualSleeve}
             cvarDefenseThreshold={cvarDefenseThreshold}
           />
           <CopyNavExportButton
             weights={strategy.weights}
             symbols={symbols}
-            sleeveFraction={botSleeve + manualSleeve}
             engineMeta={engineMeta}
             confidenceScore={confidence?.score}
           />
@@ -286,17 +267,12 @@ export function RecommendedTab({
 
       {whyNarrative.length > 0 && <WhyNarrativeCard paragraphs={whyNarrative} />}
 
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <section className="grid grid-cols-1 gap-5">
         <AllocationCard
-          title="Раскладка спот-куска"
-          subtitle={`Веса внутри ${(spotScale * 100).toFixed(0)}%-ной спот-аллокации фонда. Строки суммируются до 100% внутри спота — не до 100% фонда.`}
+          title="Портфель фонда"
+          subtitle="Фонд 100% spot — строки суммируются до 100% фонда."
           rows={spotRows.map((r) => ({ ...r, label: prettySymbol(r.symbol) }))}
           highlight
-        />
-        <AllocationCard
-          title="Полный портфель фонда"
-          subtitle={`Spot ${(spotScale * 100).toFixed(0)}% × состав слева + Bot ${(botSleeve * 100).toFixed(0)}% + Manual ${(manualSleeve * 100).toFixed(0)}% = 100% фонда.`}
-          rows={totalRows}
         />
       </section>
 
@@ -391,8 +367,8 @@ export function RecommendedTab({
           />
           <Reason
             icon={<Crown size={14} />}
-            title="Sleeve диверсификация"
-            body={`${sleeveTotalPct}% от общего портфеля резервируется под бот-стратегии и manual-управление — это снижает корреляцию книги с чистым spot.`}
+            title="100% spot, без плеча"
+            body="Фонд держит только спотовые активы: никаких ботов, ручной торговли и заёмных позиций. Что в рекомендации — то и в портфеле, прозрачно 1:1."
           />
         </ul>
         {strategy.warning && (
@@ -422,11 +398,7 @@ function AllocationCard({
 }) {
   const colored = rows.map((r, i) => ({
     ...r,
-    color: r.symbol === "BOT"
-      ? "#22d3ee"
-      : r.symbol === "MANUAL"
-        ? "#a78bfa"
-        : SPOT_PALETTE[i % SPOT_PALETTE.length],
+    color: SPOT_PALETTE[i % SPOT_PALETTE.length],
   }));
   return (
     <div
@@ -804,17 +776,11 @@ function CopyJsonButton({
   strategy,
   symbols,
   spotRows,
-  totalRows,
-  botSleeve,
-  manualSleeve,
   cvarDefenseThreshold,
 }: {
   strategy: StrategyResult;
   symbols: string[];
   spotRows: { symbol: string; weight: number }[];
-  totalRows: { symbol: string; label: string; weight: number }[];
-  botSleeve: number;
-  manualSleeve: number;
   cvarDefenseThreshold: number;
 }) {
   const [copied, setCopied] = useState(false);
@@ -825,8 +791,8 @@ function CopyJsonButton({
       model: strategy.name,
       strategyId: strategy.id,
       symbols,
-      spot: Object.fromEntries(spotRows.map((r) => [r.symbol, r.weight])),
-      totalFund: Object.fromEntries(totalRows.map((r) => [r.symbol, r.weight])),
+      // Фонд 100% spot — weights и есть полный портфель фонда.
+      weights: Object.fromEntries(spotRows.map((r) => [r.symbol, r.weight])),
       metrics: {
         expectedReturn: strategy.metrics.expectedReturn,
         volatility: strategy.metrics.volatility,
@@ -840,8 +806,6 @@ function CopyJsonButton({
       },
       policy: {
         cvarDefenseThreshold,
-        botSleeve,
-        manualSleeve,
       },
       warning: strategy.warning ?? null,
     };
@@ -901,13 +865,11 @@ function CopyJsonButton({
 function CopyNavExportButton({
   weights,
   symbols,
-  sleeveFraction,
   engineMeta,
   confidenceScore,
 }: {
   weights: number[];
   symbols: string[];
-  sleeveFraction: number;
   engineMeta?: {
     paramsHash: string;
     mode: RecommendationMode;
@@ -918,7 +880,7 @@ function CopyNavExportButton({
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
 
   const handleCopy = async () => {
-    const exported = buildNavExport({ weights, symbols, sleeveFraction });
+    const exported = buildNavExport({ weights, symbols });
     if (exported.payload.items.length === 0) {
       setState("error");
       setTimeout(() => setState("idle"), 1800);
@@ -990,7 +952,7 @@ function CopyNavExportButton({
       type="button"
       onClick={handleCopy}
       className={`inline-flex items-center gap-1.5 rounded-md border bg-white/[0.04] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] transition ${tone}`}
-      title="Скопировать JSON в формате PUT /admin/portfolio/composition Криптофонда — символы BTC/ETH/BNB/SOL/OKB/MNT/HYPE/TON, проценты 0-100, сумма ровно 100. Sleeve превращается в CASH USDT."
+      title="Скопировать JSON в формате PUT /admin/portfolio/composition Криптофонда — символы BTC/ETH/BNB/SOL/OKB/MNT/HYPE/TON, проценты 0-100, сумма ровно 100. Фонд 100% spot."
     >
       <Icon size={11} className={state === "copied" ? "text-emerald-300" : undefined} />
       <span>{label}</span>

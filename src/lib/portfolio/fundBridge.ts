@@ -28,8 +28,12 @@ export interface FundLiveItem {
   weight: number;
   /** Asset display name from fund payload. */
   name: string;
-  /** Fund-side category. */
-  category: "SPOT" | "CASH" | "BOT_TRADING" | "MANUAL_TRADING";
+  /**
+   * Fund-side category. Фонд 100% spot (боты/manual свёрнуты 2026-06-12) —
+   * BOT_TRADING / MANUAL_TRADING удалены; неизвестные категории
+   * нормализуются в SPOT.
+   */
+  category: "SPOT" | "CASH";
 }
 
 export interface FundLiveComposition {
@@ -134,7 +138,7 @@ export async function fetchLiveFundComposition(): Promise<FundLiveComposition | 
 }
 
 function normalizeCategory(c: unknown): FundLiveItem["category"] {
-  if (c === "CASH" || c === "BOT_TRADING" || c === "MANUAL_TRADING") return c;
+  if (c === "CASH") return c;
   return "SPOT";
 }
 

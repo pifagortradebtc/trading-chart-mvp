@@ -3,8 +3,11 @@ import { DEFAULT_RISK_CAPS, DEFAULT_AGGREGATE_RULES } from "./riskCaps";
 
 /**
  * Three policy presets applied with one click in the Risk Caps tab. Each
- * preset rewrites caps + aggregate rules + CVaR threshold + sleeves; the
- * Final Fund Portfolio is then recomputed via the standard reapply path.
+ * preset rewrites caps + aggregate rules + CVaR threshold; the Final Fund
+ * Portfolio is then recomputed via the standard reapply path.
+ *
+ * Фонд работает 100% spot (боты и ручная торговля свёрнуты, user decision
+ * 2026-06-12) — sleeve-поля удалены из пресетов.
  */
 export type RecommendationMode = "conservative" | "balanced" | "aggressive";
 
@@ -12,8 +15,6 @@ export interface ModeConfig {
   riskCaps: Record<string, { min?: number; max?: number }>;
   aggregateRules: AggregateRules;
   cvarDefenseThreshold: number;
-  botSleeve: number;
-  manualSleeve: number;
   label: string;
   description: string;
 }
@@ -31,8 +32,6 @@ export const MODES: Record<RecommendationMode, ModeConfig> = {
     },
     aggregateRules: { coreMin: 0.75, smallAltsMax: 0.05 },
     cvarDefenseThreshold: -0.06,
-    botSleeve: 0.03,
-    manualSleeve: 0.02,
     label: "Conservative",
     description:
       "BTC/ETH доминирующее ядро, минимум альфа-рисков, строгая CVaR-защита.",
@@ -41,8 +40,6 @@ export const MODES: Record<RecommendationMode, ModeConfig> = {
     riskCaps: { ...DEFAULT_RISK_CAPS },
     aggregateRules: { ...DEFAULT_AGGREGATE_RULES },
     cvarDefenseThreshold: -0.08,
-    botSleeve: 0.05,
-    manualSleeve: 0.05,
     label: "Balanced",
     description: "Базовый режим фонда — текущие defaults.",
   },
@@ -58,8 +55,6 @@ export const MODES: Record<RecommendationMode, ModeConfig> = {
     },
     aggregateRules: { coreMin: 0.55, smallAltsMax: 0.12 },
     cvarDefenseThreshold: -0.1,
-    botSleeve: 0.05,
-    manualSleeve: 0.05,
     label: "Aggressive",
     description:
       "Допускается больше satellite/high-beta при тех же data-quality и CVaR ограничениях.",

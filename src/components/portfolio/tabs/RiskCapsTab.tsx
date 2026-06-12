@@ -2,7 +2,6 @@
 
 import {
   CheckCircle2,
-  Crown,
   Gauge,
   Lock,
   RotateCcw,
@@ -27,17 +26,11 @@ interface Props {
   views: ViewInput[];
   /** Daily CVaR-95 trigger for the Final Fund defensive bump (fraction, e.g. -0.08). */
   cvarDefenseThreshold: number;
-  /** Bot strategies sleeve as a fraction of total AUM (0..0.4). */
-  botSleeve: number;
-  /** Manual book sleeve as a fraction of total AUM (0..0.4). */
-  manualSleeve: number;
   strategies: StrategyResult[] | null;
   onRiskCapsChange: (next: Record<string, { min?: number; max?: number }>) => void;
   onAggregateChange: (next: AggregateRules) => void;
   onViewsChange: (next: ViewInput[]) => void;
   onCvarDefenseThresholdChange: (next: number) => void;
-  onBotSleeveChange: (next: number) => void;
-  onManualSleeveChange: (next: number) => void;
   /** Wipes localStorage policy and resets all caps/views/threshold to defaults. */
   onResetPolicy: () => void;
   onApply: () => void;
@@ -60,23 +53,17 @@ export function RiskCapsTab({
   aggregateRules,
   views,
   cvarDefenseThreshold,
-  botSleeve,
-  manualSleeve,
   strategies,
   onRiskCapsChange,
   onAggregateChange,
   onViewsChange,
   onCvarDefenseThresholdChange,
-  onBotSleeveChange,
-  onManualSleeveChange,
   onResetPolicy,
   onApply,
   loading,
   recommendationMode,
   onApplyMode,
 }: Props) {
-  const sleevesTotal = botSleeve + manualSleeve;
-  const sleevesOverflow = sleevesTotal > 0.5;
   const finalStrategy = strategies?.find((s) => s.id === "finalFund");
 
   const previewViolations = useMemo(() => {
@@ -122,7 +109,7 @@ export function RiskCapsTab({
               </h3>
             </div>
             <span className="text-[10px] text-ink-faint">
-              Один клик — пересобрать caps, aggregate rules, CVaR и sleeves.
+              Один клик — пересобрать caps, aggregate rules и CVaR.
             </span>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -161,7 +148,7 @@ export function RiskCapsTab({
                   <p className="mt-2 font-mono text-[10px] text-ink-faint">
                     BTC≤{Math.round((cfg.riskCaps.BTCUSDT?.max ?? 1) * 100)}% ·
                     CVaR {(cfg.cvarDefenseThreshold * 100).toFixed(1)}% ·
-                    sleeves {((cfg.botSleeve + cfg.manualSleeve) * 100).toFixed(0)}%
+                    core≥{Math.round(cfg.aggregateRules.coreMin * 100)}%
                   </p>
                 </button>
               );
@@ -261,48 +248,6 @@ export function RiskCapsTab({
             value={cvarDefenseThreshold}
             onChange={onCvarDefenseThresholdChange}
           />
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-surface-border bg-surface p-5 backdrop-blur-xl shadow-card">
-        <div className="flex items-center justify-between border-b border-surface-border pb-3">
-          <div className="flex items-center gap-2">
-            <Crown size={14} className="text-brand" />
-            <h3 className="font-mono text-[10px] font-medium uppercase tracking-[0.22em] text-ink">
-              Fund sleeves
-            </h3>
-          </div>
-          <span
-            className={`font-mono text-[10px] ${
-              sleevesOverflow ? "text-rose-300" : "text-ink-faint"
-            }`}
-          >
-            Spot {((1 - sleevesTotal) * 100).toFixed(0)}% · Sleeves {(sleevesTotal * 100).toFixed(0)}%
-          </span>
-        </div>
-        <div className="mt-4 flex flex-col gap-4">
-          <p className="font-mono text-[11px] leading-relaxed text-ink-muted">
-            Доля общего AUM фонда, зарезервированная под бот-стратегии и
-            ручную книгу. Уменьшает прямую крипто-экспозицию и снижает
-            корреляцию с чистым spot-портфелем.
-          </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <SleeveInput
-              label="Bot strategies"
-              value={botSleeve}
-              onChange={onBotSleeveChange}
-            />
-            <SleeveInput
-              label="Manual book"
-              value={manualSleeve}
-              onChange={onManualSleeveChange}
-            />
-          </div>
-          {sleevesOverflow && (
-            <p className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
-              Sleeves суммарно &gt;50% — spot-экспозиция станет слишком маленькой.
-            </p>
-          )}
         </div>
       </section>
 
@@ -605,43 +550,3 @@ function CvarThresholdInput({
   );
 }
 
-/**
- * Input для одного sleeve (bot / manual). Внутри держим долю (0..0.4),
- * пользователю показываем процент. Range slider от 0 до 25%.
- */
-function SleeveInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (next: number) => void;
-}) {
-  const displayPct = (value * 100).toFixed(1);
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-surface-border bg-[rgba(8,12,20,0.4)] p-3">
-      <div className="flex items-baseline justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
-          {label}
-        </span>
-        <span className="font-mono text-xs text-brand-light">
-          {displayPct}%
-        </span>
-      </div>
-      <input
-        type="range"
-        min={0}
-        max={25}
-        step={0.5}
-        value={Number(displayPct)}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (!Number.isFinite(n)) return;
-          onChange(Math.max(0, Math.min(0.4, n / 100)));
-        }}
-        className="w-full accent-brand"
-      />
-    </div>
-  );
-}
