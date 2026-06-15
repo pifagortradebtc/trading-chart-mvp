@@ -422,6 +422,10 @@ export function MPTSimulator() {
       }));
       // Замораживаем результат: при перезагрузке покажем именно этот расчёт,
       // а не пересчитаем заново с уплывшими market caps.
+      // ВАЖНО: выкидываем MC-облако (result.portfolios — до 50 000 точек,
+      // несколько МБ) — иначе снимок превышает квоту localStorage и сохранение
+      // молча падает. Для «Портфеля фонда» облако не нужно: веса берутся из
+      // strategies, а лёгкую эффективную границу (frontier) оставляем.
       saveLastResult({
         v: 1,
         savedAt: Date.now(),
@@ -430,7 +434,7 @@ export function MPTSimulator() {
         simulations,
         riskFreeRate,
         recommendationMode,
-        result: mptResult,
+        result: { ...mptResult, portfolios: [] },
         strategies: strats,
         dataQuality: dq,
         priceSeries: aligned,
@@ -490,6 +494,7 @@ export function MPTSimulator() {
       setStrategies(strats);
       setDataQuality(dq);
       // Обновляем замороженный снимок: result/priceSeries прежние, стратегии новые.
+      // MC-облако выкидываем (квота localStorage) — см. комментарий в recalculate.
       saveLastResult({
         v: 1,
         savedAt: Date.now(),
@@ -498,7 +503,7 @@ export function MPTSimulator() {
         simulations,
         riskFreeRate,
         recommendationMode,
-        result,
+        result: { ...result, portfolios: [] },
         strategies: strats,
         dataQuality: dq,
         priceSeries,
@@ -691,11 +696,13 @@ export function MPTSimulator() {
                 рекомендованный портфель — всё в Web Worker.
               </p>
             </div>
-            {durationMs !== null && (result?.portfolios.length ?? 0) > 0 && (
+            {durationMs !== null && (strategies?.length ?? 0) > 0 && (
               <div className="flex flex-wrap gap-2 text-[11px]">
                 <StatChip
                   label="Симуляций"
-                  value={(result?.portfolios.length ?? 0).toLocaleString("ru")}
+                  // После restore MC-облако не хранится (квота) → portfolios.length=0;
+                  // показываем запрошенное число симуляций как осмысленный фоллбэк.
+                  value={((result?.portfolios.length || simulations) ?? 0).toLocaleString("ru")}
                 />
                 <StatChip label="Время" value={`${durationMs.toFixed(0)}мс`} />
                 <StatChip
