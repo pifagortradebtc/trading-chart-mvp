@@ -35,6 +35,7 @@ import { useMPTWorker } from "@/lib/portfolio/use-mpt-worker";
 import {
   addPinned,
   deletePreset,
+  loadLastResult,
   loadPinned,
   loadPolicy,
   loadPresets,
@@ -42,6 +43,7 @@ import {
   resetPolicy,
   savePinned,
   savePolicy,
+  saveLastResult,
   savePreset,
 } from "@/lib/portfolio/storage";
 import {
@@ -413,6 +415,29 @@ export function MPTSimulator() {
       setStrategies(strats);
       setDataQuality(dq);
       setDurationMs(elapsed);
+      const droppedPending = dropped.map((d) => ({
+        symbol: d.symbol,
+        length: d.length,
+        maxLength: d.maxLength,
+      }));
+      // Замораживаем результат: при перезагрузке покажем именно этот расчёт,
+      // а не пересчитаем заново с уплывшими market caps.
+      saveLastResult({
+        v: 1,
+        savedAt: Date.now(),
+        assets,
+        historyDays,
+        simulations,
+        riskFreeRate,
+        recommendationMode,
+        result: mptResult,
+        strategies: strats,
+        dataQuality: dq,
+        priceSeries: aligned,
+        warningSymbols: failed,
+        pendingSymbols: droppedPending,
+        durationMs: elapsed,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось получить данные.");
       setResult(null);
@@ -433,6 +458,7 @@ export function MPTSimulator() {
     aggregateRules,
     cvarDefenseThreshold,
     liveMarketCaps,
+    recommendationMode,
   ]);
 
   /**
@@ -463,6 +489,23 @@ export function MPTSimulator() {
       if (workerJobVersion.current !== myVersion) return;
       setStrategies(strats);
       setDataQuality(dq);
+      // Обновляем замороженный снимок: result/priceSeries прежние, стратегии новые.
+      saveLastResult({
+        v: 1,
+        savedAt: Date.now(),
+        assets,
+        historyDays,
+        simulations,
+        riskFreeRate,
+        recommendationMode,
+        result,
+        strategies: strats,
+        dataQuality: dq,
+        priceSeries,
+        warningSymbols,
+        pendingSymbols,
+        durationMs,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось пересчитать стратегии.");
     } finally {
@@ -478,10 +521,39 @@ export function MPTSimulator() {
     aggregateRules,
     cvarDefenseThreshold,
     liveMarketCaps,
+    assets,
+    historyDays,
+    simulations,
+    recommendationMode,
+    warningSymbols,
+    pendingSymbols,
+    durationMs,
   ]);
 
   useEffect(() => {
-    recalculate();
+    // Восстанавливаем замороженный результат последнего пересчёта вместо
+    // авто-пересчёта на каждой загрузке. Раньше mount всегда дёргал
+    // recalculate() с live market caps — из-за дрейфа капитализаций веса
+    // «уплывали» при каждой перезагрузке. Теперь показываем ровно то, что
+    // юзер посчитал в прошлый раз, до следующего ручного «Пересчитать».
+    const saved = loadLastResult();
+    if (saved) {
+      setAssets(saved.assets ?? DEFAULT_ASSETS);
+      setHistoryDays(saved.historyDays ?? 1095);
+      setSimulations(saved.simulations ?? 50000);
+      if (typeof saved.riskFreeRate === "number") setRiskFreeRate(saved.riskFreeRate);
+      setResult(saved.result);
+      setStrategies(saved.strategies);
+      setDataQuality(saved.dataQuality ?? null);
+      setPriceSeries(saved.priceSeries ?? null);
+      if (saved.recommendationMode) setRecommendationMode(saved.recommendationMode);
+      setWarningSymbols(saved.warningSymbols ?? []);
+      setPendingSymbols(saved.pendingSymbols ?? []);
+      setDurationMs(saved.durationMs ?? null);
+    } else {
+      // Первый визит (снимка ещё нет) — считаем один раз.
+      recalculate();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
